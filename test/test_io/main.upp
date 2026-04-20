@@ -1,0 +1,6 @@
+#import <io>
+
+int main() {
+    int x = io.getValue();
+    return x;
+}

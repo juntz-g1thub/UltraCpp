@@ -1,0 +1,46 @@
+# Rust
+target/
+Cargo.lock
+**/*.rs.o
+**/*.rs.bk
+*.pdb
+!.cargo/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.vs/
+
+# OS
+.DS_Store
+Thumbs.db
+*.bak
+
+# Build outputs
+build/
+*.o
+*.s
+*.ll
+*.asm
+
+# Test outputs
+*.exe
+test_local
+test_extern
+test_import
+test_hello
+/tmp/
+
+# UltraCPP specific
+*.uc.bak
+*.upp.bak
+
+# Agent working files
+.sisyphus/run-continuation/
+
+# Misc
+*.log
+*.tmp

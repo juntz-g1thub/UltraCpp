@@ -1,0 +1,22 @@
+[package]
+name = "ultracpp"
+version = "0.1.0"
+edition = "2021"
+description = "UltraCPP Compiler - C++ syntax with Rust-like memory safety"
+authors = ["UltraCPP Team"]
+
+[dependencies]
+clap = { version = "4.4", features = ["derive"] }
+thiserror = "1.0"
+anyhow = "1.0"
+serde_json = "1.0"
+serde = { version = "1.0", features = ["derive"] }
+
+[dev-dependencies]
+tempfile = "3.10"
+assert_cmd = "2.0"
+predicates = "3.1"
+
+[[bin]]
+name = "ultracpp"
+path = "src/main.rs"

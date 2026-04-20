@@ -1,0 +1,141 @@
+#!/bin/bash
+set -e
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+ULTRACPP_BIN="$PROJECT_ROOT/target/debug/ultracpp"
+BUILD_DIR="${BUILD_DIR:-$PROJECT_ROOT/build}"
+
+usage() {
+    echo "UltraCPP Build Tool"
+    echo ""
+    echo "Usage: uc-build <command> [options] <file>"
+    echo ""
+    echo "Commands:"
+    echo "  build <file>    Compile and link a source file"
+    echo "  compile <file>  Compile only (no linking)"
+    echo "  lib <file>      Compile to object file (for libraries)"
+    echo "  clean           Clean build artifacts"
+    echo ""
+    echo "Examples:"
+    echo "  uc-build build test/main.upp"
+    echo "  uc-build compile lib/math.uc"
+    echo "  uc-build lib lib/io.uc        # compile io.uc to io.o"
+    echo "  BUILD_DIR=./dist uc-build build src/app.upp"
+}
+
+cmd_build() {
+    local input="$1"
+    local noext="${input%.*}"
+    local name="${noext//\//_}"
+    local output_dir="$BUILD_DIR/uc/$name"
+    local ll_file="$output_dir/$name.ll"
+    local asm_file="$output_dir/$name.s"
+    local obj_file="$output_dir/$name.o"
+    local exe_file="$output_dir/$name"
+
+    mkdir -p "$output_dir"
+
+    echo "[1/4] Preprocess & Compile to IR..."
+    $ULTRACPP_BIN "$input" -o "$ll_file"
+
+    echo "[2/4] Compile IR to assembly..."
+    llc "$ll_file" -o "$asm_file" || { echo "llc failed"; exit 1; }
+
+    echo "[3/4] Linking..."
+    gcc -no-pie "$asm_file" -o "$exe_file" || { echo "gcc linking failed"; exit 1; }
+
+    echo "[4/4] Done: $exe_file"
+}
+
+cmd_compile() {
+    local input="$1"
+    local noext="${input%.*}"
+    local name="${noext//\//_}"
+    local output_dir="$BUILD_DIR/uc/$name"
+    local ll_file="$output_dir/$name.ll"
+    local asm_file="$output_dir/$name.s"
+
+    mkdir -p "$output_dir"
+
+    echo "[1/2] Preprocess & Compile to IR..."
+    $ULTRACPP_BIN "$input" -o "$ll_file"
+
+    echo "[2/2] Compile IR to assembly..."
+    llc "$ll_file" -o "$asm_file" || { echo "llc failed"; exit 1; }
+
+    echo "Done: $asm_file"
+}
+
+cmd_lib() {
+    local input="$1"
+    local noext="${input%.*}"
+    local name="${noext//\//_}"
+    local output_dir="$BUILD_DIR/uc/$name"
+    local ll_file="$output_dir/$name.ll"
+    local asm_file="$output_dir/$name.s"
+    local obj_file="$output_dir/$name.o"
+
+    mkdir -p "$output_dir"
+
+    echo "[1/3] Preprocess & Compile to IR..."
+    $ULTRACPP_BIN "$input" -o "$ll_file"
+
+    echo "[2/3] Compile IR to assembly..."
+    llc "$ll_file" -o "$asm_file" || { echo "llc failed"; exit 1; }
+
+    echo "[3/3] Assemble to object file..."
+    gcc -c "$asm_file" -o "$obj_file" || { echo "gcc assemble failed"; exit 1; }
+
+    echo "Done: $obj_file"
+}
+
+cmd_clean() {
+    echo "Cleaning build directory..."
+    rm -rf "$BUILD_DIR/uc"
+    echo "Done"
+}
+
+COMMAND="${1:-}"
+shift 2>/dev/null || true
+
+case "$COMMAND" in
+    build)
+        if [ -z "${1:-}" ]; then
+            echo "Error: No input file specified"
+            usage
+            exit 1
+        fi
+        cmd_build "$1"
+        ;;
+    compile)
+        if [ -z "${1:-}" ]; then
+            echo "Error: No input file specified"
+            usage
+            exit 1
+        fi
+        cmd_compile "$1"
+        ;;
+    lib)
+        if [ -z "${1:-}" ]; then
+            echo "Error: No input file specified"
+            usage
+            exit 1
+        fi
+        cmd_lib "$1"
+        ;;
+    clean)
+        cmd_clean
+        ;;
+    -h|--help|help)
+        usage
+        ;;
+    *)
+        if [ -n "${COMMAND:-}" ]; then
+            cmd_build "$COMMAND"
+        else
+            usage
+            exit 1
+        fi
+        ;;
+esac
