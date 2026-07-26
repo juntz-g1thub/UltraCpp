@@ -1,0 +1,155 @@
+/* UltraCPP C compiler - token operations */
+#include "uc_token.h"
+
+#include <stdlib.h>
+#include <string.h>
+
+void uc_token_init(UCToken* tok) {
+    if (!tok) return;
+    memset(tok, 0, sizeof(*tok));
+    tok->kind = UC_TOK_EOF;
+}
+
+void uc_token_reset(UCToken* tok) {
+    if (!tok) return;
+    uc_token_free(tok);
+    memset(tok, 0, sizeof(*tok));
+    tok->kind = UC_TOK_EOF;
+}
+
+void uc_token_free(UCToken* tok) {
+    if (!tok) return;
+    free(tok->lexeme);
+    tok->lexeme = NULL;
+    tok->lexeme_len = 0;
+    if (tok->kind == UC_TOK_STRING) {
+        free(tok->as.string_val);
+        tok->as.string_val = NULL;
+    }
+}
+
+const char* uc_token_kind_name(UCTokenKind kind) {
+    switch (kind) {
+        case UC_TOK_INT:    return "Int";
+        case UC_TOK_FLOAT:  return "Float";
+        case UC_TOK_CHAR:   return "Char";
+        case UC_TOK_STRING: return "String";
+        case UC_TOK_IDENT:  return "Ident";
+
+        case UC_TOK_KW_IF:       return "KwIf";
+        case UC_TOK_KW_ELSE:     return "KwElse";
+        case UC_TOK_KW_WHILE:    return "KwWhile";
+        case UC_TOK_KW_FOR:      return "KwFor";
+        case UC_TOK_KW_RETURN:   return "KwReturn";
+        case UC_TOK_KW_STRUCT:   return "KwStruct";
+        case UC_TOK_KW_EXPORT:   return "KwExport";
+        case UC_TOK_KW_IMPORT:   return "KwImport";
+        case UC_TOK_KW_CONST:    return "KwConst";
+        case UC_TOK_KW_UNIQUE:   return "KwUnique";
+        case UC_TOK_KW_MOVE:     return "KwMove";
+        case UC_TOK_KW_FREE:     return "KwFree";
+        case UC_TOK_KW_ALLOC:    return "KwAlloc";
+        case UC_TOK_KW_NULL:     return "KwNull";
+        case UC_TOK_KW_TRUE:     return "KwTrue";
+        case UC_TOK_KW_FALSE:    return "KwFalse";
+        case UC_TOK_KW_VOID:     return "KwVoid";
+        case UC_TOK_KW_EXTERN:   return "KwExtern";
+        case UC_TOK_KW_UNSAFE:   return "KwUnsafe";
+        case UC_TOK_KW_AS:       return "KwAs";
+        case UC_TOK_KW_STATIC:   return "KwStatic";
+        case UC_TOK_KW_CLONE:    return "KwClone";
+        case UC_TOK_KW_ASM:      return "KwAsm";
+        case UC_TOK_KW_BREAK:    return "KwBreak";
+        case UC_TOK_KW_CONTINUE: return "KwContinue";
+
+        case UC_TOK_OP_PLUS:     return "OpPlus";
+        case UC_TOK_OP_MINUS:    return "OpMinus";
+        case UC_TOK_OP_STAR:     return "OpStar";
+        case UC_TOK_OP_SLASH:    return "OpSlash";
+        case UC_TOK_OP_PERCENT:  return "OpPercent";
+        case UC_TOK_OP_ASSIGN:   return "OpAssign";
+        case UC_TOK_OP_EQ:       return "OpEq";
+        case UC_TOK_OP_NE:       return "OpNe";
+        case UC_TOK_OP_LT:       return "OpLt";
+        case UC_TOK_OP_GT:       return "OpGt";
+        case UC_TOK_OP_LE:       return "OpLe";
+        case UC_TOK_OP_GE:       return "OpGe";
+        case UC_TOK_OP_AND:      return "OpAnd";
+        case UC_TOK_OP_OR:       return "OpOr";
+        case UC_TOK_OP_NOT:      return "OpNot";
+        case UC_TOK_OP_BIT_AND:  return "OpBitAnd";
+        case UC_TOK_OP_BIT_OR:   return "OpBitOr";
+        case UC_TOK_OP_BIT_XOR:  return "OpBitXor";
+        case UC_TOK_OP_BIT_NOT:  return "OpBitNot";
+        case UC_TOK_OP_SHL:      return "OpShl";
+        case UC_TOK_OP_SHR:      return "OpShr";
+        case UC_TOK_OP_INC:      return "OpInc";
+        case UC_TOK_OP_DEC:      return "OpDec";
+        case UC_TOK_OP_ARROW:    return "OpArrow";
+        case UC_TOK_OP_SCOPE:    return "OpScope";
+        case UC_TOK_OP_QUESTION: return "OpQuestion";
+
+        case UC_TOK_LPAREN:     return "LParen";
+        case UC_TOK_RPAREN:     return "RParen";
+        case UC_TOK_LBRACE:     return "LBrace";
+        case UC_TOK_RBRACE:     return "RBrace";
+        case UC_TOK_LBRACKET:   return "LBracket";
+        case UC_TOK_RBRACKET:   return "RBracket";
+        case UC_TOK_COMMA:      return "Comma";
+        case UC_TOK_SEMICOLON:  return "Semicolon";
+        case UC_TOK_COLON:      return "Colon";
+        case UC_TOK_DOT:        return "Dot";
+        case UC_TOK_POUND:      return "Pound";
+
+        case UC_TOK_PP_IMPORT:  return "PpImport";
+        case UC_TOK_PP_INCLUDE: return "PpInclude";
+        case UC_TOK_PP_DEFINE:  return "PpDefine";
+        case UC_TOK_PP_IFDEF:   return "PpIfdef";
+        case UC_TOK_PP_IFNDEF:  return "PpIfndef";
+        case UC_TOK_PP_ENDIF:   return "PpEndif";
+
+        case UC_TOK_EOF:        return "Eof";
+        case UC_TOK_ERROR:      return "Error";
+    }
+    return "Unknown";
+}
+
+UCTokenKind uc_keyword_lookup(const char* ident, size_t len) {
+    if (!ident) return UC_TOK_IDENT;
+
+    /* length-then-pointer compare to avoid string compare cost */
+    #define KW(s, k) do { \
+        static const char _kw[] = s; \
+        if (len == (sizeof(_kw) - 1) && memcmp(ident, _kw, sizeof(_kw) - 1) == 0) \
+            return k; \
+    } while (0)
+
+    KW("if",       UC_TOK_KW_IF);
+    KW("else",     UC_TOK_KW_ELSE);
+    KW("while",    UC_TOK_KW_WHILE);
+    KW("for",      UC_TOK_KW_FOR);
+    KW("return",   UC_TOK_KW_RETURN);
+    KW("struct",   UC_TOK_KW_STRUCT);
+    KW("export",   UC_TOK_KW_EXPORT);
+    KW("import",   UC_TOK_KW_IMPORT);
+    KW("const",    UC_TOK_KW_CONST);
+    KW("unique",   UC_TOK_KW_UNIQUE);
+    KW("move",     UC_TOK_KW_MOVE);
+    KW("free",     UC_TOK_KW_FREE);
+    KW("alloc",    UC_TOK_KW_ALLOC);
+    KW("null",     UC_TOK_KW_NULL);
+    KW("true",     UC_TOK_KW_TRUE);
+    KW("false",    UC_TOK_KW_FALSE);
+    KW("void",     UC_TOK_KW_VOID);
+    KW("extern",   UC_TOK_KW_EXTERN);
+    KW("unsafe",   UC_TOK_KW_UNSAFE);
+    KW("as",       UC_TOK_KW_AS);
+    KW("static",   UC_TOK_KW_STATIC);
+    KW("clone",    UC_TOK_KW_CLONE);
+    KW("asm",      UC_TOK_KW_ASM);
+    KW("break",    UC_TOK_KW_BREAK);
+    KW("continue", UC_TOK_KW_CONTINUE);
+
+    #undef KW
+    return UC_TOK_IDENT;
+}

@@ -26,6 +26,9 @@ build/
 *.ll
 *.asm
 
+# C port (src-c/) build artifacts
+src-c/build/
+
 # Test outputs
 *.exe
 test_local
