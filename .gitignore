@@ -41,6 +41,9 @@ test_hello
 # Agent working files
 .sisyphus/run-continuation/
 
+# Git worktrees (isolated feature workspaces)
+.worktrees/
+
 # Misc
 *.log
 *.tmp
