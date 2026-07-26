@@ -238,6 +238,7 @@ impl<'a> Lexer<'a> {
     }
 
     fn scan_string(&mut self) -> Token {
+        let start = self.pos;
         self.pos += 1;
         let mut value = String::new();
 
@@ -273,7 +274,11 @@ impl<'a> Lexer<'a> {
             self.pos += 1;
         }
 
-        self.make_token(TokenKind::String(value.clone()), format!("\"{}\"", value))
+        // Lexeme is the raw source text (matching the C lexer and a
+        // faithful representation of what was scanned). value holds the
+        // decoded contents.
+        let lexeme = self.source[start..self.pos].to_string();
+        self.make_token(TokenKind::String(value), lexeme)
     }
 
     fn scan_char(&mut self) -> Token {

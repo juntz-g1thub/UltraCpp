@@ -7,6 +7,7 @@ pub use lexer::Lexer;
 pub use parser::Parser;
 
 use crate::preprocessor::{PreprocessedModule, Preprocessor};
+use crate::frontend::token::{Token, TokenKind};
 use std::path::Path;
 
 pub struct CompilationResult {
@@ -41,4 +42,35 @@ pub fn compile(
     let ast = parser.parse()?;
 
     Ok(CompilationResult { ast, imports })
+}
+
+/// Run only the lexer and print one line per token. The output format
+/// mirrors `uc_lexer` in the C port (src-c/src/main.c) so the two
+/// implementations can be diffed directly.
+///
+/// The preprocessor is intentionally skipped so the C and Rust versions
+/// see identical input.
+pub fn dump_tokens(source: &str) {
+    let mut lexer = Lexer::new(source);
+    loop {
+        let token: Token = lexer.next_token();
+        let extras = match &token.kind {
+            TokenKind::Int(n) => format!("  [int={}]", n),
+            TokenKind::Float(f) => format!("  [float={}]", f),
+            TokenKind::Char(c) => format!("  [char='{}']", c),
+            TokenKind::String(s) => format!("  [str=\"{}\"]", s),
+            _ => String::new(),
+        };
+        println!(
+            "TOKEN {:12} {:4}:{:<3}  {}{}",
+            token.kind.name(),
+            token.line,
+            token.column,
+            token.lexeme,
+            extras
+        );
+        if matches!(token.kind, TokenKind::Eof) {
+            break;
+        }
+    }
 }

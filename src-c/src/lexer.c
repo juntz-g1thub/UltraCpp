@@ -212,8 +212,6 @@ static UCToken scan_string(UCLexer* l) {
     int start_line = l->line;
     int start_col = l->column;
 
-    advance_one(l); /* opening " */
-
     /* we keep two parallel accumulators: lexeme (raw text, used as token
      * lexeme) and value (decoded, allocated, used as as.string_val). */
     size_t raw_cap = 32, raw_len = 0;
@@ -223,6 +221,17 @@ static UCToken scan_string(UCLexer* l) {
     size_t val_cap = 32, val_len = 0;
     char* val = (char*)malloc(val_cap);
     if (!val) { free(raw); return make_error(l, lexeme_start, 1, "out of memory"); }
+
+    /* opening quote: record in raw so the lexeme matches the Rust format
+     * ("<value>") */
+    if (raw_len + 1 > raw_cap) {
+        raw_cap *= 2;
+        char* p = (char*)realloc(raw, raw_cap);
+        if (!p) { free(val); return make_error(l, lexeme_start, 1, "oom"); }
+        raw = p;
+    }
+    raw[raw_len++] = '"';
+    advance_one(l); /* opening " */
 
     int closed = 0;
     while (l->pos < l->source_len) {
@@ -327,6 +336,15 @@ static UCToken scan_string(UCLexer* l) {
         val = p;
     }
     val[val_len] = '\0';
+
+    /* NUL-terminate raw so lexeme can be treated as a C string. */
+    if (raw_len >= raw_cap) {
+        raw_cap = raw_len + 1;
+        char* p = (char*)realloc(raw, raw_cap);
+        if (!p) { free(raw); free(val); return make_error(l, lexeme_start, 1, "oom"); }
+        raw = p;
+    }
+    raw[raw_len] = '\0';
 
     UCToken tok;
     uc_token_init(&tok);

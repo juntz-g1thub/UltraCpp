@@ -49,11 +49,11 @@ static int run_dump_tokens(const char* path) {
 
     for (;;) {
         UCToken tok = uc_lexer_next(&lex);
+        print_token(&tok, stdout);
         if (tok.kind == UC_TOK_EOF) {
             uc_token_free(&tok);
             break;
         }
-        print_token(&tok, stdout);
         if (tok.kind == UC_TOK_ERROR) {
             uc_token_free(&tok);
             uc_error_report(&err, stderr);

@@ -29,6 +29,9 @@ struct Args {
 
     #[arg(short, long, help = "Compile to executable (requires llc + gcc)")]
     compile: bool,
+
+    #[arg(long, help = "Print tokens and exit (no codegen, no preprocess)")]
+    dump_tokens: bool,
 }
 
 fn main() {
@@ -41,6 +44,11 @@ fn main() {
             process::exit(1);
         }
     };
+
+    if args.dump_tokens {
+        frontend::dump_tokens(&source);
+        return;
+    }
 
     let module_name = args
         .input
