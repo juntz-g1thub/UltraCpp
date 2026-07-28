@@ -1,6 +1,6 @@
 # Worktree Handoff — `feature/borrow-check-verification`
 
-> **TL;DR**：当前在做 UltraCPP 编译器从 Rust → C → asm → 自举的迁移。**Phase 1（C 词法器）+ Phase 1.1（字节级验证）+ Phase 2.1（C AST）已完成并提交**。下一步是 Phase 2.2（parser skeleton + top-level declarations）。
+> **TL;DR**：当前在做 UltraCPP 编译器从 Rust → C → asm → 自举的迁移。**Phase 1 + 1.1 + 2.1 + 2.2 已完成并提交**。下一步是 Phase 2.3（parser statements：if/while/for/return/expression/free/decl）。
 
 ---
 
@@ -9,10 +9,10 @@
 ```bash
 # 1. 确认所在 worktree（避免误操作 main repo）
 pwd                                        # 应输出 .../borrow-check-verification
-git log --oneline -5                       # 应看到三个新提交 cefc1c5、fbcb260、6ece689
+git log --oneline -5                       # 应看到四个新提交 cefc1c5、fbcb260、6ece689、55390ad
 
-# 2. 确认 Phase 1 + 2.1 仍能通过
-make -C src-c test                         # 应输出 "73/73 + 69/69 tests passed"
+# 2. 确认 Phase 1 + 2.1 + 2.2 仍能通过
+make -C src-c test                         # 应输出 "73+69+98 tests passed"
 
 # 3. 确认字节级验证仍通过
 bash tools/tokenize_test.sh                # 应输出 "7 passed, 0 failed"
@@ -30,8 +30,8 @@ bash tools/tokenize_test.sh                # 应输出 "7 passed, 0 failed"
 | 1 | C-Lexer | ✅ | `cefc1c5` |
 | 1.1 | 字节级验证 | ✅ | `fbcb260` |
 | **2.1** | **C-AST 类型定义** | **✅** | **`6ece689`** |
-| **2.2** | **parser skeleton + top-level** | **🔄 待启动** | — |
-| 2.3 | parser statements | ⏳ | — |
+| **2.2** | **parser skeleton + top-level** | **✅** | **`55390ad`** |
+| **2.3** | **parser statements** | **🔄 待启动** | — |
 | 2.4 | parser expressions binary | ⏳ | — |
 | 2.5 | parser expressions unary/postfix/literals | ⏳ | — |
 | 2.6 | parser 与 Rust `--dump-ast` 字节级对齐 | ⏳ | — |
@@ -120,14 +120,13 @@ keyword，呼应 `UC_TOK_KW_FREE`）和 `uc_stmt_free(UCStmt*)`（析构器）�
 - [x] 节点树的深释放能正确清理所有子节点（test_deep_free_no_leak
       构建一棵覆盖所有节点类型的 AST，自由后 ASAN 报告 0）
 
-### 下一步（Phase 2.2）
+### 下一步（Phase 2.3）
 
-parser skeleton + top-level declarations：
-- 新增 `src-c/include/uc_parser.h`
-- 新增 `src-c/src/parser.c`
-- 新增 `src-c/tests/test_parser.c`：能 parse `int main(void) { return 0; }`
-- 阶段目标：仅 top-level declarations（function def/decl, var/const decl,
-  struct def, import, extern），statements/expressions 留到 2.3-2.5
+parser statements（if / while / for / break / continue / expression-stmt / decl / free / unsafe）：
+- 新增 `src-c/src/parser.c` 中的 statement 解析函数（已有 block / return）
+- 新增 `src-c/tests/test_parser.c` 中的 statement 测试
+- 阶段目标：能 parse 现有 5 个测试程序（test_hello_world、test_io、test_t1/t2/t3）的全部 body
+- 表达式部分仍限于 Phase 2.2 的最小集（literal / ident / null），binary/unary/call/field/index 留到 2.4-2.5
 
 ---
 
@@ -165,6 +164,42 @@ parser skeleton + top-level declarations：
 
 - `src/frontend/lexer.rs` 的列号跟踪逻辑（已知 bug，独立修复）
 - `src/codegen/generator.rs` 中吞掉 `Stmt::For/Break/Continue` 的 `_ => {}`（独立 bugfix）
+
+### 6.5 Token 词素生命周期陷阱（Phase 2.2 踩坑）
+
+**问题**：`p->current.lexeme` 是 lexer 返回 token 时 strndup 出来的独立堆缓冲区。每次
+`advance(p)` 会 `uc_token_free(&p->current)`，从而释放该缓冲区。
+
+`parse_expr_minimal` 里如果先 `const char* s = p->current.lexeme; ... advance(p); return uc_expr_ident(s, n);`，那 `s` 已被 free，再传给构造器就是 use-after-free。
+
+**决策**：在 advance 之前完成所有读取与拷贝，或者把构造推迟到 advance 之后（但
+lexeme 已被 free，所以必须拷）。现在的固定模式：
+
+```c
+UCString s = uc_string_new(p->current.lexeme, p->current.lexeme_len);  // copy
+advance(p);                                                            // free original
+return expr_ident(s);                                                  // use copy
+```
+
+ASAN+UBSan 一定要跑（`cc -fsanitize=address,undefined`），不然这种 bug 经常
+侥幸不崩或崩在很远的地方，调试成本高。
+
+### 6.6 字符串字面量的引号在 lexeme 中（Phase 2.2 踩坑）
+
+**问题**：lexer 按 Phase 1.1 的约定把带引号的原文作为 lexeme（保留 `"`），但把
+转义解码后的字符串存到 `tok.as.string_val`（无引号）。
+
+**决策**：构造字符串字面量 AST 节点时使用 `tok.as.string_val`，不是 `tok.lexeme`。
+否则 `"hi"` 会变成 `"\"hi\""`，断言全错。
+
+### 6.7 类型解析中 `*int` 与 `int*` 同时支持（Phase 2.2 决定）
+
+**问题**：spec 用 C 风格后缀 `int* p`，而 Rust parser 只支持前缀 `*int`。这意味
+着 parse_type 需要两种入口。
+
+**决策**：C 端口同时接受两种写法。Prefix `*` 分支显式包一层 `uc_type_pointer`，
+后缀 `*` 由独立的 while 循环处理。后续如要跟 Rust `--dump-ast` 字节级对齐，需要
+确认 spec 写法优先（避免在 dump 中出现差异）。
 
 ---
 
@@ -214,4 +249,4 @@ git push -u origin feature/borrow-check-verification
 
 ---
 
-*最后更新：Phase 1 + 1.1 + 2.1 已提交（`6ece689`），准备启动 Phase 2.2*
+*最后更新：Phase 1 + 1.1 + 2.1 + 2.2 已提交（`55390ad`），准备启动 Phase 2.3*
