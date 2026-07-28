@@ -1,6 +1,6 @@
 # Worktree Handoff — `feature/borrow-check-verification`
 
-> **TL;DR**：当前在做 UltraCPP 编译器从 Rust → C → asm → 自举的迁移。**Phase 1（C 词法器）+ Phase 1.1（字节级验证）已完成并提交**。下一步是 Phase 2（C AST + parser）。
+> **TL;DR**：当前在做 UltraCPP 编译器从 Rust → C → asm → 自举的迁移。**Phase 1（C 词法器）+ Phase 1.1（字节级验证）+ Phase 2.1（C AST）已完成并提交**。下一步是 Phase 2.2（parser skeleton + top-level declarations）。
 
 ---
 
@@ -9,10 +9,10 @@
 ```bash
 # 1. 确认所在 worktree（避免误操作 main repo）
 pwd                                        # 应输出 .../borrow-check-verification
-git log --oneline -5                       # 应看到两个新提交 cefc1c5、fbcb260
+git log --oneline -5                       # 应看到三个新提交 cefc1c5、fbcb260、6ece689
 
-# 2. 确认 Phase 1 仍能通过
-make -C src-c test                         # 应输出 "69/69 tests passed"
+# 2. 确认 Phase 1 + 2.1 仍能通过
+make -C src-c test                         # 应输出 "73/73 + 69/69 tests passed"
 
 # 3. 确认字节级验证仍通过
 bash tools/tokenize_test.sh                # 应输出 "7 passed, 0 failed"
@@ -29,7 +29,12 @@ bash tools/tokenize_test.sh                # 应输出 "7 passed, 0 failed"
 | 0 | 规划 | ✅ | `.sisyphus/plans/UltraCPP-v0.2.0-c-asm-bootstrap-zh-CN.md` |
 | 1 | C-Lexer | ✅ | `cefc1c5` |
 | 1.1 | 字节级验证 | ✅ | `fbcb260` |
-| **2** | **C-AST + Parser** | **🔄 待启动** | — |
+| **2.1** | **C-AST 类型定义** | **✅** | **`6ece689`** |
+| **2.2** | **parser skeleton + top-level** | **🔄 待启动** | — |
+| 2.3 | parser statements | ⏳ | — |
+| 2.4 | parser expressions binary | ⏳ | — |
+| 2.5 | parser expressions unary/postfix/literals | ⏳ | — |
+| 2.6 | parser 与 Rust `--dump-ast` 字节级对齐 | ⏳ | — |
 | 3 | C-Codegen | ⏳ | — |
 | 4 | C-CLI | ⏳ | — |
 | 5 | asm-Lexer | ⏳ | — |
@@ -81,42 +86,48 @@ bash tools/tokenize_test.sh                # 应输出 "7 passed, 0 failed"
 
 ## 五、Phase 2 启动包（最小 AST）
 
-### 任务清单
+### 任务清单（✅ Phase 2.1 已完成于 6ece689）
 
-- [ ] 读 `src/frontend/ast.rs` 全部（90 行）
-- [ ] 读 `src-c/README.md` 和 `src-c/src/lexer.c` 头部 50 行（学风格）
-- [ ] 创建 `src-c/include/uc_ast.h`：所有 AST 节点的 typedef
-- [ ] 创建 `src-c/src/ast.c`：构造器、释放、深拷贝
-- [ ] 创建 `src-c/tests/test_ast.c`：≥ 5 个测试用例（创建+释放、所有权正确性）
-- [ ] 运行 `make -C src-c test`，确保 69/69 + 新测试都过
+- [x] 读 `src/frontend/ast.rs` 全部（90 行）
+- [x] 读 `src-c/README.md` 和 `src-c/src/lexer.c` 头部 50 行（学风格）
+- [x] 创建 `src-c/include/uc_ast.h`：所有 AST 节点的 typedef
+- [x] 创建 `src-c/src/ast.c`：构造器、释放、深释放
+- [x] 创建 `src-c/tests/test_ast.c`：9 个测试用例，73 个断言
+- [x] 运行 `make -C src-c test`，73/73 + 69/69 都过
 
-### Rust → C 风格映射（参考）
+### Rust → C 风格映射（实际采用）
 
 | Rust | C |
 |------|---|
 | `Box<T>` | `struct T*` 显式 malloc/free |
-| `Vec<T>` | `T* data; size_t len; size_t cap;` |
+| `Vec<T>` | 通用 `UCVec { void** data; size_t len; size_t cap; }` |
 | `enum X { A(i32), B }` | tag + union: `struct UCX { UCXTag tag; union { int a; } as; }` |
-| `Option<T>` | `bool has; T value;` |
-| `Result<T,E>` | `UCError*`（仅失败路径） |
-| `String` | `char* data; size_t len;` |
+| `Option<T>` | 指针为 NULL 表示 None；字符串场景下 `UCString{data=NULL, len=0}` |
+| `Result<T,E>` | `UCError*`（仅失败路径；当前 AST 不消费）|
+| `String` | `UCString { char* data; size_t len; }`，NUL-terminated |
 
-### 验证清单
+### 关键命名冲突
 
-- [ ] 不引入任何 memory leak（用 `valgrind` 或 `ASAN` 跑测试）
-- [ ] 不引入 double-free
-- [ ] 节点树的深释放能正确清理所有子节点
+`UCStmt::Free(Expr)` 的构造器不能叫 `uc_stmt_free`，因为该名已被 UCStmt
+的析构器占用。最终命名：`uc_stmt_kw_free(UCExpr*)`（构造器，`kw` 表示
+keyword，呼应 `UC_TOK_KW_FREE`）和 `uc_stmt_free(UCStmt*)`（析构器）。
 
-### 完成后
+### 验证清单（✅ 已完成）
 
-提交：
-```bash
-git add -A
-git -c user.name="UltraCPP Bot" -c user.email="bot@ultracpp.local" \
-    commit -m "Phase 2.1: C AST type definitions and helpers"
-```
+- [x] 不引入任何 memory leak（ASAN+UBSan 跑 test_ast 0 报告）
+- [x] 不引入 double-free（所有自由函数 NULL-safe，`uc_literal_free`
+      在第二次会清零并置 kind 为非 STRING，幂等）
+- [x] 节点树的深释放能正确清理所有子节点（test_deep_free_no_leak
+      构建一棵覆盖所有节点类型的 AST，自由后 ASAN 报告 0）
 
-然后开始 Phase 2.2：parser skeleton（仅 top-level declarations，能 parse 空 main.upp）。
+### 下一步（Phase 2.2）
+
+parser skeleton + top-level declarations：
+- 新增 `src-c/include/uc_parser.h`
+- 新增 `src-c/src/parser.c`
+- 新增 `src-c/tests/test_parser.c`：能 parse `int main(void) { return 0; }`
+- 阶段目标：仅 top-level declarations（function def/decl, var/const decl,
+  struct def, import, extern），statements/expressions 留到 2.3-2.5
 
 ---
 
@@ -203,4 +214,4 @@ git push -u origin feature/borrow-check-verification
 
 ---
 
-*最后更新：Phase 1 + 1.1 已提交（`fbcb260`），准备启动 Phase 2.1*
+*最后更新：Phase 1 + 1.1 + 2.1 已提交（`6ece689`），准备启动 Phase 2.2*

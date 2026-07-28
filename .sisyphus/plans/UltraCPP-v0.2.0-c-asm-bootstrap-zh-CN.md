@@ -14,7 +14,12 @@
 | Phase 0 规划 | ✅ | — | `.sisyphus/plans/UltraCPP-v0.2.0-c-asm-bootstrap-zh-CN.md` |
 | Phase 1 C-Lexer | ✅ | `cefc1c5` | `src-c/` 完整 C99 词法分析器，69/69 单元测试 |
 | Phase 1.1 字节级验证 | ✅ | `fbcb260` | Rust 加 `--dump-tokens`；7/7 测试程序 tokenize 等价 |
-| **Phase 2 AST + Parser** | 🔄 **进行中（待启动）** | — | 见 §7 "下一阶段具体任务" |
+| **Phase 2.1 C-AST** | ✅ | **`6ece689`** | `src-c/include/uc_ast.h` + `src-c/src/ast.c` + `tests/test_ast.c`；73/73 单元测试，ASAN+UBSan 净 |
+| Phase 2.2 parser skeleton + top-level | 🔄 待启动 | — | 见 §7 |
+| Phase 2.3 parser statements | ⏳ | — | 见 §7 |
+| Phase 2.4 parser expressions binary | ⏳ | — | 见 §7 |
+| Phase 2.5 parser expressions unary/postfix/literals | ⏳ | — | 见 §7 |
+| Phase 2.6 parser `--dump-ast` 字节级对齐 | ⏳ | — | 见 §7 |
 | Phase 3 C-Codegen | ⏳ | — | 未开始 |
 | Phase 4 C-CLI | ⏳ | — | 未开始 |
 | Phase 5 asm-Lexer | ⏳ | — | 未开始 |
@@ -22,14 +27,14 @@
 | Phase 7 Bootstrap | ⏳ | — | 未开始 |
 
 **当前分支**：`feature/borrow-check-verification`
-**最后提交**：`fbcb260`（Phase 1.1）
+**最后提交**：`6ece689`（Phase 2.1）
 **工作树位置**：`/home/zjtti/Coding/UltraCpp/.worktrees/borrow-check-verification`
 
 **回到这里的快速命令**：
 ```bash
 cd /home/zjtti/Coding/UltraCpp/.worktrees/borrow-check-verification
 git log --oneline -5                    # 看看进度
-make -C src-c test                       # 确认 Phase 1 通过
+make -C src-c test                       # 确认 Phase 1 + 2.1 通过（73 + 69）
 bash tools/tokenize_test.sh              # 确认字节级验证通过
 cat HANDOFF.md                           # 读快速恢复指南
 ```
@@ -329,4 +334,4 @@ src-c/src/ast.c              # AST 分配/释放/深拷贝
 
 ---
 
-*Last updated: Phase 1 + 1.1 已提交（`fbcb260`），Phase 2 待启动*
+*Last updated: Phase 1 + 1.1 + 2.1 已提交（`6ece689`），Phase 2.2 待启动*
