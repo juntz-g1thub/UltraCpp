@@ -217,6 +217,8 @@ static UCExpr* parse_comparison(UCParser* p);
 static UCExpr* parse_shift(UCParser* p);
 static UCExpr* parse_additive(UCParser* p);
 static UCExpr* parse_multiplicative(UCParser* p);
+static UCExpr* parse_unary(UCParser* p);
+static UCExpr* parse_postfix(UCParser* p);
 static UCExpr* parse_primary(UCParser* p);
 static UCVec* parse_func_params(UCParser* p);
 static UCParam* parse_one_param(UCParser* p);
@@ -1180,7 +1182,7 @@ static UCExpr* parse_additive(UCParser* p) {
 }
 
 static UCExpr* parse_multiplicative(UCParser* p) {
-    UCExpr* lhs = parse_primary(p);
+    UCExpr* lhs = parse_unary(p);
     if (is_err(p) || !lhs) return lhs;
     for (;;) {
         UCBinaryOp op;
@@ -1189,7 +1191,7 @@ static UCExpr* parse_multiplicative(UCParser* p) {
         else if (check(p, UC_TOK_OP_PERCENT)) op = UC_BIN_MOD;
         else break;
         advance(p);
-        UCExpr* rhs = parse_primary(p);
+        UCExpr* rhs = parse_unary(p);
         if (is_err(p) || !rhs) { uc_expr_free(lhs); return rhs; }
         lhs = uc_expr_binary(op, lhs, rhs);
     }
@@ -1201,9 +1203,165 @@ static UCExpr* parse_expression(UCParser* p) {
     return parse_assignment(p);
 }
 
-/* Primary: literals, identifiers, null, and parenthesised expressions.
- * Phase 2.5 will add unary and postfix forms between this and the
- * multiplicative level. */
+/* Unary prefix operators: right-associative (recurses on self).
+ *   '+ x'   identity (no AST node, recurses)
+ *   '- x'   Neg
+ *   '! x'   Not
+ *   '~ x'   BitNot
+ *   '& x'   AddrOf
+ *   '* x'   Deref   (in expression context; type-context `*` is handled
+ *                    by parse_type and never reaches this function)
+ *
+ * Forms the new layer between multiplicative and postfix in the
+ * precedence ladder. */
+static UCExpr* parse_unary(UCParser* p) {
+    if (check(p, UC_TOK_OP_PLUS)) {
+        advance(p);
+        return parse_unary(p);
+    }
+    if (check(p, UC_TOK_OP_MINUS)) {
+        advance(p);
+        UCExpr* operand = parse_unary(p);
+        if (is_err(p)) { uc_expr_free(operand); return NULL; }
+        if (!operand) {
+            err_here(p, "expected expression after '-'");
+            return NULL;
+        }
+        return uc_expr_unary(UC_UN_NEG, operand);
+    }
+    if (check(p, UC_TOK_OP_NOT)) {
+        advance(p);
+        UCExpr* operand = parse_unary(p);
+        if (is_err(p)) { uc_expr_free(operand); return NULL; }
+        if (!operand) {
+            err_here(p, "expected expression after '!'");
+            return NULL;
+        }
+        return uc_expr_unary(UC_UN_NOT, operand);
+    }
+    if (check(p, UC_TOK_OP_BIT_NOT)) {
+        advance(p);
+        UCExpr* operand = parse_unary(p);
+        if (is_err(p)) { uc_expr_free(operand); return NULL; }
+        if (!operand) {
+            err_here(p, "expected expression after '~'");
+            return NULL;
+        }
+        return uc_expr_unary(UC_UN_BIT_NOT, operand);
+    }
+    if (check(p, UC_TOK_OP_BIT_AND)) {
+        advance(p);
+        UCExpr* operand = parse_unary(p);
+        if (is_err(p)) { uc_expr_free(operand); return NULL; }
+        if (!operand) {
+            err_here(p, "expected expression after '&'");
+            return NULL;
+        }
+        return uc_expr_unary(UC_UN_ADDR_OF, operand);
+    }
+    if (check(p, UC_TOK_OP_STAR)) {
+        advance(p);
+        UCExpr* operand = parse_unary(p);
+        if (is_err(p)) { uc_expr_free(operand); return NULL; }
+        if (!operand) {
+            err_here(p, "expected expression after '*'");
+            return NULL;
+        }
+        return uc_expr_unary(UC_UN_DEREF, operand);
+    }
+    return parse_postfix(p);
+}
+
+/* Postfix operators: applied to a primary in left-to-right order.
+ *   '(args)'    Call
+ *   '.name'     FieldAccess
+ *   '->name'    FieldAccess on Deref(target)  -- i.e. (*x).name
+ *   '[index]'   Index
+ *
+ * `++` / `--` are not implemented because the C lexer does not yet emit
+ * UC_TOK_OP_INC / UC_TOK_OP_DEC (the Rust lexer does, see Phase 1.1). */
+static UCExpr* parse_postfix(UCParser* p) {
+    UCExpr* expr = parse_primary(p);
+    if (is_err(p) || !expr) return expr;
+
+    for (;;) {
+        if (check(p, UC_TOK_LPAREN)) {
+            advance(p);
+            UCVec* args = uc_vec_new();
+            if (!check(p, UC_TOK_RPAREN)) {
+                for (;;) {
+                    UCExpr* arg = parse_expression(p);
+                    if (is_err(p)) {
+                        uc_expr_free(arg);
+                        uc_expr_free(expr);
+                        uc_vec_free(args, NULL);
+                        return NULL;
+                    }
+                    if (!arg) {
+                        err_here(p, "expected call argument");
+                        uc_expr_free(expr);
+                        uc_vec_free(args, NULL);
+                        return NULL;
+                    }
+                    uc_vec_push(args, arg);
+                    if (!match(p, UC_TOK_COMMA)) break;
+                }
+            }
+            if (!expect(p, UC_TOK_RPAREN, "')' after call arguments")) {
+                uc_expr_free(expr);
+                uc_vec_free(args, NULL);
+                return NULL;
+            }
+            expr = uc_expr_call(expr, args);
+        } else if (match(p, UC_TOK_DOT)) {
+            if (!check(p, UC_TOK_IDENT)) {
+                err_here(p, "expected field name after '.'");
+                uc_expr_free(expr);
+                return NULL;
+            }
+            UCString field = uc_string_new(p->current.lexeme,
+                                           p->current.lexeme_len);
+            advance(p);
+            expr = uc_expr_field(expr, field);
+        } else if (match(p, UC_TOK_OP_ARROW)) {
+            if (!check(p, UC_TOK_IDENT)) {
+                err_here(p, "expected field name after '->'");
+                uc_expr_free(expr);
+                return NULL;
+            }
+            UCString field = uc_string_new(p->current.lexeme,
+                                           p->current.lexeme_len);
+            advance(p);
+            /* x->f  ==  (*x).f  */
+            UCExpr* deref = uc_expr_unary(UC_UN_DEREF, expr);
+            expr = uc_expr_field(deref, field);
+        } else if (match(p, UC_TOK_LBRACKET)) {
+            UCExpr* idx = parse_expression(p);
+            if (is_err(p)) {
+                uc_expr_free(idx);
+                uc_expr_free(expr);
+                return NULL;
+            }
+            if (!idx) {
+                err_here(p, "expected index expression inside '[]'");
+                uc_expr_free(expr);
+                return NULL;
+            }
+            if (!expect(p, UC_TOK_RBRACKET, "']' after index")) {
+                uc_expr_free(idx);
+                uc_expr_free(expr);
+                return NULL;
+            }
+            expr = uc_expr_index(expr, idx);
+        } else {
+            break;
+        }
+    }
+    return expr;
+}
+
+/* Primary: literals, identifiers, null, parenthesised expressions, and
+ * the move/clone wrappers. */
 static UCExpr* parse_primary(UCParser* p) {
     /* Parenthesised expression. */
     if (check(p, UC_TOK_LPAREN)) {
@@ -1219,6 +1377,40 @@ static UCExpr* parse_primary(UCParser* p) {
             return NULL;
         }
         return inner;
+    }
+
+    /* move(expr) */
+    if (check(p, UC_TOK_KW_MOVE)) {
+        advance(p);
+        if (!expect(p, UC_TOK_LPAREN, "'(' after 'move'")) return NULL;
+        UCExpr* inner = parse_expression(p);
+        if (is_err(p)) { uc_expr_free(inner); return NULL; }
+        if (!inner) {
+            err_here(p, "expected expression inside move(...)");
+            return NULL;
+        }
+        if (!expect(p, UC_TOK_RPAREN, "')' after move argument")) {
+            uc_expr_free(inner);
+            return NULL;
+        }
+        return uc_expr_move(inner);
+    }
+
+    /* clone(expr) */
+    if (check(p, UC_TOK_KW_CLONE)) {
+        advance(p);
+        if (!expect(p, UC_TOK_LPAREN, "'(' after 'clone'")) return NULL;
+        UCExpr* inner = parse_expression(p);
+        if (is_err(p)) { uc_expr_free(inner); return NULL; }
+        if (!inner) {
+            err_here(p, "expected expression inside clone(...)");
+            return NULL;
+        }
+        if (!expect(p, UC_TOK_RPAREN, "')' after clone argument")) {
+            uc_expr_free(inner);
+            return NULL;
+        }
+        return uc_expr_clone(inner);
     }
 
     UCTokenKind k = p->current.kind;

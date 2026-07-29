@@ -794,6 +794,229 @@ static void test_expr_for_cond_with_binary(void) {
 }
 
 /* ------------------------------------------------------------------------- */
+/* Phase 2.5 tests                                                            */
+/* ------------------------------------------------------------------------- */
+
+static void test_unary_neg(void) {
+    UCModule* m = parse_source("int f() { return -x; }");
+    ASSERT_TRUE(m != NULL); if (!m) return;
+    UCExpr* e = return_expr(m);
+    ASSERT_TRUE(e->kind == UC_EXPR_UNARY);
+    ASSERT_TRUE(e->as.unary.op == UC_UN_NEG);
+    ASSERT_TRUE(e->as.unary.operand->kind == UC_EXPR_IDENT);
+    uc_module_free(m);
+}
+
+static void test_unary_not_bitnot(void) {
+    UCModule* m = parse_source("int f() { return !x; }");
+    ASSERT_TRUE(m != NULL); if (!m) return;
+    UCExpr* e = return_expr(m);
+    ASSERT_TRUE(e->kind == UC_EXPR_UNARY);
+    ASSERT_TRUE(e->as.unary.op == UC_UN_NOT);
+    uc_module_free(m);
+
+    m = parse_source("int f() { return ~x; }");
+    ASSERT_TRUE(m != NULL); if (!m) return;
+    e = return_expr(m);
+    ASSERT_TRUE(e->kind == UC_EXPR_UNARY);
+    ASSERT_TRUE(e->as.unary.op == UC_UN_BIT_NOT);
+    uc_module_free(m);
+}
+
+static void test_unary_deref_addr_of(void) {
+    UCModule* m = parse_source("int f() { return *p; }");
+    ASSERT_TRUE(m != NULL); if (!m) return;
+    UCExpr* e = return_expr(m);
+    ASSERT_TRUE(e->kind == UC_EXPR_UNARY);
+    ASSERT_TRUE(e->as.unary.op == UC_UN_DEREF);
+    uc_module_free(m);
+
+    m = parse_source("int f() { return &x; }");
+    ASSERT_TRUE(m != NULL); if (!m) return;
+    e = return_expr(m);
+    ASSERT_TRUE(e->kind == UC_EXPR_UNARY);
+    ASSERT_TRUE(e->as.unary.op == UC_UN_ADDR_OF);
+    uc_module_free(m);
+}
+
+static void test_unary_double_neg(void) {
+    /* -(-x) should parse as Unary(Neg, Unary(Neg, x)). */
+    UCModule* m = parse_source("int f() { return -(-x); }");
+    ASSERT_TRUE(m != NULL); if (!m) return;
+    UCExpr* e = return_expr(m);
+    ASSERT_TRUE(e->kind == UC_EXPR_UNARY);
+    ASSERT_TRUE(e->as.unary.op == UC_UN_NEG);
+    ASSERT_TRUE(e->as.unary.operand->kind == UC_EXPR_UNARY);
+    ASSERT_TRUE(e->as.unary.operand->as.unary.op == UC_UN_NEG);
+    ASSERT_TRUE(e->as.unary.operand->as.unary.operand->kind == UC_EXPR_IDENT);
+    uc_module_free(m);
+}
+
+static void test_postfix_call_no_args(void) {
+    UCModule* m = parse_source("int f() { return main(); }");
+    ASSERT_TRUE(m != NULL); if (!m) return;
+    UCExpr* e = return_expr(m);
+    ASSERT_TRUE(e->kind == UC_EXPR_CALL);
+    ASSERT_EQ_INT((long long)uc_vec_len(e->as.call.args), 0);
+    ASSERT_TRUE(e->as.call.callee->kind == UC_EXPR_IDENT);
+    uc_module_free(m);
+}
+
+static void test_postfix_call_with_args(void) {
+    UCModule* m = parse_source("int f() { return foo(1, 2, 3); }");
+    ASSERT_TRUE(m != NULL); if (!m) return;
+    UCExpr* e = return_expr(m);
+    ASSERT_TRUE(e->kind == UC_EXPR_CALL);
+    ASSERT_EQ_INT((long long)uc_vec_len(e->as.call.args), 3);
+    uc_module_free(m);
+}
+
+static void test_postfix_field_access(void) {
+    UCModule* m = parse_source("int f() { return obj.field; }");
+    ASSERT_TRUE(m != NULL); if (!m) return;
+    UCExpr* e = return_expr(m);
+    ASSERT_TRUE(e->kind == UC_EXPR_FIELD);
+    ASSERT_EQ_STR(e->as.field.field.data, "field");
+    ASSERT_TRUE(e->as.field.target->kind == UC_EXPR_IDENT);
+    ASSERT_EQ_STR(e->as.field.target->as.ident.data, "obj");
+    uc_module_free(m);
+}
+
+static void test_postfix_dotted_call(void) {
+    /* io.print_str("hi") - the canonical test case. */
+    UCModule* m = parse_source(
+        "int f() { return io.print_str(\"hi\"); }");
+    ASSERT_TRUE(m != NULL); if (!m) return;
+    UCExpr* e = return_expr(m);
+    ASSERT_TRUE(e->kind == UC_EXPR_CALL);
+    /* callee: field access io.print_str */
+    UCExpr* callee = e->as.call.callee;
+    ASSERT_TRUE(callee->kind == UC_EXPR_FIELD);
+    ASSERT_EQ_STR(callee->as.field.field.data, "print_str");
+    ASSERT_TRUE(callee->as.field.target->kind == UC_EXPR_IDENT);
+    ASSERT_EQ_STR(callee->as.field.target->as.ident.data, "io");
+    /* one arg: string literal */
+    ASSERT_EQ_INT((long long)uc_vec_len(e->as.call.args), 1);
+    UCExpr* arg0 = (UCExpr*)uc_vec_at(e->as.call.args, 0);
+    ASSERT_TRUE(arg0->kind == UC_EXPR_LITERAL);
+    ASSERT_TRUE(arg0->as.literal.kind == UC_LIT_STRING);
+    ASSERT_EQ_STR(arg0->as.literal.as.string_val.data, "hi");
+    uc_module_free(m);
+}
+
+static void test_postfix_index(void) {
+    UCModule* m = parse_source("int f() { return a[i]; }");
+    ASSERT_TRUE(m != NULL); if (!m) return;
+    UCExpr* e = return_expr(m);
+    ASSERT_TRUE(e->kind == UC_EXPR_INDEX);
+    ASSERT_TRUE(e->as.index.target->kind == UC_EXPR_IDENT);
+    ASSERT_TRUE(e->as.index.index->kind == UC_EXPR_IDENT);
+    uc_module_free(m);
+}
+
+static void test_postfix_arrow_deref(void) {
+    /* p->field should parse as FieldAccess(Deref(p), field). */
+    UCModule* m = parse_source("int f() { return p->field; }");
+    ASSERT_TRUE(m != NULL); if (!m) return;
+    UCExpr* e = return_expr(m);
+    ASSERT_TRUE(e->kind == UC_EXPR_FIELD);
+    ASSERT_EQ_STR(e->as.field.field.data, "field");
+    ASSERT_TRUE(e->as.field.target->kind == UC_EXPR_UNARY);
+    ASSERT_TRUE(e->as.field.target->as.unary.op == UC_UN_DEREF);
+    ASSERT_TRUE(e->as.field.target->as.unary.operand->kind == UC_EXPR_IDENT);
+    uc_module_free(m);
+}
+
+static void test_postfix_chain(void) {
+    /* a.b.c() should be Call(Field(c, Field(b, a))). */
+    UCModule* m = parse_source("int f() { return a.b.c(); }");
+    ASSERT_TRUE(m != NULL); if (!m) return;
+    UCExpr* e = return_expr(m);
+    ASSERT_TRUE(e->kind == UC_EXPR_CALL);
+    ASSERT_EQ_INT((long long)uc_vec_len(e->as.call.args), 0);
+    UCExpr* outer_field = e->as.call.callee;
+    ASSERT_TRUE(outer_field->kind == UC_EXPR_FIELD);
+    ASSERT_EQ_STR(outer_field->as.field.field.data, "c");
+    UCExpr* inner_field = outer_field->as.field.target;
+    ASSERT_TRUE(inner_field->kind == UC_EXPR_FIELD);
+    ASSERT_EQ_STR(inner_field->as.field.field.data, "b");
+    ASSERT_TRUE(inner_field->as.field.target->kind == UC_EXPR_IDENT);
+    uc_module_free(m);
+}
+
+static void test_postfix_in_binary(void) {
+    /* f() + g() should be Binary(Add, Call(f), Call(g)). */
+    UCModule* m = parse_source("int f() { return f() + g(); }");
+    ASSERT_TRUE(m != NULL); if (!m) return;
+    UCExpr* e = return_expr(m);
+    ASSERT_TRUE(e->kind == UC_EXPR_BINARY);
+    ASSERT_TRUE(e->as.binary.op == UC_BIN_ADD);
+    ASSERT_TRUE(e->as.binary.lhs->kind == UC_EXPR_CALL);
+    ASSERT_TRUE(e->as.binary.rhs->kind == UC_EXPR_CALL);
+    uc_module_free(m);
+}
+
+static void test_move_clone(void) {
+    UCModule* m = parse_source("int f() { return move(x); }");
+    ASSERT_TRUE(m != NULL); if (!m) return;
+    UCExpr* e = return_expr(m);
+    ASSERT_TRUE(e->kind == UC_EXPR_MOVE);
+    ASSERT_TRUE(e->as.move_expr->kind == UC_EXPR_IDENT);
+    uc_module_free(m);
+
+    m = parse_source("int f() { return clone(y); }");
+    ASSERT_TRUE(m != NULL); if (!m) return;
+    e = return_expr(m);
+    ASSERT_TRUE(e->kind == UC_EXPR_CLONE);
+    ASSERT_TRUE(e->as.clone_expr->kind == UC_EXPR_IDENT);
+    uc_module_free(m);
+}
+
+/* End-to-end: parse the existing test programs verbatim. */
+static void test_real_program_hello_world(void) {
+    UCModule* m = parse_source(
+        "#import \"lib/io\"\n"
+        "\n"
+        "int main() {\n"
+        "    io.print_str(\"Hello, World!\\n\");\n"
+        "    return 0;\n"
+        "}\n");
+    ASSERT_TRUE(m != NULL); if (!m) return;
+    ASSERT_EQ_INT((long long)uc_vec_len(m->declarations), 1);
+    UCTopLevel* tl = (UCTopLevel*)uc_vec_at(m->declarations, 0);
+    ASSERT_TRUE(tl->kind == UC_TL_FUNC_DEF);
+    ASSERT_EQ_STR(tl->as.func_def->name.data, "main");
+    UCStmt* body = tl->as.func_def->body;
+    ASSERT_EQ_INT((long long)uc_vec_len(body->as.block), 2);
+    /* [0] io.print_str(...); [1] return 0; */
+    UCStmt* s0 = block_stmt_at(body, 0);
+    ASSERT_TRUE(s0->kind == UC_STMT_EXPR);
+    ASSERT_TRUE(s0->as.expr->kind == UC_EXPR_CALL);
+    UCStmt* s1 = block_stmt_at(body, 1);
+    ASSERT_TRUE(s1->kind == UC_STMT_RETURN);
+    uc_module_free(m);
+}
+
+static void test_real_program_io(void) {
+    UCModule* m = parse_source(
+        "#import <io>\n"
+        "\n"
+        "int main() {\n"
+        "    int x = io.getValue();\n"
+        "    return x;\n"
+        "}\n");
+    ASSERT_TRUE(m != NULL); if (!m) return;
+    ASSERT_EQ_INT((long long)uc_vec_len(m->declarations), 1);
+    UCTopLevel* tl = (UCTopLevel*)uc_vec_at(m->declarations, 0);
+    UCStmt* body = tl->as.func_def->body;
+    ASSERT_EQ_INT((long long)uc_vec_len(body->as.block), 2);
+    UCStmt* s0 = block_stmt_at(body, 0);
+    ASSERT_TRUE(s0->kind == UC_STMT_DECL);
+    ASSERT_TRUE(s0->as.decl->init->kind == UC_EXPR_CALL);
+    uc_module_free(m);
+}
+
+/* ------------------------------------------------------------------------- */
 /* main                                                                      */
 /* ------------------------------------------------------------------------- */
 int main(void) {
@@ -849,6 +1072,25 @@ int main(void) {
     RUN(test_expr_complex_precedence);
     RUN(test_expr_if_condition_with_binary);
     RUN(test_expr_for_cond_with_binary);
+
+    /* Phase 2.5: unary and postfix */
+    RUN(test_unary_neg);
+    RUN(test_unary_not_bitnot);
+    RUN(test_unary_deref_addr_of);
+    RUN(test_unary_double_neg);
+    RUN(test_postfix_call_no_args);
+    RUN(test_postfix_call_with_args);
+    RUN(test_postfix_field_access);
+    RUN(test_postfix_dotted_call);
+    RUN(test_postfix_index);
+    RUN(test_postfix_arrow_deref);
+    RUN(test_postfix_chain);
+    RUN(test_postfix_in_binary);
+    RUN(test_move_clone);
+
+    /* Phase 2.5: end-to-end test programs from test/ */
+    RUN(test_real_program_hello_world);
+    RUN(test_real_program_io);
 
     RUN(test_error_missing_semicolon_var);
     RUN(test_error_missing_semicolon_import);
