@@ -205,7 +205,19 @@ static UCStmt* parse_expr_stmt(UCParser* p);
 static UCStmt* parse_decl_stmt(UCParser* p, UCType* ty);
 static UCStmt* parse_free_stmt(UCParser* p);
 static UCStmt* parse_unsafe_stmt(UCParser* p);
-static UCExpr* parse_expr_minimal(UCParser* p);
+static UCExpr* parse_expression(UCParser* p);
+static UCExpr* parse_assignment(UCParser* p);
+static UCExpr* parse_or(UCParser* p);
+static UCExpr* parse_and(UCParser* p);
+static UCExpr* parse_bitwise_or(UCParser* p);
+static UCExpr* parse_bitwise_xor(UCParser* p);
+static UCExpr* parse_bitwise_and(UCParser* p);
+static UCExpr* parse_equality(UCParser* p);
+static UCExpr* parse_comparison(UCParser* p);
+static UCExpr* parse_shift(UCParser* p);
+static UCExpr* parse_additive(UCParser* p);
+static UCExpr* parse_multiplicative(UCParser* p);
+static UCExpr* parse_primary(UCParser* p);
 static UCVec* parse_func_params(UCParser* p);
 static UCParam* parse_one_param(UCParser* p);
 static int looks_like_type_start(const UCParser* p);
@@ -564,7 +576,7 @@ static UCTopLevel* parse_var_or_func(UCParser* p, UCType* ret_ty) {
 
     UCExpr* init = NULL;
     if (match(p, UC_TOK_OP_ASSIGN)) {
-        init = parse_expr_minimal(p);
+        init = parse_expression(p);
         if (is_err(p)) {
             uc_string_free(&name);
             uc_type_free(ret_ty);
@@ -725,7 +737,7 @@ static UCStmt* parse_return_stmt(UCParser* p) {
     advance(p);
     UCExpr* val = NULL;
     if (!check(p, UC_TOK_SEMICOLON)) {
-        val = parse_expr_minimal(p);
+        val = parse_expression(p);
         if (is_err(p)) { uc_expr_free(val); return NULL; }
         if (!val) {
             err_here(p, "expected expression after 'return'");
@@ -742,7 +754,7 @@ static UCStmt* parse_return_stmt(UCParser* p) {
 static UCStmt* parse_if_stmt(UCParser* p) {
     advance(p);  /* consume 'if' */
     if (!expect(p, UC_TOK_LPAREN, "'(' after 'if'")) return NULL;
-    UCExpr* cond = parse_expr_minimal(p);
+    UCExpr* cond = parse_expression(p);
     if (is_err(p)) { uc_expr_free(cond); return NULL; }
     if (!cond) {
         err_here(p, "expected condition expression");
@@ -779,7 +791,7 @@ static UCStmt* parse_if_stmt(UCParser* p) {
 static UCStmt* parse_while_stmt(UCParser* p) {
     advance(p);
     if (!expect(p, UC_TOK_LPAREN, "'(' after 'while'")) return NULL;
-    UCExpr* cond = parse_expr_minimal(p);
+    UCExpr* cond = parse_expression(p);
     if (is_err(p)) { uc_expr_free(cond); return NULL; }
     if (!cond) {
         err_here(p, "expected condition expression");
@@ -814,7 +826,7 @@ static UCStmt* parse_for_stmt(UCParser* p) {
 
     UCExpr* cond = NULL;
     if (!check(p, UC_TOK_SEMICOLON)) {
-        cond = parse_expr_minimal(p);
+        cond = parse_expression(p);
         if (is_err(p)) { uc_stmt_free(init); uc_expr_free(cond); return NULL; }
         if (!cond) {
             uc_stmt_free(init);
@@ -830,7 +842,7 @@ static UCStmt* parse_for_stmt(UCParser* p) {
 
     UCExpr* step = NULL;
     if (!check(p, UC_TOK_RPAREN)) {
-        step = parse_expr_minimal(p);
+        step = parse_expression(p);
         if (is_err(p)) {
             uc_stmt_free(init);
             uc_expr_free(cond);
@@ -898,7 +910,7 @@ static UCStmt* parse_continue_stmt(UCParser* p) {
 }
 
 static UCStmt* parse_expr_stmt(UCParser* p) {
-    UCExpr* e = parse_expr_minimal(p);
+    UCExpr* e = parse_expression(p);
     if (is_err(p)) { uc_expr_free(e); return NULL; }
     if (!e) {
         err_here(p, "expected expression");
@@ -924,7 +936,7 @@ static UCStmt* parse_decl_stmt(UCParser* p, UCType* ty) {
 
     UCExpr* init = NULL;
     if (match(p, UC_TOK_OP_ASSIGN)) {
-        init = parse_expr_minimal(p);
+        init = parse_expression(p);
         if (is_err(p)) {
             uc_string_free(&name);
             uc_type_free(ty);
@@ -952,7 +964,7 @@ static UCStmt* parse_decl_stmt(UCParser* p, UCType* ty) {
 static UCStmt* parse_free_stmt(UCParser* p) {
     advance(p);  /* consume 'free' */
     if (!expect(p, UC_TOK_LPAREN, "'(' after 'free'")) return NULL;
-    UCExpr* e = parse_expr_minimal(p);
+    UCExpr* e = parse_expression(p);
     if (is_err(p)) { uc_expr_free(e); return NULL; }
     if (!e) {
         err_here(p, "expected expression inside free(...)");
@@ -1004,7 +1016,211 @@ static UCExpr* expr_ident(UCString name) {
     return e;
 }
 
-static UCExpr* parse_expr_minimal(UCParser* p) {
+/* ------------------------------------------------------------------------- */
+/* Expressions (Phase 2.4: binary operators)                                */
+/*                                                                           */
+/* Precedence climbing via recursive descent, mirroring                      */
+/* src/frontend/parser.rs. Lowest to highest:                                */
+/*   assignment  (=, right-associative)                                      */
+/*     or        (||)                                                        */
+/*       and     (&&)                                                        */
+/*         bit_or  (|)                                                        */
+/*           bit_xor (^)                                                      */
+/*             bit_and (&)                                                   */
+/*               equality (== !=)                                             */
+/*                 comparison (< > <= >=)                                    */
+/*                   shift (<< >>)                                            */
+/*                     additive (+ -)                                         */
+/*                       multiplicative (* / %)                              */
+/*                         primary (literals, idents, parens)                */
+/*                                                                           */
+/* Phase 2.5 will add unary (- ! ~ * &) and postfix (call field index)       */
+/* BETWEEN primary and multiplicative.                                       */
+/* ------------------------------------------------------------------------- */
+
+/* Assignment (right-associative).
+ * Only '=' is supported here; compound-assignment (+=, -=, ...) requires
+ * lexer support that is documented as a known bug in src/frontend/lexer.rs
+ * (Phase 1.1 §9.1) and will arrive when that lands. */
+static UCExpr* parse_assignment(UCParser* p) {
+    UCExpr* lhs = parse_or(p);
+    if (is_err(p) || !lhs) return lhs;
+    if (match(p, UC_TOK_OP_ASSIGN)) {
+        UCExpr* rhs = parse_assignment(p);
+        if (is_err(p) || !rhs) { uc_expr_free(lhs); return rhs; }
+        return uc_expr_binary(UC_BIN_ASSIGN, lhs, rhs);
+    }
+    return lhs;
+}
+
+static UCExpr* parse_or(UCParser* p) {
+    UCExpr* lhs = parse_and(p);
+    if (is_err(p) || !lhs) return lhs;
+    while (check(p, UC_TOK_OP_OR)) {
+        advance(p);
+        UCExpr* rhs = parse_and(p);
+        if (is_err(p) || !rhs) { uc_expr_free(lhs); return rhs; }
+        lhs = uc_expr_binary(UC_BIN_OR, lhs, rhs);
+    }
+    return lhs;
+}
+
+static UCExpr* parse_and(UCParser* p) {
+    UCExpr* lhs = parse_bitwise_or(p);
+    if (is_err(p) || !lhs) return lhs;
+    while (check(p, UC_TOK_OP_AND)) {
+        advance(p);
+        UCExpr* rhs = parse_bitwise_or(p);
+        if (is_err(p) || !rhs) { uc_expr_free(lhs); return rhs; }
+        lhs = uc_expr_binary(UC_BIN_AND, lhs, rhs);
+    }
+    return lhs;
+}
+
+static UCExpr* parse_bitwise_or(UCParser* p) {
+    UCExpr* lhs = parse_bitwise_xor(p);
+    if (is_err(p) || !lhs) return lhs;
+    while (check(p, UC_TOK_OP_BIT_OR)) {
+        advance(p);
+        UCExpr* rhs = parse_bitwise_xor(p);
+        if (is_err(p) || !rhs) { uc_expr_free(lhs); return rhs; }
+        lhs = uc_expr_binary(UC_BIN_BIT_OR, lhs, rhs);
+    }
+    return lhs;
+}
+
+static UCExpr* parse_bitwise_xor(UCParser* p) {
+    UCExpr* lhs = parse_bitwise_and(p);
+    if (is_err(p) || !lhs) return lhs;
+    while (check(p, UC_TOK_OP_BIT_XOR)) {
+        advance(p);
+        UCExpr* rhs = parse_bitwise_and(p);
+        if (is_err(p) || !rhs) { uc_expr_free(lhs); return rhs; }
+        lhs = uc_expr_binary(UC_BIN_BIT_XOR, lhs, rhs);
+    }
+    return lhs;
+}
+
+static UCExpr* parse_bitwise_and(UCParser* p) {
+    UCExpr* lhs = parse_equality(p);
+    if (is_err(p) || !lhs) return lhs;
+    while (check(p, UC_TOK_OP_BIT_AND)) {
+        advance(p);
+        UCExpr* rhs = parse_equality(p);
+        if (is_err(p) || !rhs) { uc_expr_free(lhs); return rhs; }
+        lhs = uc_expr_binary(UC_BIN_BIT_AND, lhs, rhs);
+    }
+    return lhs;
+}
+
+static UCExpr* parse_equality(UCParser* p) {
+    UCExpr* lhs = parse_comparison(p);
+    if (is_err(p) || !lhs) return lhs;
+    for (;;) {
+        UCBinaryOp op;
+        if (check(p, UC_TOK_OP_EQ))      op = UC_BIN_EQ;
+        else if (check(p, UC_TOK_OP_NE)) op = UC_BIN_NE;
+        else break;
+        advance(p);
+        UCExpr* rhs = parse_comparison(p);
+        if (is_err(p) || !rhs) { uc_expr_free(lhs); return rhs; }
+        lhs = uc_expr_binary(op, lhs, rhs);
+    }
+    return lhs;
+}
+
+static UCExpr* parse_comparison(UCParser* p) {
+    UCExpr* lhs = parse_shift(p);
+    if (is_err(p) || !lhs) return lhs;
+    for (;;) {
+        UCBinaryOp op;
+        if      (check(p, UC_TOK_OP_LT)) op = UC_BIN_LT;
+        else if (check(p, UC_TOK_OP_GT)) op = UC_BIN_GT;
+        else if (check(p, UC_TOK_OP_LE)) op = UC_BIN_LE;
+        else if (check(p, UC_TOK_OP_GE)) op = UC_BIN_GE;
+        else break;
+        advance(p);
+        UCExpr* rhs = parse_shift(p);
+        if (is_err(p) || !rhs) { uc_expr_free(lhs); return rhs; }
+        lhs = uc_expr_binary(op, lhs, rhs);
+    }
+    return lhs;
+}
+
+static UCExpr* parse_shift(UCParser* p) {
+    UCExpr* lhs = parse_additive(p);
+    if (is_err(p) || !lhs) return lhs;
+    for (;;) {
+        UCBinaryOp op;
+        if      (check(p, UC_TOK_OP_SHL)) op = UC_BIN_SHL;
+        else if (check(p, UC_TOK_OP_SHR)) op = UC_BIN_SHR;
+        else break;
+        advance(p);
+        UCExpr* rhs = parse_additive(p);
+        if (is_err(p) || !rhs) { uc_expr_free(lhs); return rhs; }
+        lhs = uc_expr_binary(op, lhs, rhs);
+    }
+    return lhs;
+}
+
+static UCExpr* parse_additive(UCParser* p) {
+    UCExpr* lhs = parse_multiplicative(p);
+    if (is_err(p) || !lhs) return lhs;
+    for (;;) {
+        UCBinaryOp op;
+        if      (check(p, UC_TOK_OP_PLUS))  op = UC_BIN_ADD;
+        else if (check(p, UC_TOK_OP_MINUS)) op = UC_BIN_SUB;
+        else break;
+        advance(p);
+        UCExpr* rhs = parse_multiplicative(p);
+        if (is_err(p) || !rhs) { uc_expr_free(lhs); return rhs; }
+        lhs = uc_expr_binary(op, lhs, rhs);
+    }
+    return lhs;
+}
+
+static UCExpr* parse_multiplicative(UCParser* p) {
+    UCExpr* lhs = parse_primary(p);
+    if (is_err(p) || !lhs) return lhs;
+    for (;;) {
+        UCBinaryOp op;
+        if      (check(p, UC_TOK_OP_STAR))    op = UC_BIN_MUL;
+        else if (check(p, UC_TOK_OP_SLASH))   op = UC_BIN_DIV;
+        else if (check(p, UC_TOK_OP_PERCENT)) op = UC_BIN_MOD;
+        else break;
+        advance(p);
+        UCExpr* rhs = parse_primary(p);
+        if (is_err(p) || !rhs) { uc_expr_free(lhs); return rhs; }
+        lhs = uc_expr_binary(op, lhs, rhs);
+    }
+    return lhs;
+}
+
+/* Top-level entry for expressions. */
+static UCExpr* parse_expression(UCParser* p) {
+    return parse_assignment(p);
+}
+
+/* Primary: literals, identifiers, null, and parenthesised expressions.
+ * Phase 2.5 will add unary and postfix forms between this and the
+ * multiplicative level. */
+static UCExpr* parse_primary(UCParser* p) {
+    /* Parenthesised expression. */
+    if (check(p, UC_TOK_LPAREN)) {
+        advance(p);
+        UCExpr* inner = parse_expression(p);
+        if (is_err(p)) { uc_expr_free(inner); return NULL; }
+        if (!inner) {
+            err_here(p, "expected expression inside parentheses");
+            return NULL;
+        }
+        if (!expect(p, UC_TOK_RPAREN, "')' to close parenthesised expression")) {
+            uc_expr_free(inner);
+            return NULL;
+        }
+        return inner;
+    }
+
     UCTokenKind k = p->current.kind;
     switch (k) {
         case UC_TOK_INT: {

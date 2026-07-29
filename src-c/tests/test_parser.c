@@ -626,6 +626,174 @@ static void test_stmt_complex_nesting(void) {
 }
 
 /* ------------------------------------------------------------------------- */
+/* Expression tests (Phase 2.4)                                              */
+/* ------------------------------------------------------------------------- */
+
+/* Helper: extract the return expression of an `int f() { return e; }`. */
+static UCExpr* return_expr(const UCModule* m) {
+    UCTopLevel* tl = (UCTopLevel*)uc_vec_at(m->declarations, 0);
+    UCStmt* body = tl->as.func_def->body;
+    UCStmt* ret = (UCStmt*)uc_vec_at(body->as.block, 0);
+    return ret->as.ret;
+}
+
+static void test_expr_additive(void) {
+    UCModule* m = parse_source("int f() { return 1 + 2; }");
+    ASSERT_TRUE(m != NULL); if (!m) return;
+    UCExpr* e = return_expr(m);
+    ASSERT_TRUE(e->kind == UC_EXPR_BINARY);
+    ASSERT_TRUE(e->as.binary.op == UC_BIN_ADD);
+    ASSERT_EQ_INT(e->as.binary.lhs->as.literal.as.int_val, 1);
+    ASSERT_EQ_INT(e->as.binary.rhs->as.literal.as.int_val, 2);
+    uc_module_free(m);
+}
+
+static void test_expr_multiplicative_precedence(void) {
+    /* 1 + 2 * 3 should parse as 1 + (2 * 3). */
+    UCModule* m = parse_source("int f() { return 1 + 2 * 3; }");
+    ASSERT_TRUE(m != NULL); if (!m) return;
+    UCExpr* e = return_expr(m);
+    ASSERT_TRUE(e->kind == UC_EXPR_BINARY);
+    ASSERT_TRUE(e->as.binary.op == UC_BIN_ADD);
+    ASSERT_EQ_INT(e->as.binary.lhs->as.literal.as.int_val, 1);
+    ASSERT_TRUE(e->as.binary.rhs->kind == UC_EXPR_BINARY);
+    ASSERT_TRUE(e->as.binary.rhs->as.binary.op == UC_BIN_MUL);
+    ASSERT_EQ_INT(e->as.binary.rhs->as.binary.lhs->as.literal.as.int_val, 2);
+    ASSERT_EQ_INT(e->as.binary.rhs->as.binary.rhs->as.literal.as.int_val, 3);
+    uc_module_free(m);
+}
+
+static void test_expr_equality_and_compare(void) {
+    UCModule* m = parse_source("int f() { return a == b && x < y; }");
+    ASSERT_TRUE(m != NULL); if (!m) return;
+    UCExpr* e = return_expr(m);
+    ASSERT_TRUE(e->kind == UC_EXPR_BINARY);
+    ASSERT_TRUE(e->as.binary.op == UC_BIN_AND);
+    ASSERT_TRUE(e->as.binary.lhs->kind == UC_EXPR_BINARY);
+    ASSERT_TRUE(e->as.binary.lhs->as.binary.op == UC_BIN_EQ);
+    ASSERT_TRUE(e->as.binary.rhs->kind == UC_EXPR_BINARY);
+    ASSERT_TRUE(e->as.binary.rhs->as.binary.op == UC_BIN_LT);
+    uc_module_free(m);
+}
+
+static void test_expr_logical_and_or(void) {
+    UCModule* m = parse_source("int f() { return a || b && c; }");
+    ASSERT_TRUE(m != NULL); if (!m) return;
+    UCExpr* e = return_expr(m);
+    /* && binds tighter than || -> a || (b && c) */
+    ASSERT_TRUE(e->kind == UC_EXPR_BINARY);
+    ASSERT_TRUE(e->as.binary.op == UC_BIN_OR);
+    ASSERT_TRUE(e->as.binary.lhs->kind == UC_EXPR_IDENT);
+    ASSERT_TRUE(e->as.binary.rhs->kind == UC_EXPR_BINARY);
+    ASSERT_TRUE(e->as.binary.rhs->as.binary.op == UC_BIN_AND);
+    uc_module_free(m);
+}
+
+static void test_expr_bitwise(void) {
+    UCModule* m = parse_source("int f() { return a | b & c ^ d; }");
+    ASSERT_TRUE(m != NULL); if (!m) return;
+    UCExpr* e = return_expr(m);
+    /* precedence (lowest to highest): |  <  ^  <  &
+     * so `a | b & c ^ d` parses as `a | (b ^ (c & d))`. */
+    ASSERT_TRUE(e->kind == UC_EXPR_BINARY);
+    ASSERT_TRUE(e->as.binary.op == UC_BIN_BIT_OR);
+    ASSERT_TRUE(e->as.binary.lhs->kind == UC_EXPR_IDENT);
+    ASSERT_EQ_STR(e->as.binary.lhs->as.ident.data, "a");
+    ASSERT_TRUE(e->as.binary.rhs->kind == UC_EXPR_BINARY);
+    ASSERT_TRUE(e->as.binary.rhs->as.binary.op == UC_BIN_BIT_XOR);
+    /* rhs.rhs is `d` (ident); rhs.lhs is `(c & d)`. */
+    ASSERT_TRUE(e->as.binary.rhs->as.binary.rhs->kind == UC_EXPR_IDENT);
+    ASSERT_EQ_STR(e->as.binary.rhs->as.binary.rhs->as.ident.data, "d");
+    ASSERT_TRUE(e->as.binary.rhs->as.binary.lhs->kind == UC_EXPR_BINARY);
+    ASSERT_TRUE(e->as.binary.rhs->as.binary.lhs->as.binary.op == UC_BIN_BIT_AND);
+    uc_module_free(m);
+}
+
+static void test_expr_shift(void) {
+    UCModule* m = parse_source("int f() { return 1 << 2 >> 3; }");
+    ASSERT_TRUE(m != NULL); if (!m) return;
+    UCExpr* e = return_expr(m);
+    /* Left-associative: (1 << 2) >> 3 */
+    ASSERT_TRUE(e->kind == UC_EXPR_BINARY);
+    ASSERT_TRUE(e->as.binary.op == UC_BIN_SHR);
+    ASSERT_TRUE(e->as.binary.lhs->kind == UC_EXPR_BINARY);
+    ASSERT_TRUE(e->as.binary.lhs->as.binary.op == UC_BIN_SHL);
+    uc_module_free(m);
+}
+
+static void test_expr_assignment_right_assoc(void) {
+    /* a = b = 5 should parse as a = (b = 5). */
+    UCModule* m = parse_source("int f() { a = b = 5; return 0; }");
+    ASSERT_TRUE(m != NULL); if (!m) return;
+    UCStmt* s0 = block_stmt_at(func_body(m), 0);
+    ASSERT_TRUE(s0->kind == UC_STMT_EXPR);
+    UCExpr* e = s0->as.expr;
+    ASSERT_TRUE(e->kind == UC_EXPR_BINARY);
+    ASSERT_TRUE(e->as.binary.op == UC_BIN_ASSIGN);
+    ASSERT_EQ_STR(e->as.binary.lhs->as.ident.data, "a");
+    ASSERT_TRUE(e->as.binary.rhs->kind == UC_EXPR_BINARY);
+    ASSERT_TRUE(e->as.binary.rhs->as.binary.op == UC_BIN_ASSIGN);
+    ASSERT_EQ_STR(e->as.binary.rhs->as.binary.lhs->as.ident.data, "b");
+    ASSERT_EQ_INT(e->as.binary.rhs->as.binary.rhs->as.literal.as.int_val, 5);
+    uc_module_free(m);
+}
+
+static void test_expr_parenthesised(void) {
+    UCModule* m = parse_source("int f() { return (1 + 2) * 3; }");
+    ASSERT_TRUE(m != NULL); if (!m) return;
+    UCExpr* e = return_expr(m);
+    ASSERT_TRUE(e->kind == UC_EXPR_BINARY);
+    ASSERT_TRUE(e->as.binary.op == UC_BIN_MUL);
+    ASSERT_TRUE(e->as.binary.lhs->kind == UC_EXPR_BINARY);
+    ASSERT_TRUE(e->as.binary.lhs->as.binary.op == UC_BIN_ADD);
+    ASSERT_EQ_INT(e->as.binary.rhs->as.literal.as.int_val, 3);
+    uc_module_free(m);
+}
+
+static void test_expr_complex_precedence(void) {
+    /* a + b * c == d  ->  (a + (b * c)) == d */
+    UCModule* m = parse_source("int f() { return a + b * c == d; }");
+    ASSERT_TRUE(m != NULL); if (!m) return;
+    UCExpr* e = return_expr(m);
+    ASSERT_TRUE(e->kind == UC_EXPR_BINARY);
+    ASSERT_TRUE(e->as.binary.op == UC_BIN_EQ);
+    ASSERT_TRUE(e->as.binary.lhs->kind == UC_EXPR_BINARY);
+    ASSERT_TRUE(e->as.binary.lhs->as.binary.op == UC_BIN_ADD);
+    ASSERT_TRUE(e->as.binary.lhs->as.binary.rhs->kind == UC_EXPR_BINARY);
+    ASSERT_TRUE(e->as.binary.lhs->as.binary.rhs->as.binary.op == UC_BIN_MUL);
+    uc_module_free(m);
+}
+
+static void test_expr_if_condition_with_binary(void) {
+    UCModule* m = parse_source(
+        "int f() { if (a == b) { return 1; } return 0; }");
+    ASSERT_TRUE(m != NULL); if (!m) return;
+    UCStmt* s0 = block_stmt_at(func_body(m), 0);
+    ASSERT_TRUE(s0->kind == UC_STMT_IF);
+    ASSERT_TRUE(s0->as.if_stmt.cond->kind == UC_EXPR_BINARY);
+    ASSERT_TRUE(s0->as.if_stmt.cond->as.binary.op == UC_BIN_EQ);
+    uc_module_free(m);
+}
+
+static void test_expr_for_cond_with_binary(void) {
+    UCModule* m = parse_source(
+        "int f() { for (int i = 0; i < 10; i = i + 1) { } return 0; }");
+    ASSERT_TRUE(m != NULL); if (!m) return;
+    UCStmt* s0 = block_stmt_at(func_body(m), 0);
+    ASSERT_TRUE(s0->kind == UC_STMT_FOR);
+    /* cond: i < 10 */
+    ASSERT_TRUE(s0->as.for_stmt.cond->kind == UC_EXPR_BINARY);
+    ASSERT_TRUE(s0->as.for_stmt.cond->as.binary.op == UC_BIN_LT);
+    ASSERT_EQ_STR(s0->as.for_stmt.cond->as.binary.lhs->as.ident.data, "i");
+    ASSERT_EQ_INT(s0->as.for_stmt.cond->as.binary.rhs->as.literal.as.int_val,
+                  10);
+    /* step: i = i + 1 */
+    ASSERT_TRUE(s0->as.for_stmt.step->kind == UC_EXPR_BINARY);
+    ASSERT_TRUE(s0->as.for_stmt.step->as.binary.op == UC_BIN_ASSIGN);
+    uc_module_free(m);
+}
+
+/* ------------------------------------------------------------------------- */
 /* main                                                                      */
 /* ------------------------------------------------------------------------- */
 int main(void) {
@@ -668,6 +836,19 @@ int main(void) {
     RUN(test_stmt_unsafe_block);
     RUN(test_stmt_nested_blocks);
     RUN(test_stmt_complex_nesting);
+
+    /* Phase 2.4: binary operators */
+    RUN(test_expr_additive);
+    RUN(test_expr_multiplicative_precedence);
+    RUN(test_expr_equality_and_compare);
+    RUN(test_expr_logical_and_or);
+    RUN(test_expr_bitwise);
+    RUN(test_expr_shift);
+    RUN(test_expr_assignment_right_assoc);
+    RUN(test_expr_parenthesised);
+    RUN(test_expr_complex_precedence);
+    RUN(test_expr_if_condition_with_binary);
+    RUN(test_expr_for_cond_with_binary);
 
     RUN(test_error_missing_semicolon_var);
     RUN(test_error_missing_semicolon_import);
