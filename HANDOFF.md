@@ -9,10 +9,10 @@
 ```bash
 # 1. 确认所在 worktree（避免误操作 main repo）
 pwd                                        # 应输出 .../borrow-check-verification
-git log --oneline -5                       # 应看到七个新提交 ...、0c8143f、83645f6、ce95497
+git log --oneline -5                       # 应看到八个新提交 ...、ce95497、b3f3b63
 
-# 2. 确认 Phase 1 + 2.1 + 2.2 + 2.3 + 2.4 + 2.5 仍能通过
-make -C src-c test                         # 应输出 "73+69+341 tests passed"
+# 2. 确认 Phase 1 + 2.1 + 2.2 + 2.3 + 2.4 + 2.5 + 2.6 仍能通过
+make -C src-c test                         # 应输出 "73+69+339 tests passed"
 
 # 2b. 验证 5 个现有测试程序均能完整 parse
 for f in test/test_t1 test/test_t2 test/test_t3 \
@@ -41,7 +41,7 @@ bash tools/ast_test.sh                     # 应输出 "5 passed, 0 failed"
 | **2.3** | **parser statements** | **✅** | **`0c8143f`** |
 | **2.4** | **parser expressions binary** | **✅** | **`83645f6`** |
 | **2.5** | **parser expressions unary/postfix** | **✅** | **`ce95497`** |
-| **2.6** | **与 Rust `--dump-ast` 字节级对齐** | **✅** | **`01afb88`** |
+| **2.6** | **与 Rust `--dump-ast` 字节级对齐** | **✅** | **`b3f3b63`** |
 | **3** | **C-Codegen（LLVM IR）** | **🔄 待启动** | — |
 | 3 | C-Codegen | ⏳ | — |
 | 4 | C-CLI | ⏳ | — |
@@ -262,4 +262,4 @@ git push -u origin feature/borrow-check-verification
 
 ---
 
-*最后更新：Phase 1 + 1.1 + 2.1 + 2.2 + 2.3 + 2.4 + 2.5 + 2.6 已提交（`01afb88`），Phase 2 整体完成（481 单元测试 + 7 tokenize + 5 AST byte-exact 全绿）；下一步：Phase 3（C-Codegen）*
+*最后更新：Phase 1 + 1.1 + 2.1 + 2.2 + 2.3 + 2.4 + 2.5 + 2.6 已提交（`b3f3b63`），Phase 2 整体完成（481 单元测试 + 7 tokenize + 5 AST byte-exact 全绿）；下一步：Phase 3（C-Codegen）*

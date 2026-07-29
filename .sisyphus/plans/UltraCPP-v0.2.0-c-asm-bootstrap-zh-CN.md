@@ -19,7 +19,7 @@
 | **Phase 2.3 parser statements** | ✅ | **`0c8143f`** | `parse_statement` 派发 + 全部 statement 形式；179/179 单元测试；`#import` 作为 directive 处理；test_t1/t2/t3 完整 parse |
 | **Phase 2.4 parser expressions binary** | ✅ | **`83645f6`** | 11 级优先级递归下降（赋值 → 或 → 与 → 位运算 → 相等 → 比较 → 移位 → 加 → 乘 → 主）；255/255 单元测试；test_t1/t2/t3 完整 parse（test_hello_world/test_io 仍需 2.5 postfix） |
 | **Phase 2.5 parser expressions unary/postfix** | ✅ | **`ce95497`** | unary 层（`+ - ! ~ & *`）+ postfix 层（call / field / `->` / index）+ `move`/`clone`；341/341 单元测试；**所有 5 个现有测试程序均能完整 parse** |
-| **Phase 2.6 parser `--dump-ast` 字节级对齐** | ✅ | **`01afb88`** | Rust `--dump-ast` + C `--ast` byte-exact 对齐；`tools/ast_test.sh` 5/5 通过；顺手修了 Rust `parse_comparison` bug（`<=/>/<=/>=` 被错误当成 `<`）和 assignment 节点选择不一致 |
+| **Phase 2.6 parser `--dump-ast` 字节级对齐** | ✅ | **`b3f3b63`** | Rust `--dump-ast` + C `--ast` byte-exact 对齐；`tools/ast_test.sh` 5/5 通过；顺手修了 Rust `parse_comparison` bug（`<=/>/<=/>=` 被错误当成 `<`）和 assignment 节点选择不一致 |
 | Phase 2.6 parser `--dump-ast` 字节级对齐 | ⏳ | — | 见 §7 |
 | Phase 3 C-Codegen | ⏳ | — | 未开始 |
 | Phase 4 C-CLI | ⏳ | — | 未开始 |
@@ -28,7 +28,7 @@
 | Phase 7 Bootstrap | ⏳ | — | 未开始 |
 
 **当前分支**：`feature/borrow-check-verification`
-**最后提交**：`01afb88`（Phase 2.6）
+**最后提交**：`b3f3b63`（Phase 2.6）
 **工作树位置**：`/home/zjtti/Coding/UltraCpp/.worktrees/borrow-check-verification`
 
 **回到这里的快速命令**：
@@ -337,4 +337,4 @@ src-c/src/ast.c              # AST 分配/释放/深拷贝
 
 ---
 
-*Last updated: Phase 1 + 1.1 + 2.1 + 2.2 + 2.3 + 2.4 + 2.5 + 2.6 已提交（`01afb88`），Phase 2 整体完成（parser 与 Rust 字节级一致）；Phase 3（C-Codegen）待启动*
+*Last updated: Phase 1 + 1.1 + 2.1 + 2.2 + 2.3 + 2.4 + 2.5 + 2.6 已提交（`b3f3b63`），Phase 2 整体完成（parser 与 Rust 字节级一致）；Phase 3（C-Codegen）待启动*
