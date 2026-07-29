@@ -1,4 +1,5 @@
 pub mod ast;
+pub mod dump_ast;
 pub mod lexer;
 pub mod parser;
 pub mod token;
@@ -71,6 +72,27 @@ pub fn dump_tokens(source: &str) {
         );
         if matches!(token.kind, TokenKind::Eof) {
             break;
+        }
+    }
+}
+
+/// Parse `source` and dump the resulting AST.  Output format mirrors
+/// `uc_ast_dump` in src-c/src/ast.c (and is byte-level comparable via
+/// `tools/ast_test.sh`).  The preprocessor is intentionally skipped so
+/// the C and Rust versions see identical input.
+pub fn dump_ast(source: &str) {
+    use std::io::{self, Write};
+    let mut stdout = io::stdout();
+    let processed = crate::preprocessor::Preprocessor::new().preprocess(source, None);
+    let mut lexer = Lexer::new(&processed.source);
+    let mut parser = Parser::new(&mut lexer);
+    match parser.parse() {
+        Ok(ast) => {
+            let _ = dump_ast::dump_module(&ast, &mut stdout);
+        }
+        Err(e) => {
+            let _ = writeln!(stdout, "Error: {}", e);
+            std::process::exit(1);
         }
     }
 }

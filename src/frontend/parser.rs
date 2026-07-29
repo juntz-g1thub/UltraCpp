@@ -673,18 +673,19 @@ impl<'a> Parser<'a> {
     fn parse_comparison(&mut self) -> Result<Expr, CompileError> {
         let mut expr = self.parse_shift()?;
 
-        while self.match_token(&TokenKind::OpLt)
-            || self.match_token(&TokenKind::OpGt)
-            || self.match_token(&TokenKind::OpLe)
-            || self.match_token(&TokenKind::OpGe)
-        {
-            let op = match &self.current_token.kind {
-                TokenKind::OpLt => BinaryOp::Lt,
-                TokenKind::OpGt => BinaryOp::Gt,
-                TokenKind::OpLe => BinaryOp::Le,
-                TokenKind::OpGe => BinaryOp::Ge,
-                _ => BinaryOp::Lt,
+        loop {
+            let op = if self.check(&TokenKind::OpLt) {
+                BinaryOp::Lt
+            } else if self.check(&TokenKind::OpGt) {
+                BinaryOp::Gt
+            } else if self.check(&TokenKind::OpLe) {
+                BinaryOp::Le
+            } else if self.check(&TokenKind::OpGe) {
+                BinaryOp::Ge
+            } else {
+                break;
             };
+            self.advance();
             let rhs = self.parse_shift()?;
             expr = Expr::BinaryOp(op, Box::new(expr), Box::new(rhs));
         }

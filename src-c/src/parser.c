@@ -1043,14 +1043,18 @@ static UCExpr* expr_ident(UCString name) {
 /* Assignment (right-associative).
  * Only '=' is supported here; compound-assignment (+=, -=, ...) requires
  * lexer support that is documented as a known bug in src/frontend/lexer.rs
- * (Phase 1.1 §9.1) and will arrive when that lands. */
+ * (Phase 1.1 §9.1) and will arrive when that lands.
+ *
+ * For byte-level alignment with the Rust parser (Phase 2.6), we use
+ * the dedicated UC_EXPR_ASSIGN node rather than UC_EXPR_BINARY with
+ * UC_BIN_ASSIGN, mirroring Expr::Assign in src/frontend/ast.rs. */
 static UCExpr* parse_assignment(UCParser* p) {
     UCExpr* lhs = parse_or(p);
     if (is_err(p) || !lhs) return lhs;
     if (match(p, UC_TOK_OP_ASSIGN)) {
         UCExpr* rhs = parse_assignment(p);
         if (is_err(p) || !rhs) { uc_expr_free(lhs); return rhs; }
-        return uc_expr_binary(UC_BIN_ASSIGN, lhs, rhs);
+        return uc_expr_assign(lhs, rhs);
     }
     return lhs;
 }

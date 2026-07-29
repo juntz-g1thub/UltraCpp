@@ -1,6 +1,13 @@
-/* UltraCPP C compiler - CLI entry (Phase 1: lexer-only) */
+/* UltraCPP C compiler - CLI entry (Phase 1+: lexer/parser)
+ *
+ * Phase 1 only supported --tokens. Phase 2.6 adds --ast so that we can
+ * byte-level-diff the C parser's AST against the Rust compiler's
+ * `--dump-ast` output (see tools/ast_test.sh).
+ */
+#include "uc_ast.h"
 #include "uc_error.h"
 #include "uc_lexer.h"
+#include "uc_parser.h"
 #include "uc_token.h"
 #include "uc_version.h"
 
@@ -67,19 +74,58 @@ static int run_dump_tokens(const char* path) {
     return 0;
 }
 
+static int run_dump_ast(const char* path) {
+    FILE* f = fopen(path, "rb");
+    if (!f) {
+        fprintf(stderr, "Error: cannot open file '%s'\n", path);
+        return 2;
+    }
+    if (fseek(f, 0, SEEK_END) != 0) { fclose(f); return 2; }
+    long sz = ftell(f);
+    if (sz < 0) { fclose(f); return 2; }
+    rewind(f);
+
+    char* buf = (char*)malloc((size_t)sz + 1);
+    if (!buf) { fclose(f); return 2; }
+    size_t n = fread(buf, 1, (size_t)sz, f);
+    buf[n] = '\0';
+    fclose(f);
+
+    UCError err; uc_error_init(&err);
+    UCLexer lex;
+    uc_lexer_init(&lex, buf, n, path, &err);
+    UCParser p;
+    uc_parser_init(&p, &lex, &err);
+    UCModule* m = uc_parser_parse(&p);
+    int rc = 0;
+    if (err.kind != UC_ERR_NONE) {
+        uc_error_report(&err, stderr);
+        rc = 1;
+    } else {
+        uc_ast_dump(m, stdout);
+    }
+    uc_module_free(m);
+    uc_parser_reset(&p);
+    uc_lexer_reset(&lex);
+    free(buf);
+    return rc;
+}
+
 static void print_version(void) {
     printf("uc_lexer (UltraCPP C compiler) version %s\n", UC_VERSION_STRING);
-    printf("Phase 1 - lexer-only build\n");
+    printf("Phase 2+ build: lexer + parser\n");
 }
 
 static void print_usage(const char* argv0) {
     fprintf(stderr,
-        "Usage: %s [--tokens] [--version] [--help] <input>\n"
+        "Usage: %s [--tokens|--ast] [--version] [--help] <input>\n"
         "\n"
-        "Phase 1 build: lexer-only.\n"
+        "Phase 2+ build: lexer + parser.\n"
         "\n"
         "Options:\n"
         "  --tokens    Tokenize the input and print one line per token (default)\n"
+        "  --ast       Parse and dump the AST (byte-level comparable with Rust's\n"
+        "              --dump-ast; see tools/ast_test.sh)\n"
         "  --version   Print version and exit\n"
         "  --help      Print this help and exit\n",
         argv0 ? argv0 : "uc_lexer");
@@ -90,11 +136,15 @@ int main(int argc, char** argv) {
     int want_version = 0;
     int want_help = 0;
     int want_tokens = 0;
+    int want_ast = 0;
     const char* input = NULL;
 
     while (argi < argc) {
         if (strcmp(argv[argi], "--tokens") == 0) {
             want_tokens = 1;
+            argi++;
+        } else if (strcmp(argv[argi], "--ast") == 0 || strcmp(argv[argi], "-a") == 0) {
+            want_ast = 1;
             argi++;
         } else if (strcmp(argv[argi], "--version") == 0 || strcmp(argv[argi], "-V") == 0) {
             want_version = 1;
@@ -121,6 +171,7 @@ int main(int argc, char** argv) {
         return 2;
     }
 
+    if (want_ast) return run_dump_ast(input);
     (void)want_tokens;
     return run_dump_tokens(input);
 }

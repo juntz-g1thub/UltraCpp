@@ -10,7 +10,7 @@ mod preprocessor;
 mod semantic;
 
 use codegen::generator::CodeGenerator;
-use frontend::compile;
+use frontend::{compile, dump_ast};
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
@@ -47,6 +47,11 @@ fn main() {
 
     if args.dump_tokens {
         frontend::dump_tokens(&source);
+        return;
+    }
+
+    if args.dump_ast {
+        dump_ast(&source);
         return;
     }
 

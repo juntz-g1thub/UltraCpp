@@ -722,19 +722,17 @@ static void test_expr_shift(void) {
 }
 
 static void test_expr_assignment_right_assoc(void) {
-    /* a = b = 5 should parse as a = (b = 5). */
+    /* a = b = 5 should parse as Assign(a, Assign(b, 5)) — right-assoc. */
     UCModule* m = parse_source("int f() { a = b = 5; return 0; }");
     ASSERT_TRUE(m != NULL); if (!m) return;
     UCStmt* s0 = block_stmt_at(func_body(m), 0);
     ASSERT_TRUE(s0->kind == UC_STMT_EXPR);
     UCExpr* e = s0->as.expr;
-    ASSERT_TRUE(e->kind == UC_EXPR_BINARY);
-    ASSERT_TRUE(e->as.binary.op == UC_BIN_ASSIGN);
-    ASSERT_EQ_STR(e->as.binary.lhs->as.ident.data, "a");
-    ASSERT_TRUE(e->as.binary.rhs->kind == UC_EXPR_BINARY);
-    ASSERT_TRUE(e->as.binary.rhs->as.binary.op == UC_BIN_ASSIGN);
-    ASSERT_EQ_STR(e->as.binary.rhs->as.binary.lhs->as.ident.data, "b");
-    ASSERT_EQ_INT(e->as.binary.rhs->as.binary.rhs->as.literal.as.int_val, 5);
+    ASSERT_TRUE(e->kind == UC_EXPR_ASSIGN);
+    ASSERT_EQ_STR(e->as.assign.target->as.ident.data, "a");
+    ASSERT_TRUE(e->as.assign.value->kind == UC_EXPR_ASSIGN);
+    ASSERT_EQ_STR(e->as.assign.value->as.assign.target->as.ident.data, "b");
+    ASSERT_EQ_INT(e->as.assign.value->as.assign.value->as.literal.as.int_val, 5);
     uc_module_free(m);
 }
 
@@ -787,9 +785,9 @@ static void test_expr_for_cond_with_binary(void) {
     ASSERT_EQ_STR(s0->as.for_stmt.cond->as.binary.lhs->as.ident.data, "i");
     ASSERT_EQ_INT(s0->as.for_stmt.cond->as.binary.rhs->as.literal.as.int_val,
                   10);
-    /* step: i = i + 1 */
-    ASSERT_TRUE(s0->as.for_stmt.step->kind == UC_EXPR_BINARY);
-    ASSERT_TRUE(s0->as.for_stmt.step->as.binary.op == UC_BIN_ASSIGN);
+    /* step: i = i + 1 (assignment is its own Expr node, not a binary op) */
+    ASSERT_TRUE(s0->as.for_stmt.step->kind == UC_EXPR_ASSIGN);
+    ASSERT_TRUE(s0->as.for_stmt.step->as.assign.value->kind == UC_EXPR_BINARY);
     uc_module_free(m);
 }
 
