@@ -186,16 +186,29 @@ static UCType* parse_type(UCParser* p) {
 
 static UCTopLevel* parse_top_level(UCParser* p);
 static UCTopLevel* parse_import(UCParser* p);
+static UCTopLevel* parse_pound_import(UCParser* p);
 static UCTopLevel* parse_struct_def(UCParser* p);
 static UCTopLevel* parse_extern_decl(UCParser* p);
 static UCTopLevel* parse_var_or_func(UCParser* p, UCType* ret_ty);
 static UCTopLevel* parse_func_def(UCParser* p, UCType* ret_ty,
                                   UCString name);
 static UCStmt* parse_block(UCParser* p);
+static UCStmt* parse_statement(UCParser* p);
 static UCStmt* parse_return_stmt(UCParser* p);
+static UCStmt* parse_if_stmt(UCParser* p);
+static UCStmt* parse_while_stmt(UCParser* p);
+static UCStmt* parse_for_stmt(UCParser* p);
+static UCStmt* parse_for_init(UCParser* p);
+static UCStmt* parse_break_stmt(UCParser* p);
+static UCStmt* parse_continue_stmt(UCParser* p);
+static UCStmt* parse_expr_stmt(UCParser* p);
+static UCStmt* parse_decl_stmt(UCParser* p, UCType* ty);
+static UCStmt* parse_free_stmt(UCParser* p);
+static UCStmt* parse_unsafe_stmt(UCParser* p);
 static UCExpr* parse_expr_minimal(UCParser* p);
 static UCVec* parse_func_params(UCParser* p);
 static UCParam* parse_one_param(UCParser* p);
+static int looks_like_type_start(const UCParser* p);
 
 /* ------------------------------------------------------------------------- */
 /* Top-level dispatch                                                        */
@@ -214,8 +227,19 @@ static UCTopLevel* parse_top_level(UCParser* p) {
 
     /* Both '#import' (UC_TOK_PP_IMPORT) and bare 'import' (UC_TOK_KW_IMPORT)
      * enter parse_import; the Rust preprocessor normally strips the former
-     * before parsing, but the C parser accepts it directly. */
-    if (match(p, UC_TOK_PP_IMPORT) || match(p, UC_TOK_KW_IMPORT)) {
+     * before parsing, but the C parser accepts it directly.
+     *
+     * '#import' is lenient: it does NOT require a trailing semicolon and
+     * also accepts the angle-bracket path form `<io>`. It produces no
+     * TopLevel (mirroring the Rust preprocessor's behaviour of stripping
+     * the line entirely).
+     *
+     * Bare 'import' is strict: it requires a string literal path and a
+     * trailing semicolon; it produces a UC_TL_IMPORT top-level. */
+    if (match(p, UC_TOK_PP_IMPORT)) {
+        return parse_pound_import(p);
+    }
+    if (match(p, UC_TOK_KW_IMPORT)) {
         return parse_import(p);
     }
 
@@ -291,6 +315,45 @@ static UCTopLevel* parse_import(UCParser* p) {
     }
 
     return uc_tl_import(uc_import_new(path, alias));
+}
+
+/* ------------------------------------------------------------------------- */
+/* Lenient '#import' directive (no TopLevel emitted; semicolon optional).   */
+/* Accepts:                                                                  */
+/*   #import "path"                                                          */
+/*   #import "path" as alias                                                 */
+/*   #import <path>                                                          */
+/*   #import <path> as alias                                                 */
+/* A trailing semicolon, if present, is consumed. The directive itself      */
+/* produces no AST entry because the import is resolved out of band.        */
+/* ------------------------------------------------------------------------- */
+
+static void skip_optional_string_path(UCParser* p) {
+    if (!check(p, UC_TOK_STRING)) return;
+    advance(p);
+}
+
+static void skip_optional_angle_path(UCParser* p) {
+    if (!match(p, UC_TOK_OP_LT)) return;
+    /* Collect identifiers separated by '::' or '/' until '>'. */
+    while (check(p, UC_TOK_IDENT) || check(p, UC_TOK_OP_SCOPE)) {
+        advance(p);
+    }
+    match(p, UC_TOK_OP_GT);
+}
+
+static UCTopLevel* parse_pound_import(UCParser* p) {
+    if (check(p, UC_TOK_STRING)) {
+        skip_optional_string_path(p);
+    } else if (check(p, UC_TOK_OP_LT)) {
+        skip_optional_angle_path(p);
+    }
+    /* Otherwise the directive had no path; just skip it. */
+    if (match(p, UC_TOK_KW_AS) && check(p, UC_TOK_IDENT)) {
+        advance(p);
+    }
+    match(p, UC_TOK_SEMICOLON);  /* optional */
+    return NULL;  /* no top-level emitted */
 }
 
 /* ------------------------------------------------------------------------- */
@@ -572,8 +635,36 @@ static UCTopLevel* parse_func_def(UCParser* p, UCType* ret_ty, UCString name) {
 }
 
 /* ------------------------------------------------------------------------- */
-/* Minimal statements: '{ ... }' (empty or single return), 'return [e];'    */
+/* Statements (Phase 2.3)                                                   */
+/*                                                                           */
+/* Supported forms:                                                          */
+/*   - block:        { ... }                                                 */
+/*   - if/else:      if (e) s [else s]                                       */
+/*   - while:        while (e) s                                             */
+/*   - for:          for ([s/e]; [e]; [e]) s                                 */
+/*   - return:       return [e];                                             */
+/*   - break/continue: ... ;                                                 */
+/*   - expr-stmt:    e;                                                      */
+/*   - decl-stmt:    T name [= e];                                           */
+/*   - free:         free (e);                                               */
+/*   - unsafe:       unsafe { ... }                                          */
+/*                                                                           */
+/* Expression support is still Phase 2.2's minimal set (literal / ident /   */
+/* null); binary operators and postfix forms (call, field, index, etc.)     */
+/* land in Phase 2.4 / 2.5.                                                 */
 /* ------------------------------------------------------------------------- */
+
+static int looks_like_type_start(const UCParser* p) {
+    if (check(p, UC_TOK_KW_VOID) || check(p, UC_TOK_KW_UNIQUE)) return 1;
+    if (check(p, UC_TOK_OP_STAR)
+        && p->peek.kind == UC_TOK_IDENT
+        && p->peek.lexeme
+        && is_prim_type_name(p->peek.lexeme)) return 1;
+    if (check(p, UC_TOK_IDENT)
+        && p->current.lexeme
+        && is_prim_type_name(p->current.lexeme)) return 1;
+    return 0;
+}
 
 static UCStmt* parse_block(UCParser* p) {
     if (!expect(p, UC_TOK_LBRACE, "'{' to start block")) return NULL;
@@ -584,17 +675,7 @@ static UCStmt* parse_block(UCParser* p) {
             uc_vec_free(stmts, NULL);
             return NULL;
         }
-        UCStmt* s = NULL;
-        if (check(p, UC_TOK_KW_RETURN)) {
-            s = parse_return_stmt(p);
-        } else {
-            err_here(p,
-                     "only 'return ...;' supported in body (Phase 2.2); "
-                     "got %s '%s'",
-                     uc_token_kind_name(p->current.kind), cur_lex(p));
-            uc_vec_free(stmts, NULL);
-            return NULL;
-        }
+        UCStmt* s = parse_statement(p);
         if (is_err(p)) {
             uc_stmt_free(s);
             uc_vec_free(stmts, NULL);
@@ -607,6 +688,37 @@ static UCStmt* parse_block(UCParser* p) {
         return NULL;
     }
     return uc_stmt_block(stmts);
+}
+
+static UCStmt* parse_statement(UCParser* p) {
+    switch (p->current.kind) {
+        case UC_TOK_LBRACE:        return parse_block(p);
+        case UC_TOK_KW_IF:         return parse_if_stmt(p);
+        case UC_TOK_KW_WHILE:      return parse_while_stmt(p);
+        case UC_TOK_KW_FOR:        return parse_for_stmt(p);
+        case UC_TOK_KW_RETURN:     return parse_return_stmt(p);
+        case UC_TOK_KW_BREAK:      return parse_break_stmt(p);
+        case UC_TOK_KW_CONTINUE:   return parse_continue_stmt(p);
+        case UC_TOK_KW_FREE:       return parse_free_stmt(p);
+        case UC_TOK_KW_UNSAFE:     return parse_unsafe_stmt(p);
+        case UC_TOK_KW_STRUCT:
+        case UC_TOK_KW_EXPORT:
+        case UC_TOK_KW_IMPORT:
+        case UC_TOK_KW_EXTERN:
+            err_here(p, "declarations are not valid inside blocks");
+            return NULL;
+        default: break;
+    }
+    if (looks_like_type_start(p)) {
+        UCType* ty = parse_type(p);
+        if (is_err(p)) { uc_type_free(ty); return NULL; }
+        if (!ty) {
+            err_here(p, "expected type");
+            return NULL;
+        }
+        return parse_decl_stmt(p, ty);
+    }
+    return parse_expr_stmt(p);
 }
 
 static UCStmt* parse_return_stmt(UCParser* p) {
@@ -625,6 +737,247 @@ static UCStmt* parse_return_stmt(UCParser* p) {
         return NULL;
     }
     return uc_stmt_return(val);
+}
+
+static UCStmt* parse_if_stmt(UCParser* p) {
+    advance(p);  /* consume 'if' */
+    if (!expect(p, UC_TOK_LPAREN, "'(' after 'if'")) return NULL;
+    UCExpr* cond = parse_expr_minimal(p);
+    if (is_err(p)) { uc_expr_free(cond); return NULL; }
+    if (!cond) {
+        err_here(p, "expected condition expression");
+        return NULL;
+    }
+    if (!expect(p, UC_TOK_RPAREN, "')' after if condition")) {
+        uc_expr_free(cond);
+        return NULL;
+    }
+    UCStmt* then_b = parse_block(p);
+    if (is_err(p)) { uc_expr_free(cond); uc_stmt_free(then_b); return NULL; }
+    if (!then_b) {
+        uc_expr_free(cond);
+        err_here(p, "expected block after if condition");
+        return NULL;
+    }
+    UCStmt* else_b = NULL;
+    if (match(p, UC_TOK_KW_ELSE)) {
+        if (check(p, UC_TOK_KW_IF)) {
+            else_b = parse_if_stmt(p);
+        } else {
+            else_b = parse_block(p);
+        }
+        if (is_err(p)) {
+            uc_expr_free(cond);
+            uc_stmt_free(then_b);
+            uc_stmt_free(else_b);
+            return NULL;
+        }
+    }
+    return uc_stmt_if(cond, then_b, else_b);
+}
+
+static UCStmt* parse_while_stmt(UCParser* p) {
+    advance(p);
+    if (!expect(p, UC_TOK_LPAREN, "'(' after 'while'")) return NULL;
+    UCExpr* cond = parse_expr_minimal(p);
+    if (is_err(p)) { uc_expr_free(cond); return NULL; }
+    if (!cond) {
+        err_here(p, "expected condition expression");
+        return NULL;
+    }
+    if (!expect(p, UC_TOK_RPAREN, "')' after while condition")) {
+        uc_expr_free(cond);
+        return NULL;
+    }
+    UCStmt* body = parse_block(p);
+    if (is_err(p)) { uc_expr_free(cond); uc_stmt_free(body); return NULL; }
+    if (!body) {
+        uc_expr_free(cond);
+        err_here(p, "expected block after while condition");
+        return NULL;
+    }
+    return uc_stmt_while(cond, body);
+}
+
+static UCStmt* parse_for_stmt(UCParser* p) {
+    advance(p);
+    if (!expect(p, UC_TOK_LPAREN, "'(' after 'for'")) return NULL;
+
+    UCStmt* init = NULL;
+    if (!check(p, UC_TOK_SEMICOLON)) {
+        init = parse_for_init(p);
+        if (is_err(p)) { uc_stmt_free(init); return NULL; }
+        if (!init) return NULL;
+    } else {
+        advance(p);  /* consume ';' */
+    }
+
+    UCExpr* cond = NULL;
+    if (!check(p, UC_TOK_SEMICOLON)) {
+        cond = parse_expr_minimal(p);
+        if (is_err(p)) { uc_stmt_free(init); uc_expr_free(cond); return NULL; }
+        if (!cond) {
+            uc_stmt_free(init);
+            err_here(p, "expected for-condition expression");
+            return NULL;
+        }
+    }
+    if (!expect(p, UC_TOK_SEMICOLON, "';' after for-condition")) {
+        uc_stmt_free(init);
+        uc_expr_free(cond);
+        return NULL;
+    }
+
+    UCExpr* step = NULL;
+    if (!check(p, UC_TOK_RPAREN)) {
+        step = parse_expr_minimal(p);
+        if (is_err(p)) {
+            uc_stmt_free(init);
+            uc_expr_free(cond);
+            uc_expr_free(step);
+            return NULL;
+        }
+        if (!step) {
+            uc_stmt_free(init);
+            uc_expr_free(cond);
+            err_here(p, "expected for-step expression");
+            return NULL;
+        }
+    }
+    if (!expect(p, UC_TOK_RPAREN, "')' after for-step")) {
+        uc_stmt_free(init);
+        uc_expr_free(cond);
+        uc_expr_free(step);
+        return NULL;
+    }
+
+    UCStmt* body = parse_block(p);
+    if (is_err(p)) {
+        uc_stmt_free(init);
+        uc_expr_free(cond);
+        uc_expr_free(step);
+        uc_stmt_free(body);
+        return NULL;
+    }
+    if (!body) {
+        uc_stmt_free(init);
+        uc_expr_free(cond);
+        uc_expr_free(step);
+        err_here(p, "expected block after for-header");
+        return NULL;
+    }
+
+    return uc_stmt_for(init, cond, step, body);
+}
+
+/* The `init` slot of a `for (...)` loop: either a declaration
+ * (Type name [= expr];) or an expression statement (expr;). */
+static UCStmt* parse_for_init(UCParser* p) {
+    if (looks_like_type_start(p)) {
+        UCType* ty = parse_type(p);
+        if (is_err(p)) { uc_type_free(ty); return NULL; }
+        if (!ty) {
+            err_here(p, "expected type");
+            return NULL;
+        }
+        return parse_decl_stmt(p, ty);
+    }
+    return parse_expr_stmt(p);
+}
+
+static UCStmt* parse_break_stmt(UCParser* p) {
+    advance(p);  /* consume 'break' */
+    if (!expect(p, UC_TOK_SEMICOLON, "';' after break")) return NULL;
+    return uc_stmt_break();
+}
+
+static UCStmt* parse_continue_stmt(UCParser* p) {
+    advance(p);  /* consume 'continue' */
+    if (!expect(p, UC_TOK_SEMICOLON, "';' after continue")) return NULL;
+    return uc_stmt_continue();
+}
+
+static UCStmt* parse_expr_stmt(UCParser* p) {
+    UCExpr* e = parse_expr_minimal(p);
+    if (is_err(p)) { uc_expr_free(e); return NULL; }
+    if (!e) {
+        err_here(p, "expected expression");
+        return NULL;
+    }
+    if (!expect(p, UC_TOK_SEMICOLON, "';' after expression")) {
+        uc_expr_free(e);
+        return NULL;
+    }
+    return uc_stmt_expr(e);
+}
+
+/* Consumes an already-parsed type and parses `name [= expr];` as a
+ * statement-level declaration. */
+static UCStmt* parse_decl_stmt(UCParser* p, UCType* ty) {
+    if (!check(p, UC_TOK_IDENT)) {
+        err_here(p, "expected identifier after type");
+        uc_type_free(ty);
+        return NULL;
+    }
+    UCString name = uc_string_new(p->current.lexeme, p->current.lexeme_len);
+    advance(p);
+
+    UCExpr* init = NULL;
+    if (match(p, UC_TOK_OP_ASSIGN)) {
+        init = parse_expr_minimal(p);
+        if (is_err(p)) {
+            uc_string_free(&name);
+            uc_type_free(ty);
+            uc_expr_free(init);
+            return NULL;
+        }
+        if (!init) {
+            uc_string_free(&name);
+            uc_type_free(ty);
+            err_here(p, "expected initializer expression");
+            return NULL;
+        }
+    }
+    if (!expect(p, UC_TOK_SEMICOLON, "';' after declaration")) {
+        uc_string_free(&name);
+        uc_type_free(ty);
+        uc_expr_free(init);
+        return NULL;
+    }
+
+    UCVarDecl* vd = uc_var_decl_new(name, ty, init);
+    return uc_stmt_decl(vd);
+}
+
+static UCStmt* parse_free_stmt(UCParser* p) {
+    advance(p);  /* consume 'free' */
+    if (!expect(p, UC_TOK_LPAREN, "'(' after 'free'")) return NULL;
+    UCExpr* e = parse_expr_minimal(p);
+    if (is_err(p)) { uc_expr_free(e); return NULL; }
+    if (!e) {
+        err_here(p, "expected expression inside free(...)");
+        return NULL;
+    }
+    if (!expect(p, UC_TOK_RPAREN, "')' after free argument")) {
+        uc_expr_free(e);
+        return NULL;
+    }
+    if (!expect(p, UC_TOK_SEMICOLON, "';' after free(...)")) {
+        uc_expr_free(e);
+        return NULL;
+    }
+    return uc_stmt_kw_free(e);
+}
+
+static UCStmt* parse_unsafe_stmt(UCParser* p) {
+    advance(p);  /* consume 'unsafe' */
+    UCStmt* body = parse_block(p);
+    if (is_err(p)) return NULL;
+    if (!body) {
+        err_here(p, "expected block after 'unsafe'");
+        return NULL;
+    }
+    return body;  /* unsafe is just a block at the statement level */
 }
 
 /* ------------------------------------------------------------------------- */
@@ -748,11 +1101,10 @@ UCModule* uc_parser_parse(UCParser* p) {
         }
         if (tl) {
             uc_vec_push(decls, tl);
-        } else {
-            /* 'None' branch; in practice parse_top_level returns NULL only
-             * on error or at EOF, both handled above. */
-            break;
         }
+        /* tl == NULL with no error: a directive (e.g. '#import') was
+         * consumed without producing a TopLevel. Continue to the next
+         * top-level construct. The while-condition handles EOF. */
     }
 
     return uc_module_new(decls);

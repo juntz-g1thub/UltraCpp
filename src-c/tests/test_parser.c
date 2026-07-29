@@ -124,9 +124,41 @@ static void test_empty_source(void) {
     uc_module_free(m);
 }
 
-static void test_import_no_alias(void) {
+static void test_pound_import_no_decl(void) {
+    /* '#import' is a directive (mirrors the Rust preprocessor): it is
+     * consumed but produces no TopLevel. Semicolon is optional. */
     UCModule* m = parse_source("#import \"lib/io\";");
-    ASSERT_TRUE(m != NULL);
+    ASSERT_TRUE(m != NULL); if (!m) return;
+    ASSERT_EQ_INT((long long)uc_vec_len(m->declarations), 0);
+    uc_module_free(m);
+}
+
+static void test_pound_import_no_semicolon(void) {
+    /* Existing test programs use '#import "path"' with no semicolon. */
+    UCModule* m = parse_source("#import \"lib/io\"");
+    ASSERT_TRUE(m != NULL); if (!m) return;
+    ASSERT_EQ_INT((long long)uc_vec_len(m->declarations), 0);
+    uc_module_free(m);
+}
+
+static void test_pound_import_angle_path(void) {
+    UCModule* m = parse_source("#import <io>");
+    ASSERT_TRUE(m != NULL); if (!m) return;
+    ASSERT_EQ_INT((long long)uc_vec_len(m->declarations), 0);
+    uc_module_free(m);
+}
+
+static void test_pound_import_with_alias(void) {
+    UCModule* m = parse_source("#import \"lib/io\" as io");
+    ASSERT_TRUE(m != NULL); if (!m) return;
+    ASSERT_EQ_INT((long long)uc_vec_len(m->declarations), 0);
+    uc_module_free(m);
+}
+
+static void test_bare_import_no_alias(void) {
+    /* Bare 'import' (UC_TOK_KW_IMPORT) is rare; it produces a UC_TL_IMPORT. */
+    UCModule* m = parse_source("import \"lib/io\";");
+    ASSERT_TRUE(m != NULL); if (!m) return;
     ASSERT_EQ_INT((long long)uc_vec_len(m->declarations), 1);
     UCTopLevel* tl = (UCTopLevel*)uc_vec_at(m->declarations, 0);
     ASSERT_TRUE(tl->kind == UC_TL_IMPORT);
@@ -135,9 +167,9 @@ static void test_import_no_alias(void) {
     uc_module_free(m);
 }
 
-static void test_import_with_alias(void) {
-    UCModule* m = parse_source("#import \"lib/io\" as io;");
-    ASSERT_TRUE(m != NULL);
+static void test_bare_import_with_alias(void) {
+    UCModule* m = parse_source("import \"lib/io\" as io;");
+    ASSERT_TRUE(m != NULL); if (!m) return;
     UCTopLevel* tl = (UCTopLevel*)uc_vec_at(m->declarations, 0);
     ASSERT_TRUE(tl->kind == UC_TL_IMPORT);
     ASSERT_EQ_STR(tl->as.import->path.data, "lib/io");
@@ -324,21 +356,21 @@ static void test_export_wraps_var(void) {
 }
 
 static void test_multiple_decls(void) {
+    /* '#import' is a directive: 0 TopLevel entries; the source otherwise
+     * produces 3 TopLevels (var, func, struct). */
     UCModule* m = parse_source(
         "#import \"lib/io\";\n"
         "int x = 1;\n"
         "int main() { return 0; }\n"
         "struct S { a: int; };");
-    ASSERT_TRUE(m != NULL);
-    ASSERT_EQ_INT((long long)uc_vec_len(m->declarations), 4);
+    ASSERT_TRUE(m != NULL); if (!m) return;
+    ASSERT_EQ_INT((long long)uc_vec_len(m->declarations), 3);
     UCTopLevel* t0 = (UCTopLevel*)uc_vec_at(m->declarations, 0);
     UCTopLevel* t1 = (UCTopLevel*)uc_vec_at(m->declarations, 1);
     UCTopLevel* t2 = (UCTopLevel*)uc_vec_at(m->declarations, 2);
-    UCTopLevel* t3 = (UCTopLevel*)uc_vec_at(m->declarations, 3);
-    ASSERT_TRUE(t0->kind == UC_TL_IMPORT);
-    ASSERT_TRUE(t1->kind == UC_TL_VAR_DECL);
-    ASSERT_TRUE(t2->kind == UC_TL_FUNC_DEF);
-    ASSERT_TRUE(t3->kind == UC_TL_STRUCT_DEF);
+    ASSERT_TRUE(t0->kind == UC_TL_VAR_DECL);
+    ASSERT_TRUE(t1->kind == UC_TL_FUNC_DEF);
+    ASSERT_TRUE(t2->kind == UC_TL_STRUCT_DEF);
     uc_module_free(m);
 }
 
@@ -364,7 +396,9 @@ static void test_error_missing_semicolon_var(void) {
 }
 
 static void test_error_missing_semicolon_import(void) {
-    ASSERT_PARSE_FAIL("#import \"lib/io\"");  /* no semicolon */
+    /* Bare 'import' (UC_TOK_KW_IMPORT) requires a semicolon. '#import'
+     * is a directive that doesn't. */
+    ASSERT_PARSE_FAIL("import \"lib/io\"");  /* no semicolon */
 }
 
 static void test_error_unexpected_token(void) {
@@ -381,12 +415,227 @@ static void test_error_return_outside_block(void) {
 }
 
 /* ------------------------------------------------------------------------- */
+/* Statement tests (Phase 2.3)                                              */
+/* ------------------------------------------------------------------------- */
+
+/* Helper: extract the single FuncDef's body block. */
+static UCStmt* func_body(const UCModule* m) {
+    UCTopLevel* tl = (UCTopLevel*)uc_vec_at(m->declarations, 0);
+    return tl->as.func_def->body;
+}
+
+static UCStmt* block_stmt_at(const UCStmt* blk, size_t i) {
+    return (UCStmt*)uc_vec_at(blk->as.block, i);
+}
+
+static void test_stmt_if_without_else(void) {
+    UCModule* m = parse_source("int f() { if (true) { return 0; } return 1; }");
+    ASSERT_TRUE(m != NULL); if (!m) return;
+    UCStmt* blk = func_body(m);
+    ASSERT_TRUE(blk->kind == UC_STMT_BLOCK);
+    UCStmt* s0 = block_stmt_at(blk, 0);
+    ASSERT_TRUE(s0->kind == UC_STMT_IF);
+    ASSERT_TRUE(s0->as.if_stmt.cond->kind == UC_EXPR_LITERAL);
+    ASSERT_TRUE(s0->as.if_stmt.cond->as.literal.kind == UC_LIT_TRUE);
+    ASSERT_TRUE(s0->as.if_stmt.then_branch->kind == UC_STMT_BLOCK);
+    ASSERT_TRUE(s0->as.if_stmt.else_branch == NULL);
+    uc_module_free(m);
+}
+
+static void test_stmt_if_with_else(void) {
+    UCModule* m = parse_source(
+        "int f() { if (x) { return 1; } else { return 2; } return 0; }");
+    ASSERT_TRUE(m != NULL); if (!m) return;
+    UCStmt* s0 = block_stmt_at(func_body(m), 0);
+    ASSERT_TRUE(s0->kind == UC_STMT_IF);
+    ASSERT_TRUE(s0->as.if_stmt.cond->kind == UC_EXPR_IDENT);
+    ASSERT_TRUE(s0->as.if_stmt.else_branch != NULL);
+    ASSERT_TRUE(s0->as.if_stmt.else_branch->kind == UC_STMT_BLOCK);
+    uc_module_free(m);
+}
+
+static void test_stmt_if_else_if(void) {
+    UCModule* m = parse_source(
+        "int f() { if (x) { return 1; } else if (y) { return 2; } "
+        "else { return 3; } return 0; }");
+    ASSERT_TRUE(m != NULL); if (!m) return;
+    UCStmt* s0 = block_stmt_at(func_body(m), 0);
+    ASSERT_TRUE(s0->kind == UC_STMT_IF);
+    ASSERT_TRUE(s0->as.if_stmt.else_branch->kind == UC_STMT_IF);
+    UCStmt* inner = s0->as.if_stmt.else_branch;
+    ASSERT_TRUE(inner->as.if_stmt.cond->as.ident.data
+                && strcmp(inner->as.if_stmt.cond->as.ident.data, "y") == 0);
+    ASSERT_TRUE(inner->as.if_stmt.else_branch != NULL);
+    uc_module_free(m);
+}
+
+static void test_stmt_while(void) {
+    UCModule* m = parse_source(
+        "int f() { while (true) { break; } return 0; }");
+    ASSERT_TRUE(m != NULL); if (!m) return;
+    UCStmt* s0 = block_stmt_at(func_body(m), 0);
+    ASSERT_TRUE(s0->kind == UC_STMT_WHILE);
+    ASSERT_TRUE(s0->as.while_stmt.cond->as.literal.kind == UC_LIT_TRUE);
+    ASSERT_TRUE(s0->as.while_stmt.body->kind == UC_STMT_BLOCK);
+    uc_module_free(m);
+}
+
+static void test_stmt_for_all_parts(void) {
+    UCModule* m = parse_source(
+        "int f() { for (int i = 0; x; i) { break; } return 0; }");
+    ASSERT_TRUE(m != NULL); if (!m) return;
+    UCStmt* s0 = block_stmt_at(func_body(m), 0);
+    ASSERT_TRUE(s0->kind == UC_STMT_FOR);
+    /* init: DeclStmt */
+    ASSERT_TRUE(s0->as.for_stmt.init != NULL);
+    ASSERT_TRUE(s0->as.for_stmt.init->kind == UC_STMT_DECL);
+    ASSERT_EQ_STR(s0->as.for_stmt.init->as.decl->name.data, "i");
+    /* cond: ident */
+    ASSERT_TRUE(s0->as.for_stmt.cond != NULL);
+    ASSERT_TRUE(s0->as.for_stmt.cond->kind == UC_EXPR_IDENT);
+    ASSERT_EQ_STR(s0->as.for_stmt.cond->as.ident.data, "x");
+    /* step: ident */
+    ASSERT_TRUE(s0->as.for_stmt.step != NULL);
+    ASSERT_TRUE(s0->as.for_stmt.step->kind == UC_EXPR_IDENT);
+    ASSERT_EQ_STR(s0->as.for_stmt.step->as.ident.data, "i");
+    uc_module_free(m);
+}
+
+static void test_stmt_for_no_init(void) {
+    UCModule* m = parse_source(
+        "int f() { for (; x; ) { break; } return 0; }");
+    ASSERT_TRUE(m != NULL); if (!m) return;
+    UCStmt* s0 = block_stmt_at(func_body(m), 0);
+    ASSERT_TRUE(s0->kind == UC_STMT_FOR);
+    ASSERT_TRUE(s0->as.for_stmt.init == NULL);
+    ASSERT_TRUE(s0->as.for_stmt.cond != NULL);
+    ASSERT_TRUE(s0->as.for_stmt.step == NULL);
+    uc_module_free(m);
+}
+
+static void test_stmt_for_infinite(void) {
+    UCModule* m = parse_source(
+        "int f() { for (;;) { break; } return 0; }");
+    ASSERT_TRUE(m != NULL); if (!m) return;
+    UCStmt* s0 = block_stmt_at(func_body(m), 0);
+    ASSERT_TRUE(s0->kind == UC_STMT_FOR);
+    ASSERT_TRUE(s0->as.for_stmt.init == NULL);
+    ASSERT_TRUE(s0->as.for_stmt.cond == NULL);
+    ASSERT_TRUE(s0->as.for_stmt.step == NULL);
+    uc_module_free(m);
+}
+
+static void test_stmt_break_continue(void) {
+    UCModule* m = parse_source(
+        "int f() { while (true) { break; } while (true) { continue; } return 0; }");
+    ASSERT_TRUE(m != NULL); if (!m) return;
+    UCStmt* blk = func_body(m);
+    UCStmt* w0 = block_stmt_at(blk, 0);
+    UCStmt* w1 = block_stmt_at(blk, 1);
+    ASSERT_TRUE(block_stmt_at(w0->as.while_stmt.body, 0)->kind == UC_STMT_BREAK);
+    ASSERT_TRUE(block_stmt_at(w1->as.while_stmt.body, 0)->kind
+                == UC_STMT_CONTINUE);
+    uc_module_free(m);
+}
+
+static void test_stmt_decl_no_init(void) {
+    UCModule* m = parse_source("int f() { int x; return 0; }");
+    ASSERT_TRUE(m != NULL); if (!m) return;
+    UCStmt* s0 = block_stmt_at(func_body(m), 0);
+    ASSERT_TRUE(s0->kind == UC_STMT_DECL);
+    ASSERT_EQ_STR(s0->as.decl->name.data, "x");
+    ASSERT_TRUE(s0->as.decl->init == NULL);
+    uc_module_free(m);
+}
+
+static void test_stmt_decl_with_init(void) {
+    UCModule* m = parse_source("int f() { int x = 42; return x; }");
+    ASSERT_TRUE(m != NULL); if (!m) return;
+    UCStmt* s0 = block_stmt_at(func_body(m), 0);
+    ASSERT_TRUE(s0->kind == UC_STMT_DECL);
+    ASSERT_TRUE(s0->as.decl->init != NULL);
+    ASSERT_TRUE(s0->as.decl->init->kind == UC_EXPR_LITERAL);
+    ASSERT_EQ_INT(s0->as.decl->init->as.literal.as.int_val, 42);
+    uc_module_free(m);
+}
+
+static void test_stmt_expr_statement(void) {
+    UCModule* m = parse_source("int f() { x; return 0; }");
+    ASSERT_TRUE(m != NULL); if (!m) return;
+    UCStmt* s0 = block_stmt_at(func_body(m), 0);
+    ASSERT_TRUE(s0->kind == UC_STMT_EXPR);
+    ASSERT_TRUE(s0->as.expr->kind == UC_EXPR_IDENT);
+    ASSERT_EQ_STR(s0->as.expr->as.ident.data, "x");
+    uc_module_free(m);
+}
+
+static void test_stmt_free(void) {
+    UCModule* m = parse_source("int f() { free(x); return 0; }");
+    ASSERT_TRUE(m != NULL); if (!m) return;
+    UCStmt* s0 = block_stmt_at(func_body(m), 0);
+    ASSERT_TRUE(s0->kind == UC_STMT_FREE);
+    ASSERT_TRUE(s0->as.expr->kind == UC_EXPR_IDENT);
+    ASSERT_EQ_STR(s0->as.expr->as.ident.data, "x");
+    uc_module_free(m);
+}
+
+static void test_stmt_unsafe_block(void) {
+    UCModule* m = parse_source(
+        "int f() { unsafe { return 0; } return 1; }");
+    ASSERT_TRUE(m != NULL); if (!m) return;
+    UCStmt* s0 = block_stmt_at(func_body(m), 0);
+    ASSERT_TRUE(s0->kind == UC_STMT_BLOCK);
+    uc_module_free(m);
+}
+
+static void test_stmt_nested_blocks(void) {
+    UCModule* m = parse_source(
+        "int f() { { { return 0; } } return 1; }");
+    ASSERT_TRUE(m != NULL); if (!m) return;
+    UCStmt* blk = func_body(m);
+    UCStmt* outer = block_stmt_at(blk, 0);
+    ASSERT_TRUE(outer->kind == UC_STMT_BLOCK);
+    UCStmt* inner = block_stmt_at(outer, 0);
+    ASSERT_TRUE(inner->kind == UC_STMT_BLOCK);
+    uc_module_free(m);
+}
+
+static void test_stmt_complex_nesting(void) {
+    /* If inside while inside for inside main. */
+    UCModule* m = parse_source(
+        "int main() {\n"
+        "  int n = 5;\n"
+        "  for (int i = 0; x; i) {\n"
+        "    if (i) { return 0; }\n"
+        "    while (y) { break; }\n"
+        "  }\n"
+        "  return 1;\n"
+        "}\n");
+    ASSERT_TRUE(m != NULL); if (!m) return;
+    UCStmt* blk = func_body(m);
+    /* [0] decl, [1] for, [2] return */
+    ASSERT_EQ_INT((long long)uc_vec_len(blk->as.block), 3);
+    ASSERT_TRUE(block_stmt_at(blk, 0)->kind == UC_STMT_DECL);
+    ASSERT_TRUE(block_stmt_at(blk, 1)->kind == UC_STMT_FOR);
+    UCStmt* for_body = block_stmt_at(blk, 1)->as.for_stmt.body;
+    ASSERT_TRUE(for_body->kind == UC_STMT_BLOCK);
+    UCStmt* if_s = block_stmt_at(for_body, 0);
+    ASSERT_TRUE(if_s->kind == UC_STMT_IF);
+    ASSERT_EQ_STR(if_s->as.if_stmt.cond->as.ident.data, "i");
+    uc_module_free(m);
+}
+
+/* ------------------------------------------------------------------------- */
 /* main                                                                      */
 /* ------------------------------------------------------------------------- */
 int main(void) {
     RUN(test_empty_source);
-    RUN(test_import_no_alias);
-    RUN(test_import_with_alias);
+    RUN(test_pound_import_no_decl);
+    RUN(test_pound_import_no_semicolon);
+    RUN(test_pound_import_angle_path);
+    RUN(test_pound_import_with_alias);
+    RUN(test_bare_import_no_alias);
+    RUN(test_bare_import_with_alias);
     RUN(test_struct_empty);
     RUN(test_struct_with_fields);
     RUN(test_extern_decl);
@@ -403,6 +652,22 @@ int main(void) {
     RUN(test_export_wraps_var);
     RUN(test_multiple_decls);
     RUN(test_pointer_types);
+
+    RUN(test_stmt_if_without_else);
+    RUN(test_stmt_if_with_else);
+    RUN(test_stmt_if_else_if);
+    RUN(test_stmt_while);
+    RUN(test_stmt_for_all_parts);
+    RUN(test_stmt_for_no_init);
+    RUN(test_stmt_for_infinite);
+    RUN(test_stmt_break_continue);
+    RUN(test_stmt_decl_no_init);
+    RUN(test_stmt_decl_with_init);
+    RUN(test_stmt_expr_statement);
+    RUN(test_stmt_free);
+    RUN(test_stmt_unsafe_block);
+    RUN(test_stmt_nested_blocks);
+    RUN(test_stmt_complex_nesting);
 
     RUN(test_error_missing_semicolon_var);
     RUN(test_error_missing_semicolon_import);
