@@ -1,6 +1,6 @@
 # Worktree Handoff — `feature/borrow-check-verification`
 
-> **TL;DR**：当前在做 UltraCPP 编译器从 Rust → C → asm → 自举的迁移。**Phase 1 + 1.1 + 2.1 + 2.2 + 2.3 已完成并提交**。下一步是 Phase 2.4（parser expressions：binary ops）。
+> **TL;DR**：当前在做 UltraCPP 编译器从 Rust → C → asm → 自举的迁移。**Phase 1 + 1.1 + 2.1 + 2.2 + 2.3 + 2.4 已完成并提交**。下一步是 Phase 2.5（unary + postfix：call/field/index）。
 
 ---
 
@@ -9,10 +9,10 @@
 ```bash
 # 1. 确认所在 worktree（避免误操作 main repo）
 pwd                                        # 应输出 .../borrow-check-verification
-git log --oneline -5                       # 应看到五个新提交 cefc1c5、fbcb260、6ece689、55390ad、0c8143f
+git log --oneline -5                       # 应看到六个新提交 ...、0c8143f、83645f6
 
-# 2. 确认 Phase 1 + 2.1 + 2.2 + 2.3 仍能通过
-make -C src-c test                         # 应输出 "73+69+179 tests passed"
+# 2. 确认 Phase 1 + 2.1 + 2.2 + 2.3 + 2.4 仍能通过
+make -C src-c test                         # 应输出 "73+69+255 tests passed"
 
 # 3. 确认字节级验证仍通过
 bash tools/tokenize_test.sh                # 应输出 "7 passed, 0 failed"
@@ -32,8 +32,8 @@ bash tools/tokenize_test.sh                # 应输出 "7 passed, 0 failed"
 | **2.1** | **C-AST 类型定义** | **✅** | **`6ece689`** |
 | **2.2** | **parser skeleton + top-level** | **✅** | **`55390ad`** |
 | **2.3** | **parser statements** | **✅** | **`0c8143f`** |
-| **2.4** | **parser expressions binary** | **🔄 待启动** | — |
-| 2.5 | parser expressions unary/postfix/literals | ⏳ | — |
+| **2.4** | **parser expressions binary** | **✅** | **`83645f6`** |
+| **2.5** | **parser expressions unary/postfix/literals** | **🔄 待启动** | — |
 | 2.6 | parser 与 Rust `--dump-ast` 字节级对齐 | ⏳ | — |
 | 3 | C-Codegen | ⏳ | — |
 | 4 | C-CLI | ⏳ | — |
@@ -120,13 +120,13 @@ keyword，呼应 `UC_TOK_KW_FREE`）和 `uc_stmt_free(UCStmt*)`（析构器）�
 - [x] 节点树的深释放能正确清理所有子节点（test_deep_free_no_leak
       构建一棵覆盖所有节点类型的 AST，自由后 ASAN 报告 0）
 
-### 下一步（Phase 2.4）
+### 下一步（Phase 2.5）
 
-parser expressions binary（按优先级分层）：
-- 新增 `src-c/src/parser.c` 中的 binary operator 解析（Pratt parser / 优先级爬升）
-- 新增 `src-c/tests/test_parser.c` 中的 binary 测试
-- 阶段目标：能 parse `1 + 2 * 3`，`a == b` 等
-- 与现有 5 个测试程序的进展：test_t1/t2/t3 完整 parse；test_hello_world/test_io 仍需 postfix 表达式（2.5）才能完整 parse
+parser expressions unary + postfix：
+- 新增 unary：`-` `!` `~` `*` `&`
+- 新增 postfix：`f(args)`（call）、`obj.field`（field access）、`arr[i]`（index）
+- 新增 sizeof/move/clone 关键字
+- 阶段目标：能 parse 现有 5 个测试程序（包括 `io.print_str(...)`、`io.getValue()`）
 
 ---
 
@@ -249,4 +249,4 @@ git push -u origin feature/borrow-check-verification
 
 ---
 
-*最后更新：Phase 1 + 1.1 + 2.1 + 2.2 + 2.3 已提交（`0c8143f`），准备启动 Phase 2.4*
+*最后更新：Phase 1 + 1.1 + 2.1 + 2.2 + 2.3 + 2.4 已提交（`83645f6`），准备启动 Phase 2.5*
