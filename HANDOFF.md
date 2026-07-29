@@ -1,6 +1,6 @@
 # Worktree Handoff — `feature/borrow-check-verification`
 
-> **TL;DR**：当前在做 UltraCPP 编译器从 Rust → C → asm → 自举的迁移。**Phase 1 + 1.1 + 2.1 + 2.2 + 2.3 + 2.4 已完成并提交**。下一步是 Phase 2.5（unary + postfix：call/field/index）。
+> **TL;DR**：当前在做 UltraCPP 编译器从 Rust → C → asm → 自举的迁移。**Phase 1 + 1.1 + 2.1 + 2.2 + 2.3 + 2.4 + 2.5 已完成并提交**。下一步是 Phase 2.6（与 Rust `--dump-ast` 字节级对齐）或直接进入 Phase 3（C-Codegen）。
 
 ---
 
@@ -9,10 +9,16 @@
 ```bash
 # 1. 确认所在 worktree（避免误操作 main repo）
 pwd                                        # 应输出 .../borrow-check-verification
-git log --oneline -5                       # 应看到六个新提交 ...、0c8143f、83645f6
+git log --oneline -5                       # 应看到七个新提交 ...、0c8143f、83645f6、ce95497
 
-# 2. 确认 Phase 1 + 2.1 + 2.2 + 2.3 + 2.4 仍能通过
-make -C src-c test                         # 应输出 "73+69+255 tests passed"
+# 2. 确认 Phase 1 + 2.1 + 2.2 + 2.3 + 2.4 + 2.5 仍能通过
+make -C src-c test                         # 应输出 "73+69+341 tests passed"
+
+# 2b. 验证 5 个现有测试程序均能完整 parse
+for f in test/test_t1 test/test_t2 test/test_t3 \
+         test/test_hello_world test/test_io; do
+    printf '%s: ' "$f"; ./src-c/build/uc_parser_ast <"$f/main.upp" >/dev/null && echo OK || echo FAIL
+done  # (待 Phase 2.6 后增加 uc_parser_ast CLI)
 
 # 3. 确认字节级验证仍通过
 bash tools/tokenize_test.sh                # 应输出 "7 passed, 0 failed"
@@ -33,8 +39,9 @@ bash tools/tokenize_test.sh                # 应输出 "7 passed, 0 failed"
 | **2.2** | **parser skeleton + top-level** | **✅** | **`55390ad`** |
 | **2.3** | **parser statements** | **✅** | **`0c8143f`** |
 | **2.4** | **parser expressions binary** | **✅** | **`83645f6`** |
-| **2.5** | **parser expressions unary/postfix/literals** | **🔄 待启动** | — |
-| 2.6 | parser 与 Rust `--dump-ast` 字节级对齐 | ⏳ | — |
+| **2.5** | **parser expressions unary/postfix** | **✅** | **`ce95497`** |
+| 2.6 | parser 与 Rust `--dump-ast` 字节级对齐 | ⏳ 可选 | — |
+| 3 | C-Codegen | ⏳ | — |
 | 3 | C-Codegen | ⏳ | — |
 | 4 | C-CLI | ⏳ | — |
 | 5 | asm-Lexer | ⏳ | — |
@@ -120,13 +127,24 @@ keyword，呼应 `UC_TOK_KW_FREE`）和 `uc_stmt_free(UCStmt*)`（析构器）�
 - [x] 节点树的深释放能正确清理所有子节点（test_deep_free_no_leak
       构建一棵覆盖所有节点类型的 AST，自由后 ASAN 报告 0）
 
-### 下一步（Phase 2.5）
+### 下一步
 
-parser expressions unary + postfix：
-- 新增 unary：`-` `!` `~` `*` `&`
-- 新增 postfix：`f(args)`（call）、`obj.field`（field access）、`arr[i]`（index）
-- 新增 sizeof/move/clone 关键字
-- 阶段目标：能 parse 现有 5 个测试程序（包括 `io.print_str(...)`、`io.getValue()`）
+两个选项：
+
+**A. Phase 2.6（与 Rust `--dump-ast` 字节级对齐）**
+- 需要先给 Rust 编译器加 `--dump-ast` flag（类似 Phase 1.1 给 lexer 加 `--dump-tokens`）
+- 在 `tools/ast_test.sh` 中 normalize 后 diff Rust 输出和 C 输出
+- 这是 Phase 2 完整性的验收条件（与 `HANDOFF.md` 顶部"30 秒检查"清单中关于字节级对齐的隐含要求一致）
+- 优点：提前在 parser 层就抓到 Rust/C 行为差异，避免后面 codegen 阶段才发现
+
+**B. 直接进入 Phase 3（C-Codegen）**
+- 跳过字节级对齐，假设 parser 已经够用
+- 优点：更快进入 LLVM IR 生成路径
+- 风险：codegen 阶段可能发现 parser 与 Rust 不一致（漏表达式形式、结构差异），需要回头修 parser
+
+**推荐选 A**，尤其是因为 Phase 2.5 已经能完整 parse 所有 5 个测试程序，剩下只是验证与 Rust 等价。这也是规格里 §10「Phase 2 完成」的定义之一。
+
+如果选 A，预计 1 个 commit 完成：加 `--dump-ast` 到 Rust + 新工具脚本 + 跑 5 个测试程序对比 + 修复发现的差异。
 
 ---
 
@@ -249,4 +267,4 @@ git push -u origin feature/borrow-check-verification
 
 ---
 
-*最后更新：Phase 1 + 1.1 + 2.1 + 2.2 + 2.3 + 2.4 已提交（`83645f6`），准备启动 Phase 2.5*
+*最后更新：Phase 1 + 1.1 + 2.1 + 2.2 + 2.3 + 2.4 + 2.5 已提交（`ce95497`），所有 5 个测试程序能完整 parse；下一步：Phase 2.6（与 Rust `--dump-ast` 字节级对齐）或 Phase 3（C-Codegen）*

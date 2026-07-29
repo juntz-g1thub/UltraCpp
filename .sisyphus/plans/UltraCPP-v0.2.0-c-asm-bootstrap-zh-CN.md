@@ -18,7 +18,8 @@
 | **Phase 2.2 parser skeleton + top-level** | ✅ | **`55390ad`** | `src-c/include/uc_parser.h` + `src-c/src/parser.c` + `tests/test_parser.c`；98/98 单元测试，ASAN+UBSan 净；可 parse `int main() { return 0; }` |
 | **Phase 2.3 parser statements** | ✅ | **`0c8143f`** | `parse_statement` 派发 + 全部 statement 形式；179/179 单元测试；`#import` 作为 directive 处理；test_t1/t2/t3 完整 parse |
 | **Phase 2.4 parser expressions binary** | ✅ | **`83645f6`** | 11 级优先级递归下降（赋值 → 或 → 与 → 位运算 → 相等 → 比较 → 移位 → 加 → 乘 → 主）；255/255 单元测试；test_t1/t2/t3 完整 parse（test_hello_world/test_io 仍需 2.5 postfix） |
-| Phase 2.5 parser expressions unary/postfix/literals | ⏳ | — | 见 §7 |
+| **Phase 2.5 parser expressions unary/postfix** | ✅ | **`ce95497`** | unary 层（`+ - ! ~ & *`）+ postfix 层（call / field / `->` / index）+ `move`/`clone`；341/341 单元测试；**所有 5 个现有测试程序均能完整 parse** |
+| Phase 2.6 parser `--dump-ast` 字节级对齐 | ⏳ 可选 | — | 见 §7（是否进入 Phase 3 二选一） |
 | Phase 2.6 parser `--dump-ast` 字节级对齐 | ⏳ | — | 见 §7 |
 | Phase 3 C-Codegen | ⏳ | — | 未开始 |
 | Phase 4 C-CLI | ⏳ | — | 未开始 |
@@ -27,14 +28,14 @@
 | Phase 7 Bootstrap | ⏳ | — | 未开始 |
 
 **当前分支**：`feature/borrow-check-verification`
-**最后提交**：`83645f6`（Phase 2.4）
+**最后提交**：`ce95497`（Phase 2.5）
 **工作树位置**：`/home/zjtti/Coding/UltraCpp/.worktrees/borrow-check-verification`
 
 **回到这里的快速命令**：
 ```bash
 cd /home/zjtti/Coding/UltraCpp/.worktrees/borrow-check-verification
 git log --oneline -5                    # 看看进度
-make -C src-c test                       # 确认 Phase 1 + 2.1 + 2.2 + 2.3 + 2.4 通过（73 + 69 + 255）
+make -C src-c test                       # 确认 Phase 1 + 2.1 + 2.2 + 2.3 + 2.4 + 2.5 通过（73 + 69 + 341）
 bash tools/tokenize_test.sh              # 确认字节级验证通过
 cat HANDOFF.md                           # 读快速恢复指南
 ```
@@ -334,4 +335,4 @@ src-c/src/ast.c              # AST 分配/释放/深拷贝
 
 ---
 
-*Last updated: Phase 1 + 1.1 + 2.1 + 2.2 + 2.3 + 2.4 已提交（`83645f6`），Phase 2.5 待启动*
+*Last updated: Phase 1 + 1.1 + 2.1 + 2.2 + 2.3 + 2.4 + 2.5 已提交（`ce95497`），所有 5 个测试程序均完整 parse；Phase 2.6（可选）或 Phase 3 待启动*
