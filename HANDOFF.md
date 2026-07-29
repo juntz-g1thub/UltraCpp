@@ -1,6 +1,6 @@
 # Worktree Handoff — `feature/borrow-check-verification`
 
-> **TL;DR**：当前在做 UltraCPP 编译器从 Rust → C → asm → 自举的迁移。**Phase 1 + 1.1 + 2.1 + 2.2 + 2.3 + 2.4 + 2.5 已完成并提交**。下一步是 Phase 2.6（与 Rust `--dump-ast` 字节级对齐）或直接进入 Phase 3（C-Codegen）。
+> **TL;DR**：当前在做 UltraCPP 编译器从 Rust → C → asm → 自举的迁移。**Phase 1 + 1.1 + 2.1 + 2.2 + 2.3 + 2.4 + 2.5 + 2.6 已完成并提交**。Phase 2 整体完成（AST 类型 + parser + 与 Rust 字节级对齐）。下一步是 Phase 3（C-Codegen：LLVM IR 生成）。
 
 ---
 
@@ -20,8 +20,9 @@ for f in test/test_t1 test/test_t2 test/test_t3 \
     printf '%s: ' "$f"; ./src-c/build/uc_parser_ast <"$f/main.upp" >/dev/null && echo OK || echo FAIL
 done  # (待 Phase 2.6 后增加 uc_parser_ast CLI)
 
-# 3. 确认字节级验证仍通过
+# 3. 确认字节级验证仍通过（tokenize + AST）
 bash tools/tokenize_test.sh                # 应输出 "7 passed, 0 failed"
+bash tools/ast_test.sh                     # 应输出 "5 passed, 0 failed"
 ```
 
 如果任何一步失败，不要继续操作，先看下面的"故障排查"。
@@ -40,8 +41,8 @@ bash tools/tokenize_test.sh                # 应输出 "7 passed, 0 failed"
 | **2.3** | **parser statements** | **✅** | **`0c8143f`** |
 | **2.4** | **parser expressions binary** | **✅** | **`83645f6`** |
 | **2.5** | **parser expressions unary/postfix** | **✅** | **`ce95497`** |
-| 2.6 | parser 与 Rust `--dump-ast` 字节级对齐 | ⏳ 可选 | — |
-| 3 | C-Codegen | ⏳ | — |
+| **2.6** | **与 Rust `--dump-ast` 字节级对齐** | **✅** | **`01afb88`** |
+| **3** | **C-Codegen（LLVM IR）** | **🔄 待启动** | — |
 | 3 | C-Codegen | ⏳ | — |
 | 4 | C-CLI | ⏳ | — |
 | 5 | asm-Lexer | ⏳ | — |
@@ -127,24 +128,18 @@ keyword，呼应 `UC_TOK_KW_FREE`）和 `uc_stmt_free(UCStmt*)`（析构器）�
 - [x] 节点树的深释放能正确清理所有子节点（test_deep_free_no_leak
       构建一棵覆盖所有节点类型的 AST，自由后 ASAN 报告 0）
 
-### 下一步
+### 下一步（Phase 3：C-Codegen）
 
-两个选项：
+LLVM IR 生成：
+- 把 `src/codegen/generator.rs` 的 Rust 实现改写到 C（`src-c/src/codegen.c`）
+- 支持 5 个现有测试程序能编译成与 Rust 输出等价的 LLVM IR
+- 注意：Rust 实现的 codegen 有几个已知 bug（`Stmt::For/Break/Continue` 被 `_ => {}` 吞掉），迁移时可能要修复
+- 端到端验证：`bash tools/codegen_test.sh`（Phase 3 创建）对比 Rust 与 C 的 `.ll` 输出
 
-**A. Phase 2.6（与 Rust `--dump-ast` 字节级对齐）**
-- 需要先给 Rust 编译器加 `--dump-ast` flag（类似 Phase 1.1 给 lexer 加 `--dump-tokens`）
-- 在 `tools/ast_test.sh` 中 normalize 后 diff Rust 输出和 C 输出
-- 这是 Phase 2 完整性的验收条件（与 `HANDOFF.md` 顶部"30 秒检查"清单中关于字节级对齐的隐含要求一致）
-- 优点：提前在 parser 层就抓到 Rust/C 行为差异，避免后面 codegen 阶段才发现
-
-**B. 直接进入 Phase 3（C-Codegen）**
-- 跳过字节级对齐，假设 parser 已经够用
-- 优点：更快进入 LLVM IR 生成路径
-- 风险：codegen 阶段可能发现 parser 与 Rust 不一致（漏表达式形式、结构差异），需要回头修 parser
-
-**推荐选 A**，尤其是因为 Phase 2.5 已经能完整 parse 所有 5 个测试程序，剩下只是验证与 Rust 等价。这也是规格里 §10「Phase 2 完成」的定义之一。
-
-如果选 A，预计 1 个 commit 完成：加 `--dump-ast` 到 Rust + 新工具脚本 + 跑 5 个测试程序对比 + 修复发现的差异。
+预计分两到三个 commit：
+- 3.1：codegen 骨架（function def、entry block、return）
+- 3.2：表达式 codegen（literal、binary、call、field access）
+- 3.3：控制流（if/while/for/break/continue）
 
 ---
 
@@ -267,4 +262,4 @@ git push -u origin feature/borrow-check-verification
 
 ---
 
-*最后更新：Phase 1 + 1.1 + 2.1 + 2.2 + 2.3 + 2.4 + 2.5 已提交（`ce95497`），所有 5 个测试程序能完整 parse；下一步：Phase 2.6（与 Rust `--dump-ast` 字节级对齐）或 Phase 3（C-Codegen）*
+*最后更新：Phase 1 + 1.1 + 2.1 + 2.2 + 2.3 + 2.4 + 2.5 + 2.6 已提交（`01afb88`），Phase 2 整体完成（481 单元测试 + 7 tokenize + 5 AST byte-exact 全绿）；下一步：Phase 3（C-Codegen）*
