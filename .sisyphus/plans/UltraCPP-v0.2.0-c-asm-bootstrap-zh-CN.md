@@ -20,24 +20,26 @@
 | **Phase 2.4 parser expressions binary** | ✅ | **`83645f6`** | 11 级优先级递归下降（赋值 → 或 → 与 → 位运算 → 相等 → 比较 → 移位 → 加 → 乘 → 主）；255/255 单元测试；test_t1/t2/t3 完整 parse（test_hello_world/test_io 仍需 2.5 postfix） |
 | **Phase 2.5 parser expressions unary/postfix** | ✅ | **`ce95497`** | unary 层（`+ - ! ~ & *`）+ postfix 层（call / field / `->` / index）+ `move`/`clone`；341/341 单元测试；**所有 5 个现有测试程序均能完整 parse** |
 | **Phase 2.6 parser `--dump-ast` 字节级对齐** | ✅ | **`b3f3b63`** | Rust `--dump-ast` + C `--ast` byte-exact 对齐；`tools/ast_test.sh` 5/5 通过；顺手修了 Rust `parse_comparison` bug（`<=/>/<=/>=` 被错误当成 `<`）和 assignment 节点选择不一致 |
+| **Phase 3 C-Codegen（LLVM IR）** | ✅ | **`cb8bfae`** | `src-c/include/uc_codegen.h` + `src-c/src/codegen.c`（~770 行）+ `--emit-ll` CLI；`tools/codegen_test.sh` 5/5 byte-exact；llc + gcc 跑出来的二进制退出码与 Rust 编译产物一致（test_t1 都是 0）；**505/505 单元测试** |
 | Phase 2.6 parser `--dump-ast` 字节级对齐 | ⏳ | — | 见 §7 |
-| Phase 3 C-Codegen | ⏳ | — | 未开始 |
-| Phase 4 C-CLI | ⏳ | — | 未开始 |
+| Phase 3 C-Codegen | ✅ | **`cb8bfae`** | 见上 |
+| Phase 4 C-CLI | 🔄 待启动 | — | 端到端链接 |
 | Phase 5 asm-Lexer | ⏳ | — | 未开始 |
 | Phase 6 UC-Frontend | ⏳ | — | 未开始 |
 | Phase 7 Bootstrap | ⏳ | — | 未开始 |
 
 **当前分支**：`feature/borrow-check-verification`
-**最后提交**：`b3f3b63`（Phase 2.6）
+**最后提交**：`cb8bfae`（Phase 3）
 **工作树位置**：`/home/zjtti/Coding/UltraCpp/.worktrees/borrow-check-verification`
 
 **回到这里的快速命令**：
 ```bash
 cd /home/zjtti/Coding/UltraCpp/.worktrees/borrow-check-verification
 git log --oneline -5                    # 看看进度
-make -C src-c test                       # 确认 Phase 1 + 2.1 + 2.2 + 2.3 + 2.4 + 2.5 + 2.6 通过（73 + 69 + 339）
+make -C src-c test                       # 确认 Phase 1 + 2 + 3 通过（73 + 69 + 339 + 24 = 505）
 bash tools/tokenize_test.sh              # 字节级 token 对齐 7/7
 bash tools/ast_test.sh                   # 字节级 AST 对齐 5/5
+bash tools/codegen_test.sh               # 字节级 LLVM IR 对齐 5/5
 bash tools/tokenize_test.sh              # 确认字节级验证通过
 cat HANDOFF.md                           # 读快速恢复指南
 ```
@@ -337,4 +339,4 @@ src-c/src/ast.c              # AST 分配/释放/深拷贝
 
 ---
 
-*Last updated: Phase 1 + 1.1 + 2.1 + 2.2 + 2.3 + 2.4 + 2.5 + 2.6 已提交（`b3f3b63`），Phase 2 整体完成（parser 与 Rust 字节级一致）；Phase 3（C-Codegen）待启动*
+*Last updated: Phase 1 + 1.1 + 2 + 3 已提交（`cb8bfae`），Phase 3 完成（LLVM IR 与 Rust 字节级一致 + 5 个测试程序能编译运行）；Phase 4（C-CLI 端到端）待启动*
