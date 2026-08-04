@@ -23,13 +23,14 @@
 | **Phase 3 C-Codegen（LLVM IR）** | ✅ | **`cb8bfae`** | `src-c/include/uc_codegen.h` + `src-c/src/codegen.c`（~770 行）+ `--emit-ll` CLI；`tools/codegen_test.sh` 5/5 byte-exact；llc + gcc 跑出来的二进制退出码与 Rust 编译产物一致（test_t1 都是 0）；**505/505 单元测试** |
 | Phase 2.6 parser `--dump-ast` 字节级对齐 | ⏳ | — | 见 §7 |
 | Phase 3 C-Codegen | ✅ | **`cb8bfae`** | 见上 |
-| Phase 4 C-CLI | 🔄 待启动 | — | 端到端链接 |
+| **Phase 4 C-CLI 端到端** | ✅ | **`b8204fc`** | `--build` flag：parse → emit-ll → llc → gcc → 可执行；`tools/build_test.sh` 3/3 端到端通过（test_t1/t2/t3，退出码与 Rust 编译产物一致）；test_hello_world/test_io 链接因 libio 限制失败（已知） |
+| Phase 5 asm-Lexer | 🔄 待启动 | — | 见 §7 |
 | Phase 5 asm-Lexer | ⏳ | — | 未开始 |
 | Phase 6 UC-Frontend | ⏳ | — | 未开始 |
 | Phase 7 Bootstrap | ⏳ | — | 未开始 |
 
 **当前分支**：`feature/borrow-check-verification`
-**最后提交**：`cb8bfae`（Phase 3）
+**最后提交**：`b8204fc`（Phase 4）
 **工作树位置**：`/home/zjtti/Coding/UltraCpp/.worktrees/borrow-check-verification`
 
 **回到这里的快速命令**：
@@ -40,6 +41,7 @@ make -C src-c test                       # 确认 Phase 1 + 2 + 3 通过（73 + 
 bash tools/tokenize_test.sh              # 字节级 token 对齐 7/7
 bash tools/ast_test.sh                   # 字节级 AST 对齐 5/5
 bash tools/codegen_test.sh               # 字节级 LLVM IR 对齐 5/5
+bash tools/build_test.sh                  # 端到端 build 3/3
 bash tools/tokenize_test.sh              # 确认字节级验证通过
 cat HANDOFF.md                           # 读快速恢复指南
 ```
@@ -339,4 +341,4 @@ src-c/src/ast.c              # AST 分配/释放/深拷贝
 
 ---
 
-*Last updated: Phase 1 + 1.1 + 2 + 3 已提交（`cb8bfae`），Phase 3 完成（LLVM IR 与 Rust 字节级一致 + 5 个测试程序能编译运行）；Phase 4（C-CLI 端到端）待启动*
+*Last updated: Phase 1 + 1.1 + 2 + 3 + 4 已提交（`b8204fc`），Phase 4 完成（test_t1/t2/t3 端到端可执行 + 退出码与 Rust 编译产物一致）；Phase 5（asm-Lexer）待启动*

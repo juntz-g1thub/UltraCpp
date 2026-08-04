@@ -1,6 +1,6 @@
 # Worktree Handoff — `feature/borrow-check-verification`
 
-> **TL;DR**：当前在做 UltraCPP 编译器从 Rust → C → asm → 自举的迁移。**Phase 1 + 1.1 + 2 + 3 已完成并提交**。Phase 2 整体完成（AST + parser + 与 Rust 字节级对齐），Phase 3 完成（LLVM IR codegen）。下一步是 Phase 4（C-CLI：端到端编译、链接）。
+> **TL;DR**：当前在做 UltraCPP 编译器从 Rust → C → asm → 自举的迁移。**Phase 1 + 1.1 + 2 + 3 + 4 已完成并提交**。Phase 1+2+3 完成编译前端（lex + parse + IR codegen），Phase 4 完成端到端构建（IR → llc → gcc → 可执行）。下一步是 Phase 5（asm-Lexer）。
 
 ---
 
@@ -24,6 +24,7 @@ done  # (待 Phase 2.6 后增加 uc_parser_ast CLI)
 bash tools/tokenize_test.sh                # 应输出 "7 passed, 0 failed"
 bash tools/ast_test.sh                     # 应输出 "5 passed, 0 failed"
 bash tools/codegen_test.sh                 # 应输出 "5 passed, 0 failed"
+bash tools/build_test.sh                    # 应输出 "3 passed, 0 failed"（test_t1/t2/t3）
 ```
 
 如果任何一步失败，不要继续操作，先看下面的"故障排查"。
@@ -44,7 +45,8 @@ bash tools/codegen_test.sh                 # 应输出 "5 passed, 0 failed"
 | **2.5** | **parser expressions unary/postfix** | **✅** | **`ce95497`** |
 | **2.6** | **与 Rust `--dump-ast` 字节级对齐** | **✅** | **`b3f3b63`** |
 | **3** | **C-Codegen（LLVM IR）** | **✅** | **`cb8bfae`** |
-| **4** | **C-CLI（端到端）** | **🔄 待启动** | — |
+| **4** | **C-CLI（端到端）** | **✅** | **`b8204fc`** |
+| **5** | **asm-Lexer** | **🔄 待启动** | — |
 | 3 | C-Codegen | ⏳ | — |
 | 4 | C-CLI | ⏳ | — |
 | 5 | asm-Lexer | ⏳ | — |
@@ -130,15 +132,15 @@ keyword，呼应 `UC_TOK_KW_FREE`）和 `uc_stmt_free(UCStmt*)`（析构器）�
 - [x] 节点树的深释放能正确清理所有子节点（test_deep_free_no_leak
       构建一棵覆盖所有节点类型的 AST，自由后 ASAN 报告 0）
 
-### 下一步（Phase 4：C-CLI 端到端）
+### 下一步（Phase 5：asm-Lexer）
 
-把现有 `--emit-ll` 提升为完整的编译/链接 CLI：
-- 接受多输入文件、库路径（`-L`）、输出可执行文件（`--build`）
-- 调用 llc + gcc 链接到本地可执行
-- 处理 `#import` 的实际解析（目前 `#import` 只是 directive，无真实模块加载）
-- 重点是 test_t1/t2/t3 能从 `.upp` 一路走到本地可执行
+将 lexer 改写到 x86-64 AT&T 汇编：
+- `src-asm/src/lexer.s` + 配套 build 脚本
+- 复用 Phase 1 的词法分析逻辑（token kinds、keyword 表、scan 状态机）
+- 输出可被 GNU as 汇编的 `.s` 文件
+- 预期：调用 `as` 和 `ld` 后输出与 src-c 编译产物等价的二进制（针对 test_t1）
 
-预计 1 个 commit。后续 Phase 5（asm-Lexer）起进入 asm 阶段。
+预计 1 个 commit。完成后启动 asm-parser、asm-codegen 阶段，逐步用汇编重写整个编译器（Phase 6+）。
 
 ---
 
@@ -261,4 +263,4 @@ git push -u origin feature/borrow-check-verification
 
 ---
 
-*最后更新：Phase 1 + 1.1 + 2 + 3 已提交（`cb8bfae`），Phase 3 完成（5/5 codegen byte-exact + 5 个测试程序都能编译运行）；下一步：Phase 4（C-CLI 端到端）*
+*最后更新：Phase 1 + 1.1 + 2 + 3 + 4 已提交（`b8204fc`），Phase 4 完成（test_t1/t2/t3 端到端可执行，退出码与 Rust 编译产物一致）；下一步：Phase 5（asm-Lexer）*
