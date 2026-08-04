@@ -1,6 +1,6 @@
 # Worktree Handoff — `feature/borrow-check-verification`
 
-> **TL;DR**：当前在做 UltraCPP 编译器从 Rust → C → asm → 自举的迁移。**Phase 1 + 1.1 + 2 + 3 + 4 已完成并提交**。Phase 1+2+3 完成编译前端（lex + parse + IR codegen），Phase 4 完成端到端构建（IR → llc → gcc → 可执行）。下一步是 Phase 5（asm-Lexer）。
+> **TL;DR**：当前在做 UltraCPP 编译器从 Rust → C → asm → 自举的迁移。**Phase 1 + 1.1 + 2 + 3 + 4 + 5（部分）已完成并提交**。Phase 1+2+3+4 完整（C 端编译器：lex+parse+IR codegen+端到端构建），Phase 5 仅落地 asm 工具链骨架。。
 
 ---
 
@@ -46,7 +46,7 @@ bash tools/build_test.sh                    # 应输出 "3 passed, 0 failed"（t
 | **2.6** | **与 Rust `--dump-ast` 字节级对齐** | **✅** | **`b3f3b63`** |
 | **3** | **C-Codegen（LLVM IR）** | **✅** | **`cb8bfae`** |
 | **4** | **C-CLI（端到端）** | **✅** | **`b8204fc`** |
-| **5** | **asm-Lexer** | **🔄 待启动** | — |
+| **5** | **asm-Lexer** | **⚠️ 部分** | **`329cd4b`**（仅工具链骨架） |
 | 3 | C-Codegen | ⏳ | — |
 | 4 | C-CLI | ⏳ | — |
 | 5 | asm-Lexer | ⏳ | — |
@@ -132,15 +132,23 @@ keyword，呼应 `UC_TOK_KW_FREE`）和 `uc_stmt_free(UCStmt*)`（析构器）�
 - [x] 节点树的深释放能正确清理所有子节点（test_deep_free_no_leak
       构建一棵覆盖所有节点类型的 AST，自由后 ASAN 报告 0）
 
-### 下一步（Phase 5：asm-Lexer）
+### 下一步（Phase 5 续 or Phase 6）
 
-将 lexer 改写到 x86-64 AT&T 汇编：
-- `src-asm/src/lexer.s` + 配套 build 脚本
-- 复用 Phase 1 的词法分析逻辑（token kinds、keyword 表、scan 状态机）
-- 输出可被 GNU as 汇编的 `.s` 文件
-- 预期：调用 `as` 和 `ld` 后输出与 src-c 编译产物等价的二进制（针对 test_t1）
+两个选项：
 
-预计 1 个 commit。完成后启动 asm-parser、asm-codegen 阶段，逐步用汇编重写整个编译器（Phase 6+）。
+**A. 继续 Phase 5：把 lexer.s 写完**
+- 起点是已确认的 `as + ld` 工具链
+- 增量开发：先 emit 单个 token kind → 多个 → 全部
+- 难点是 64-bit 整数格式化、字符串内存管理（brk/mmap）、复杂的 keyword 表查找
+- 必须配 `tools/asm_tokenize_test.sh` 与 C lexer 字节级 diff
+- 预计 3-5 个 commit 才能达到 Phase 5 完成
+
+**B. 转入 Phase 6：UC-Frontend（用 UltraCPP 自己重写 parser + codegen）**
+- 跳到 C 端的下一阶段，假设 C 编译器已经能编译所有 5 个测试程序
+- 用 UltraCPP 自身语言重写 parser/parser（自举的第一步）
+- 不依赖 asm-Lexer 完成
+
+**推荐 B**：asm-Lexer 调试时间成本过高（C 端已经完全够用），自举的剩余阶段可以走 UltraCPP 路径而非 asm 路径。Phase 5 的 stub 已提交作为占位，未来如需可重启。
 
 ---
 
@@ -263,4 +271,4 @@ git push -u origin feature/borrow-check-verification
 
 ---
 
-*最后更新：Phase 1 + 1.1 + 2 + 3 + 4 已提交（`b8204fc`），Phase 4 完成（test_t1/t2/t3 端到端可执行，退出码与 Rust 编译产物一致）；下一步：Phase 5（asm-Lexer）*
+*最后更新：Phase 1 + 1.1 + 2 + 3 + 4 + 5(部分) 已提交（`329cd4b`），Phase 5 仅落地 asm 工具链骨架（C 端编译器已完备），完整 lexer 留待未来*

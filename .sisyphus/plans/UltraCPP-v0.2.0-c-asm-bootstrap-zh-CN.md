@@ -24,13 +24,13 @@
 | Phase 2.6 parser `--dump-ast` 字节级对齐 | ⏳ | — | 见 §7 |
 | Phase 3 C-Codegen | ✅ | **`cb8bfae`** | 见上 |
 | **Phase 4 C-CLI 端到端** | ✅ | **`b8204fc`** | `--build` flag：parse → emit-ll → llc → gcc → 可执行；`tools/build_test.sh` 3/3 端到端通过（test_t1/t2/t3，退出码与 Rust 编译产物一致）；test_hello_world/test_io 链接因 libio 限制失败（已知） |
-| Phase 5 asm-Lexer | 🔄 待启动 | — | 见 §7 |
+| **Phase 5 asm-Lexer** | ⚠️ 部分 | **`329cd4b`** | `src-asm/lexer.s`（30 行）+ `README.md`；工具链（`as` + `ld`）验证通过；完整 lexer 留待后续（详见 `src-asm/README.md` 失败分析） |
 | Phase 5 asm-Lexer | ⏳ | — | 未开始 |
 | Phase 6 UC-Frontend | ⏳ | — | 未开始 |
 | Phase 7 Bootstrap | ⏳ | — | 未开始 |
 
 **当前分支**：`feature/borrow-check-verification`
-**最后提交**：`b8204fc`（Phase 4）
+**最后提交**：`329cd4b`（Phase 5 工具链骨架）
 **工作树位置**：`/home/zjtti/Coding/UltraCpp/.worktrees/borrow-check-verification`
 
 **回到这里的快速命令**：
