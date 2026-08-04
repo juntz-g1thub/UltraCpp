@@ -1,0 +1,3 @@
+# Build artifacts
+lexer.o
+uc_lexer_asm
