@@ -95,6 +95,9 @@ src-c/build/uc_lexer --build test/test_t1/main.upp -o /tmp/test_t1
 ```
 .worktrees/borrow-check-verification/
 ├── HANDOFF.md                              ← 你正在读
+├── README.md / README-zh-CN.md             项目根 README
+├── AGENTS.md                               Agent 工作约定
+├── CONTRIBUTING.md                         贡献流程
 ├── src/                                    原 Rust 实现（只读，迁移期间修改有限）
 │   ├── frontend/{ast,lexer,parser,token,dump_ast}.rs
 │   ├── codegen/{generator,builtin}.rs
@@ -118,9 +121,22 @@ src-c/build/uc_lexer --build test/test_t1/main.upp -o /tmp/test_t1
 │   ├── ast_test.sh                         字节级 AST diff
 │   ├── codegen_test.sh                     字节级 IR diff
 │   └── build_test.sh                       端到端 native exec + 退出码对比
-├── .sisyphus/
-│   ├── plans/UltraCPP-v0.2.0-c-asm-bootstrap-zh-CN.md   完整迁移规划
-│   └── drafts/                             历史草稿
+├── .dev/                                   开发过程专用文档（2026-08-06 重组）
+│   ├── README.md                           索引
+│   ├── plans/                              实施计划与设计文档
+│   │   ├── 0.1.0-compiler-architecture.md
+│   │   ├── 0.1.0-devhandbook.md
+│   │   ├── 0.1.0-docs-update.md
+│   │   ├── 0.1.0-guide.md
+│   │   ├── 0.1.0-spec-snapshot.md
+│   │   └── 0.2.0-c-asm-bootstrap.md         当前迁移规划
+│   └── drafts/                             探索性草稿
+│       ├── 0.1.0-module-system.md
+│       ├── 0.1.0-pointer-design.md
+│       └── 0.1.0-syntax-features.md
+├── docs/                                   用户面向文档（**建议保留不动**）
+│   ├── UltraCPP-v0.1.0-spec-en.md           0.1.0 语言规范（英文）
+│   └── UltraCPP-v0.1.0-spec-zh-CN.md        0.1.0 语言规范（中文）
 ├── test/                                   现有测试程序（不要改）
 │   ├── test_t1/main.upp                    `int main(){return 0;}`
 │   ├── test_t2/main.upp                    `int x=5; return x;`
@@ -129,7 +145,7 @@ src-c/build/uc_lexer --build test/test_t1/main.upp -o /tmp/test_t1
 │   ├── test_io/main.upp                     `io.getValue()`
 │   ├── test_include/main.upp
 │   └── test_simple.uc
-└── (Cargo.lock / Cargo.toml / .gitignore / AGENTS.md / ...)
+└── (Cargo.lock / Cargo.toml / .gitignore / ...)
 ```
 
 ---
@@ -274,13 +290,20 @@ cb8bfae Phase 3: C LLVM IR code generator + end-to-end verification
 
 | 需求 | 看哪里 |
 |---|---|
-| 完整迁移规划 | `.sisyphus/plans/UltraCPP-v0.2.0-c-asm-bootstrap-zh-CN.md` |
+| 当前迁移规划 | `.dev/plans/0.2.0-c-asm-bootstrap.md` |
+| 0.1.0 开发者手册 | `.dev/plans/0.1.0-devhandbook.md` |
+| 0.1.0 架构设计 | `.dev/plans/0.1.0-compiler-architecture.md` |
+| 0.1.0 快速指南 | `.dev/plans/0.1.0-guide.md` |
+| 0.1.0 文档更新计划 | `.dev/plans/0.1.0-docs-update.md` |
+| 0.1.0 语言规范（旧快照） | `.dev/plans/0.1.0-spec-snapshot.md` |
+| 设计草稿 | `.dev/drafts/*.md`（3 个） |
+| `.dev/` 索引 | `.dev/README.md` |
 | C 端口代码结构 | `src-c/README.md` |
 | asm 端口状态 + 失败分析 | `src-asm/README.md` |
-| UltraCPP 语言规范 | `docs/UltraCPP-v0.1.0-spec-zh-CN.md`、`docs/UltraCPP-v0.1.0-spec-en.md` |
+| **0.1.0 语言规范（用户面向，当前版）** | **`docs/UltraCPP-v0.1.0-spec-zh-CN.md`、`docs/UltraCPP-v0.1.0-spec-en.md`** |
 | 原 Rust 实现（迁移参照） | `src/frontend/{ast,parser,lexer,token,dump_ast}.rs`、`src/codegen/{generator,builtin}.rs` |
 | 测试程序 | `test/test_*/main.upp`、`test/test_simple.uc` |
 
 ---
 
-*最后更新：项目状态整理（asm 工具链 stub 状态）；Phase 1+2+3+4 完成；Phase 5 工具链骨架已就位但完整 lexer 未实现；接下来按推荐路径 B 直接进 Phase 6（UC-Frontend）。*
+*最后更新：项目状态整理 + 文档重组（`.sisyphus/` → `.dev/`）；Phase 1+2+3+4 完成；Phase 5 工具链骨架已就位但完整 lexer 未实现；接下来按推荐路径 B 直接进 Phase 6（UC-Frontend）。*
