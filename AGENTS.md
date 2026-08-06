@@ -10,10 +10,14 @@
 
 | Document Type | Example |
 |--------------|---------|
-| Specification | `UltraCPP-v0.1.0-spec-zh-CN.md` |
-| Quick Guide | `UltraCPP-v0.1.0-guide-zh-CN.md` |
-| Developer Handbook | `UltraCPP-v0.1.0-devhandbook-zh-CN.md` |
-| Research Notes | `UltraCPP-v0.1.0-module-system-zh-CN.md` |
+| Specification | `docs/UltraCPP-v0.1.0-spec-zh-CN.md` |
+| Quick Guide | `.dev/plans/0.1.0-guide.md` |
+| Developer Handbook | `.dev/plans/0.1.0-devhandbook.md` |
+| Research Notes | `.dev/drafts/0.1.0-module-system.md` |
+
+> **历史约定**：旧文件名用 `UltraCPP-v0.x.y-...zh-CN.md` 格式存放在 `.sisyphus/`。
+> 2026-08-06 重组后，开发过程文档迁到 `.dev/`，命名简化为 `<version>-<name>.md`。
+> 用户面向的语言规范仍位于 `docs/`，保留全名格式。
 
 ---
 
@@ -44,9 +48,18 @@
 
 | Type | Path |
 |------|------|
-| Design Specs | `.sisyphus/plans/UltraCPP-v0.1.0-*-zh-CN.md` |
-| Research Notes | `.sisyphus/drafts/UltraCPP-v0.1.0-*-zh-CN.md` |
-| This File | `Agent.md` (root) |
+| 当前迁移规划 | `.dev/plans/0.2.0-c-asm-bootstrap.md` |
+| 0.1.0 实施计划 | `.dev/plans/0.1.0-*.md` |
+| 0.1.0 设计草稿 | `.dev/drafts/0.1.0-*.md` |
+| `.dev/` 索引 | `.dev/README.md` |
+| 语言规范（用户面向，当前版） | `docs/UltraCPP-v0.1.0-spec-zh-CN.md`、`docs/UltraCPP-v0.1.0-spec-en.md` |
+| C 端口代码说明 | `src-c/README.md` |
+| asm 端口状态 + 失败分析 | `src-asm/README.md` |
+| 项目工作树 handoff | `HANDOFF.md`（30 秒恢复 + 完整状态） |
+
+> **2026-08-06 重组说明**：原 `.sisyphus/{plans,drafts}/` 已迁至 `.dev/`。
+> 详细结构与命名规则见 `.dev/README.md`。
+> 用户面向的 `docs/`（语言规范）保留不动。
 
 ---
 
@@ -69,17 +82,24 @@
 
 ## Current Phase
 
-- [x] Language design documentation
-- [ ] Compiler development (not started)
+> 最后更新：2026-08-06（与 `HANDOFF.md` §二 同步）
+
+- [x] Language design documentation（0.1.0 完成）
+- [x] C port of the compiler（Phase 1+1.1+2+3+4 完成，505 单元测试，5/5 byte-exact 端到端）
+- [ ] asm port of the lexer（Phase 5 工具链 stub 已提交，完整 lexer 留待后续）
+- [ ] UC-Frontend / Bootstrap（Phase 6/7，未启动）
+
+> 详细当前状态、Phase 5 失败分析、Phase 6+ 路径选项见 `HANDOFF.md`。
 
 ---
 
 ## If Uncertain
 
-1. Read `Agent.md` (this file)
-2. Read relevant spec in `.sisyphus/plans/`
-3. Ask user before making assumptions about language syntax
+1. Read `AGENTS.md` (this file)
+2. Read relevant spec in `.dev/plans/`（实施计划）或 `docs/`（语言规范）
+3. Read `HANDOFF.md` for project status (30-second recovery + state)
+4. Ask user before making assumptions about language syntax
 
 ---
 
-*Last updated: 2026-04-14*
+*Last updated: 2026-08-06*
