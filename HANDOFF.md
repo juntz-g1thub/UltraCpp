@@ -1,11 +1,11 @@
 # Worktree Handoff — `feature/borrow-check-verification`
 
-> **TL;DR**：把 UltraCPP 编译器从 Rust 改写到 C 的迁移已完成到 Phase 4。
+> **TL;DR**：把 UltraCPP 编译器从 Rust 改写到 C 的迁移已完成到 Phase 4；asm 路径已放弃；**bootstrap 启动**。
 > - **Phase 1+1.1+2+3+4**：C 端口完整、可用、与 Rust 字节级对齐、端到端产出可执行。
-> - **Phase 5（asm-Lexer）**：只提交了一个工具链 stub（证明 `as + ld` 工作）；完整 lexer 因调试时间成本超出预算**未完成**。
-> - **Phase 6+（UC-Frontend / Bootstrap）**：未启动。
+> - **Phase 5（asm-Lexer）**：工具链 stub 阶段。**2026-08-06 决定删除整个 `src-asm/`**，走"用 C 端口做底层、用 UltraCPP 写自己"的 bootstrap 路径。
+> - **Phase 6+（UC-Frontend / Bootstrap）**：**已启动**。见 `bootstrap/PLAN.md`。
 >
-> **接下来的工作**：见本文末「项目状态总结」与「下一步选项」。
+> **接下来的工作**：见本文末「项目状态总结」与 `bootstrap/PLAN.md`。
 
 ---
 
@@ -52,7 +52,7 @@ src-c/build/uc_lexer --build test/test_t1/main.upp -o /tmp/test_t1
 | 2.6 | 与 Rust `--dump-ast` 字节级对齐 | ✅ | `b3f3b63` | `tools/ast_test.sh` 5/5，**顺带修了 Rust `parse_comparison` bug**（`<=/>` 全部错为 `<`） |
 | 3 | C-Codegen（LLVM IR） | ✅ | `cb8bfae` | `src-c/src/codegen.c` (~770 行)，`tools/codegen_test.sh` 5/5 |
 | 4 | C-CLI 端到端 | ✅ | `b8204fc` | `--build` 模式；`tools/build_test.sh` 3/3（test_t1/t2/t3 退出码与 Rust 编译产物一致） |
-| **5** | **asm-Lexer** | **⚠️ 部分** | **`329cd4b`** | **只提交了 ~30 行的工具链 stub**；完整 lexer 未完成，详见「项目状态总结」 |
+| **5** | **asm-Lexer** | ❌ 删除 | — | `src-asm/` 已删除（2026-08-06 决策走 bootstrap 路径 C） |
 | 6 | UC-Frontend（自举） | — | — | 未启动 |
 | 7 | Bootstrap 验证 | — | — | 未启动 |
 
@@ -290,7 +290,8 @@ cb8bfae Phase 3: C LLVM IR code generator + end-to-end verification
 
 | 需求 | 看哪里 |
 |---|---|
-| 当前迁移规划 | `.dev/plans/0.2.0-c-asm-bootstrap.md` |
+| 当前迁移规划 | `.dev/plans/0.2.0-c-asm-bootstrap.md`（已大部分完成） |
+| **Bootstrap 路线图** | **`bootstrap/PLAN.md`**（2026-08-06 新建） |
 | 0.1.0 开发者手册 | `.dev/plans/0.1.0-devhandbook.md` |
 | 0.1.0 架构设计 | `.dev/plans/0.1.0-compiler-architecture.md` |
 | 0.1.0 快速指南 | `.dev/plans/0.1.0-guide.md` |
@@ -306,4 +307,4 @@ cb8bfae Phase 3: C LLVM IR code generator + end-to-end verification
 
 ---
 
-*最后更新：项目状态整理 + 文档重组（`.sisyphus/` → `.dev/`）；Phase 1+2+3+4 完成；Phase 5 工具链骨架已就位但完整 lexer 未实现；接下来按推荐路径 B 直接进 Phase 6（UC-Frontend）。*
+*最后更新：删除 `src-asm/`，启动 bootstrap（`src-uc/` + `bootstrap/PLAN.md` + `bootstrap/baseline/`）；Phase 1+2+3+4 完成；接下来按 `bootstrap/PLAN.md` §3 实施 Level 0。*

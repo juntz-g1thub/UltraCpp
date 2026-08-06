@@ -1,0 +1,7 @@
+# src-uc/ — the new UltraCPP compiler (in UltraCPP itself)
+#
+# This is the destination for the bootstrap work: the new compiler is
+# written here in UltraCPP source code, compiled by the C port
+# (src-c/build/uc_lexer) to produce a self-hosted UltraCPP compiler.
+#
+# Currently empty. See bootstrap/PLAN.md for the roadmap.

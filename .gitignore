@@ -25,6 +25,9 @@ build/
 *.s
 *.ll
 *.asm
+# Exception: bootstrap/baseline/ files are reference outputs, not build artifacts
+!bootstrap/baseline/*.ll
+!bootstrap/baseline/*.s
 
 # C port (src-c/) build artifacts
 src-c/build/
