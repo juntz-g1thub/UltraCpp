@@ -1,274 +1,286 @@
 # Worktree Handoff — `feature/borrow-check-verification`
 
-> **TL;DR**：当前在做 UltraCPP 编译器从 Rust → C → asm → 自举的迁移。**Phase 1 + 1.1 + 2 + 3 + 4 + 5（部分）已完成并提交**。Phase 1+2+3+4 完整（C 端编译器：lex+parse+IR codegen+端到端构建），Phase 5 仅落地 asm 工具链骨架。。
+> **TL;DR**：把 UltraCPP 编译器从 Rust 改写到 C 的迁移已完成到 Phase 4。
+> - **Phase 1+1.1+2+3+4**：C 端口完整、可用、与 Rust 字节级对齐、端到端产出可执行。
+> - **Phase 5（asm-Lexer）**：只提交了一个工具链 stub（证明 `as + ld` 工作）；完整 lexer 因调试时间成本超出预算**未完成**。
+> - **Phase 6+（UC-Frontend / Bootstrap）**：未启动。
+>
+> **接下来的工作**：见本文末「项目状态总结」与「下一步选项」。
 
 ---
 
-## 一、回到这里时 30 秒内要做的 3 件事
+## 一、30 秒内恢复工作状态
 
 ```bash
-# 1. 确认所在 worktree（避免误操作 main repo）
-pwd                                        # 应输出 .../borrow-check-verification
-git log --oneline -5                       # 应看到八个新提交 ...、ce95497、b3f3b63
+cd /home/zjtti/Coding/UltraCpp/.worktrees/borrow-check-verification
 
-# 2. 确认 Phase 1 + 2.1 + 2.2 + 2.3 + 2.4 + 2.5 + 2.6 仍能通过
-make -C src-c test                         # 应输出 "73+69+339 tests passed"
+# 1. 确认在正确 worktree
+pwd                                        # → .../borrow-check-verification
+git log --oneline -10                       # 看最近 10 个 commit
 
-# 2b. 验证 5 个现有测试程序均能完整 parse
-for f in test/test_t1 test/test_t2 test/test_t3 \
-         test/test_hello_world test/test_io; do
-    printf '%s: ' "$f"; ./src-c/build/uc_parser_ast <"$f/main.upp" >/dev/null && echo OK || echo FAIL
-done  # (待 Phase 2.6 后增加 uc_parser_ast CLI)
+# 2. 跑全部冒烟测试
+make -C src-c test                          # 单元测试 4 个 binary，505/505
+bash tools/tokenize_test.sh                 # 字节级 token diff: 7/7
+bash tools/ast_test.sh                      # 字节级 AST  diff: 5/5
+bash tools/codegen_test.sh                  # 字节级 IR   diff: 5/5
+bash tools/build_test.sh                    # 端到端 build : 3/3
+# 全部 4 个脚本的预期输出："N passed, 0 failed"
 
-# 3. 确认字节级验证仍通过（tokenize + AST + codegen）
-bash tools/tokenize_test.sh                # 应输出 "7 passed, 0 failed"
-bash tools/ast_test.sh                     # 应输出 "5 passed, 0 failed"
-bash tools/codegen_test.sh                 # 应输出 "5 passed, 0 failed"
-bash tools/build_test.sh                    # 应输出 "3 passed, 0 failed"（test_t1/t2/t3）
+# 3. 端到端构建一个可执行文件
+src-c/build/uc_lexer --build test/test_t1/main.upp -o /tmp/test_t1
+/tmp/test_t1; echo "exit: $?"               # 应该是 0
+
+# 4. 确认 asm 工具链 stub 还能跑
+./src-asm/uc_lexer_asm                      # 输出 banner，退出 0
 ```
 
-如果任何一步失败，不要继续操作，先看下面的"故障排查"。
+如果上面任何一步失败，先看本文「故障排查」节。
 
 ---
 
 ## 二、当前进度
 
-| Phase | 内容 | 状态 | 提交 |
-|-------|------|------|------|
-| 0 | 规划 | ✅ | `.sisyphus/plans/UltraCPP-v0.2.0-c-asm-bootstrap-zh-CN.md` |
-| 1 | C-Lexer | ✅ | `cefc1c5` |
-| 1.1 | 字节级验证 | ✅ | `fbcb260` |
-| **2.1** | **C-AST 类型定义** | **✅** | **`6ece689`** |
-| **2.2** | **parser skeleton + top-level** | **✅** | **`55390ad`** |
-| **2.3** | **parser statements** | **✅** | **`0c8143f`** |
-| **2.4** | **parser expressions binary** | **✅** | **`83645f6`** |
-| **2.5** | **parser expressions unary/postfix** | **✅** | **`ce95497`** |
-| **2.6** | **与 Rust `--dump-ast` 字节级对齐** | **✅** | **`b3f3b63`** |
-| **3** | **C-Codegen（LLVM IR）** | **✅** | **`cb8bfae`** |
-| **4** | **C-CLI（端到端）** | **✅** | **`b8204fc`** |
-| **5** | **asm-Lexer** | **⚠️ 部分** | **`329cd4b`**（仅工具链骨架） |
-| 3 | C-Codegen | ⏳ | — |
-| 4 | C-CLI | ⏳ | — |
-| 5 | asm-Lexer | ⏳ | — |
-| 6 | UC-Frontend（自举） | ⏳ | — |
-| 7 | Bootstrap 验证 | ⏳ | — |
+| Phase | 内容 | 状态 | 提交 | 备注 |
+|---|---|---|---|---|
+| 1 | C-Lexer | ✅ | `cefc1c5` | `src-c/src/lexer.c`，69 单元测试 |
+| 1.1 | 字节级 tokenize 对齐 | ✅ | `fbcb260` | `tools/tokenize_test.sh` 7/7（column normalize） |
+| 2.1 | C-AST 类型定义 | ✅ | `6ece689` | `src-c/include/uc_ast.h` + `src-c/src/ast.c`，73 单元测试 |
+| 2.2 | parser skeleton + top-level | ✅ | `55390ad` | 8 种 TopLevel + 类型 + 最小 stmt |
+| 2.3 | parser statements | ✅ | `0c8143f` | if/while/for/return/break/continue/expr/decl/free/unsafe |
+| 2.4 | parser 二元表达式 | ✅ | `83645f6` | 11 级 precedence climbing 递归下降 |
+| 2.5 | parser 一元 + postfix | ✅ | `ce95497` | unary/postfix 11 + move/clone，341 单元测试 |
+| 2.6 | 与 Rust `--dump-ast` 字节级对齐 | ✅ | `b3f3b63` | `tools/ast_test.sh` 5/5，**顺带修了 Rust `parse_comparison` bug**（`<=/>` 全部错为 `<`） |
+| 3 | C-Codegen（LLVM IR） | ✅ | `cb8bfae` | `src-c/src/codegen.c` (~770 行)，`tools/codegen_test.sh` 5/5 |
+| 4 | C-CLI 端到端 | ✅ | `b8204fc` | `--build` 模式；`tools/build_test.sh` 3/3（test_t1/t2/t3 退出码与 Rust 编译产物一致） |
+| **5** | **asm-Lexer** | **⚠️ 部分** | **`329cd4b`** | **只提交了 ~30 行的工具链 stub**；完整 lexer 未完成，详见「项目状态总结」 |
+| 6 | UC-Frontend（自举） | — | — | 未启动 |
+| 7 | Bootstrap 验证 | — | — | 未启动 |
 
-**下下阶段的具体任务见** `.sisyphus/plans/UltraCPP-v0.2.0-c-asm-bootstrap-zh-CN.md` §7。
+### 已完成的核心能力
+
+```
+.upp 源码
+  │
+  ├─→ Rust 编译器：lex → parse → codegen → .ll → llc → gcc → native exec
+  │
+  └─→ C 端口：    lex → parse → codegen → .ll → llc → gcc → native exec
+                  两者输出字节级一致（除 libio 链接限制外）
+```
+
+**端到端验证（test_t1/t2/t3）**：
+
+| 测试程序 | Rust 退出码 | C 退出码 | C 端 `.ll` byte-exact |
+|---|---|---|---|
+| test_t1 (`return 0`) | 0 | 0 | ✅ |
+| test_t2 (`return x=5`) | 5 | 5 | ✅ |
+| test_t3 (`return 0`) | 0 | 0 | ✅ |
+| test_hello_world | (link fail) | (link fail) | ✅ IR 正确，链接需 libio |
+| test_io | (link fail) | (link fail) | ✅ IR 正确，链接需 libio |
+
+### 单元测试覆盖（505/505）
+
+| Binary | Tests | 范围 |
+|---|---|---|
+| `test_ast` | 73/73 | AST 类型 + 构造 + 深释放 + dump |
+| `test_lexer` | 69/69 | C 词法（关键字、字符串、注释、整数） |
+| `test_parser` | 339/339 | C 解析（top-level + 8 种 stmt + 11 级 binary + 一元 + postfix） |
+| `test_codegen` | 24/24 | C codegen（builtin decls、函数、表达式、字段调用 declare） |
+
+全部 ASAN+UBSan 净，零警告（`-Wall -Wextra -Wpedantic -Wshadow -Wstrict-prototypes -Wmissing-prototypes`）。
 
 ---
 
-## 三、目录结构速查
+## 三、目录结构（实际状态）
 
 ```
 .worktrees/borrow-check-verification/
-├── HANDOFF.md                              ← 你正在读的文件
-├── src-c/                                  C 实现（Phase 1+）
+├── HANDOFF.md                              ← 你正在读
+├── src/                                    原 Rust 实现（只读，迁移期间修改有限）
+│   ├── frontend/{ast,lexer,parser,token,dump_ast}.rs
+│   ├── codegen/{generator,builtin}.rs
+│   ├── main.rs
+│   └── ...
+├── src-c/                                  C 端口（Phase 1+1.1+2+3+4 完整）
 │   ├── Makefile
-│   ├── README.md                           C 端口详细说明
-│   ├── include/uc_*.h                      公共头
-│   ├── src/{error,token,lexer,main}.c      实现
-│   └── tests/test_lexer.c                  69 个单元测试
-├── src-asm/                                占位（Phase 5 用）
-├── tools/
-│   └── tokenize_test.sh                    端到端验证脚本
-├── .sisyphus/plans/
-│   └── UltraCPP-v0.2.0-c-asm-bootstrap-zh-CN.md   完整规划
-├── src/                                    原 Rust 实现（不要改，除非迁移需要）
-└── test/                                   5 个测试程序（不要改）
+│   ├── README.md
+│   ├── include/uc_*.h                      公共头（8 个）
+│   ├── src/{error,token,lexer,parser,ast,codegen,main}.c
+│   ├── tests/test_*.c                      4 个测试 binary，505 单元测试
+│   └── build/                              build artifacts（已 gitignore）
+├── src-asm/                                asm 端口（Phase 5 工具链 stub）
+│   ├── lexer.s                             ~30 行 stub：写 banner，exit 0
+│   ├── README.md                           详细状态 + 失败分析
+│   ├── .gitignore                          排除 build artifacts
+│   ├── build/                              build artifacts（已 gitignore）
+│   └── uc_lexer_asm                        已编译 stub（已 gitignore）
+├── tools/                                  4 个端到端验证脚本
+│   ├── tokenize_test.sh                    字节级 token diff
+│   ├── ast_test.sh                         字节级 AST diff
+│   ├── codegen_test.sh                     字节级 IR diff
+│   └── build_test.sh                       端到端 native exec + 退出码对比
+├── .sisyphus/
+│   ├── plans/UltraCPP-v0.2.0-c-asm-bootstrap-zh-CN.md   完整迁移规划
+│   └── drafts/                             历史草稿
+├── test/                                   现有测试程序（不要改）
+│   ├── test_t1/main.upp                    `int main(){return 0;}`
+│   ├── test_t2/main.upp                    `int x=5; return x;`
+│   ├── test_t3/main.upp                    `int main(){return 0;}`
+│   ├── test_hello_world/main.upp           `io.print_str("Hello...")`
+│   ├── test_io/main.upp                     `io.getValue()`
+│   ├── test_include/main.upp
+│   └── test_simple.uc
+└── (Cargo.lock / Cargo.toml / .gitignore / AGENTS.md / ...)
 ```
 
 ---
 
-## 四、约定（迁移期 C 代码必须遵守）
+## 四、C 端口遵守的约定
 
 | 项 | 约定 |
-|----|------|
+|---|---|
 | C 标准 | C99（`cc -std=c99`） |
-| 警告 | `-Wall -Wextra -Wpedantic -Wshadow -Wstrict-prototypes -Wmissing-prototypes`（全开，零警告） |
+| 警告 | `-Wall -Wextra -Wpedantic -Wshadow -Wstrict-prototypes -Wmissing-prototypes`，零警告 |
 | 命名 | `snake_case`，公开符号前缀 `uc_`，枚举值全大写 `UC_*` |
 | 头文件 | 公共 API 放 `src-c/include/uc_*.h` |
 | 内存 | 显式 `malloc`/`free`；所有权在头文件注释中声明 |
-| 错误 | `UCError*` out 参数；不抛异常、不 setjmp |
+| 错误 | `UCError*` out 参数；不抛异常、不 `setjmp` |
 | 字符串 | `char*` + `size_t len`，NUL-terminated |
 | 编译选项 | `-O2 -g`（release 模式 `-O3 -DNDEBUG`） |
 
-**Makefile 自动发现** `src/*.c`，新增 `.c` 文件无需改 Makefile。**测试**用 `tests/test_*.c`，Makefile 的 `LIB_OBJECTS` 已经排除 `main.o`，新测试无需改 Makefile。
+**Makefile 自动发现**：`src/*.c` 与 `tests/test_*.c` 无需改 Makefile。
+`LIB_OBJECTS` 排除 `main.o`，新测试无需改 Makefile。
 
 ---
 
-## 五、Phase 2 启动包（最小 AST）
+## 五、项目状态总结（截至本次 commit）
 
-### 任务清单（✅ Phase 2.1 已完成于 6ece689）
+### 已达成
 
-- [x] 读 `src/frontend/ast.rs` 全部（90 行）
-- [x] 读 `src-c/README.md` 和 `src-c/src/lexer.c` 头部 50 行（学风格）
-- [x] 创建 `src-c/include/uc_ast.h`：所有 AST 节点的 typedef
-- [x] 创建 `src-c/src/ast.c`：构造器、释放、深释放
-- [x] 创建 `src-c/tests/test_ast.c`：9 个测试用例，73 个断言
-- [x] 运行 `make -C src-c test`，73/73 + 69/69 都过
+1. **C 端编译器完整可用**（Phase 1+2+3+4）
+   - 505/505 单元测试，4 个端到端 E2E 脚本全绿
+   - 5/5 现有测试程序 IR 输出与 Rust 字节级一致
+   - 3 个测试程序可端到端产出与 Rust 编译结果**退出码一致**的可执行文件
 
-### Rust → C 风格映射（实际采用）
+2. **迁移期修复的 Rust bug**（Phase 2.6 顺手）
+   - `src/frontend/parser.rs::parse_comparison` 把 `<=/>=` 全部误为 `<` 的 bug
+   - `x = y` 在 C 端改用专门的 `UC_EXPR_ASSIGN` 节点，与 Rust `Expr::Assign` 对齐
 
-| Rust | C |
-|------|---|
-| `Box<T>` | `struct T*` 显式 malloc/free |
-| `Vec<T>` | 通用 `UCVec { void** data; size_t len; size_t cap; }` |
-| `enum X { A(i32), B }` | tag + union: `struct UCX { UCXTag tag; union { int a; } as; }` |
-| `Option<T>` | 指针为 NULL 表示 None；字符串场景下 `UCString{data=NULL, len=0}` |
-| `Result<T,E>` | `UCError*`（仅失败路径；当前 AST 不消费）|
-| `String` | `UCString { char* data; size_t len; }`，NUL-terminated |
+3. **完整的端到端验证套件**
+   - 4 个 shell 脚本（`tools/{tokenize,ast,codegen,build}_test.sh`）
+   - 任何 commit 都能用这 4 个脚本验证字节级 / 行为级正确性
 
-### 关键命名冲突
+### 未达成
 
-`UCStmt::Free(Expr)` 的构造器不能叫 `uc_stmt_free`，因为该名已被 UCStmt
-的析构器占用。最终命名：`uc_stmt_kw_free(UCExpr*)`（构造器，`kw` 表示
-keyword，呼应 `UC_TOK_KW_FREE`）和 `uc_stmt_free(UCStmt*)`（析构器）。
+1. **Phase 5（asm-Lexer）只到工具链 stub**
+   - 详见下文「Phase 5 详细状态」
 
-### 验证清单（✅ 已完成）
+2. **Phase 6/7（UC-Frontend / Bootstrap）未启动**
+   - 取决于 Phase 5 是否完成，或走 UltraCPP 自举路径
 
-- [x] 不引入任何 memory leak（ASAN+UBSan 跑 test_ast 0 报告）
-- [x] 不引入 double-free（所有自由函数 NULL-safe，`uc_literal_free`
-      在第二次会清零并置 kind 为非 STRING，幂等）
-- [x] 节点树的深释放能正确清理所有子节点（test_deep_free_no_leak
-      构建一棵覆盖所有节点类型的 AST，自由后 ASAN 报告 0）
+### Phase 5 详细状态
 
-### 下一步（Phase 5 续 or Phase 6）
+**已完成**（`329cd4b`）：
 
-两个选项：
+* `src-asm/lexer.s`（~30 行）：写一行 banner 到 stderr，exit 0
+* `src-asm/README.md`：详细记录了 ~1500 行全量实现的尝试过程、3 类典型 bug、4 步恢复计划
+* `src-asm/.gitignore`：排除 `lexer.o`、`uc_lexer_asm`
+* 工具链验证：`as --64 -o lexer.o lexer.s && ld -o uc_lexer_asm lexer.o` 工作
 
-**A. 继续 Phase 5：把 lexer.s 写完**
-- 起点是已确认的 `as + ld` 工具链
-- 增量开发：先 emit 单个 token kind → 多个 → 全部
-- 难点是 64-bit 整数格式化、字符串内存管理（brk/mmap）、复杂的 keyword 表查找
-- 必须配 `tools/asm_tokenize_test.sh` 与 C lexer 字节级 diff
-- 预计 3-5 个 commit 才能达到 Phase 5 完成
+**未完成**：完整 lexer 的 ~1500 行实现
 
-**B. 转入 Phase 6：UC-Frontend（用 UltraCPP 自己重写 parser + codegen）**
-- 跳到 C 端的下一阶段，假设 C 编译器已经能编译所有 5 个测试程序
-- 用 UltraCPP 自身语言重写 parser/parser（自举的第一步）
-- 不依赖 asm-Lexer 完成
+* 之前的 ~1500 行实现能 build 但 runtime segfault
+* 调试 3+ 小时后识别出 3 类 bug（详见 `src-asm/README.md`）：
+  1. `.ascii` 数据放 `.text` 被当作指令执行（→ SIGILL）
+  2. 4 字节 `.skip` 字段用 `movq` 写入（→ 破坏相邻 BSS 变量）
+  3. RIP-relative `leaq` 在 call boundary 行为可疑
+* 额外发现：GNU as 对 `movq mem(%rip), mem(%rip)` 报 "operand size mismatch"，必须 `lea + mov`
+* **2026-08-05 二次尝试**：在 stub 基础上重写了 ~600 行可读版本，能 build，能 emit 10 个 token 但格式与 C 输出不一致（line/col、Int 值、lexeme 都有 bug），文件读路径（argv[1]）下完全不输出 tokens
+* **本次 session 决定**：放弃 Phase 5 完整实现。已 `git checkout` 回到 stub 状态。`src-asm/lexer.s.stub` 临时备份文件已删除。
 
-**推荐 B**：asm-Lexer 调试时间成本过高（C 端已经完全够用），自举的剩余阶段可以走 UltraCPP 路径而非 asm 路径。Phase 5 的 stub 已提交作为占位，未来如需可重启。
+**Phase 5 完整实现的工作量估计**：根据二次尝试，~600 行 C-equivalent asm + 大量调试，预计 3-5 个 commit。
 
 ---
 
-## 六、踩过的坑（避免重复）
+## 六、Phase 5 之后怎么办
 
-### 6.1 Sub-agent 任务规模
+剩余工作（Phase 6+）按计划是「用 UltraCPP 自己重写 parser + codegen（自举）」。
 
-**问题**：一次 dispatch 让 worker sub-agent 完成 parser.rs（880 行 → ~1500 行 C），sub-agent 在产出可编译代码前 OOM/超时（exit 137）。
+**两条路径**：
 
-**结论**：**单 sub-agent 任务 ≤ 2 文件 ≤ 200 行 C**。超出就拆。
+### 路径 A：补完 Phase 5 asm-Lexer
 
-**Phase 2 的拆分**（已写入主计划）：
-- 2.1 AST 类型（独立，最小）
-- 2.2 parser skeleton + top-level declarations
-- 2.3 parser statements（if/while/for/return）
-- 2.4 parser expressions binary（按优先级分层）
-- 2.5 parser expressions unary/postfix/literals
-- 每个块单独 sub-agent + 单独验证
+* 起点：`src-asm/lexer.s` stub（30 行已 build）
+* 工作量：~3-5 个 commit 写完整 lexer 并过 `tools/tokenize_test.sh`
+* 优点：完整 C → asm 路径；Phase 7 bootstrap 可用 asm 版本做底层
+* 缺点：调试成本高（已两次尝试都遇到深层 bug）
 
-### 6.2 Rust lexer 列号 bug 不在迁移期修
+### 路径 B：跳过 asm-Lexer，直接进 Phase 6
 
-**问题**：Rust lexer 在 identifier/number/string/char 扫描时不更新列号。
+* C 端口（Phase 1-4）已经够用
+* Phase 6：用 UltraCPP 语言重写 parser + codegen（自举的真正意义所在）
+* 优点：跳过 asm 的痛苦；自举路径更直接
+* 缺点：src-asm/ 永远停在 stub；自举的"底层"还是 C 端
 
-**决策**：在 `tools/tokenize_test.sh` 中归一化列号。Phase 1.1 已记录。Phase 6+（UC 自举）时统一处理列号。
+### 推荐
 
-**不要**为了列号字节级匹配去改 Rust lexer，那是独立改进。
+**路径 B**。理由：
 
-### 6.3 不要碰的目录
+1. asm-Lexer 的边际收益低（C 端 100% 覆盖）
+2. 自举的核心价值在 parser + codegen，不在 lexer
+3. 两次 Phase 5 尝试都暴露了 asm 调试的时间成本
+4. 如果未来真要 asm 端，可基于 stub 重新做（README 里有 4 步计划）
 
-- `src/`（Rust 实现）—— 只在**迁移需要**时改（如加 `--dump-ast` flag）
-- `test/` —— 测试程序，不要改
-- `docs/` —— 用户/语言规范，更新是单独任务
+---
 
-### 6.4 不要碰的文件
+## 七、提交历史（已 merged）
 
-- `src/frontend/lexer.rs` 的列号跟踪逻辑（已知 bug，独立修复）
-- `src/codegen/generator.rs` 中吞掉 `Stmt::For/Break/Continue` 的 `_ => {}`（独立 bugfix）
-
-### 6.5 Token 词素生命周期陷阱（Phase 2.2 踩坑）
-
-**问题**：`p->current.lexeme` 是 lexer 返回 token 时 strndup 出来的独立堆缓冲区。每次
-`advance(p)` 会 `uc_token_free(&p->current)`，从而释放该缓冲区。
-
-`parse_expr_minimal` 里如果先 `const char* s = p->current.lexeme; ... advance(p); return uc_expr_ident(s, n);`，那 `s` 已被 free，再传给构造器就是 use-after-free。
-
-**决策**：在 advance 之前完成所有读取与拷贝，或者把构造推迟到 advance 之后（但
-lexeme 已被 free，所以必须拷）。现在的固定模式：
-
-```c
-UCString s = uc_string_new(p->current.lexeme, p->current.lexeme_len);  // copy
-advance(p);                                                            // free original
-return expr_ident(s);                                                  // use copy
+```
+33cecaf docs: fix Phase 2.6 commit hash reference
+0655b14 docs: update HANDOFF and migration plan after Phase 2.6
+b3f3b63 Phase 2.6: byte-level AST alignment between Rust and C parsers
+423c7c4 docs: update HANDOFF and migration plan after Phase 2.5
+ce95497 Phase 2.5: C parser unary + postfix expressions
+c521da0 docs: update HANDOFF and migration plan after Phase 2.4
+83645f6 Phase 2.4: C parser binary expressions
+31eac55 docs: update HANDOFF and migration plan after Phase 2.3
+0c8143f Phase 2.3: C parser statements
+... (Phase 1, 1.1, 2.1, 2.2 ...)
+1608926 docs: update HANDOFF and migration plan after Phase 5 (partial)
+329cd4b Phase 5: asm-Lexer stub (toolchain verified, full lexer deferred)
+2d44c5b docs: update HANDOFF and migration plan after Phase 4
+b8204fc Phase 4: end-to-end CLI build
+c0b0652 docs: update HANDOFF and migration plan after Phase 3
+cb8bfae Phase 3: C LLVM IR code generator + end-to-end verification
 ```
 
-ASAN+UBSan 一定要跑（`cc -fsanitize=address,undefined`），不然这种 bug 经常
-侥幸不崩或崩在很远的地方，调试成本高。
-
-### 6.6 字符串字面量的引号在 lexeme 中（Phase 2.2 踩坑）
-
-**问题**：lexer 按 Phase 1.1 的约定把带引号的原文作为 lexeme（保留 `"`），但把
-转义解码后的字符串存到 `tok.as.string_val`（无引号）。
-
-**决策**：构造字符串字面量 AST 节点时使用 `tok.as.string_val`，不是 `tok.lexeme`。
-否则 `"hi"` 会变成 `"\"hi\""`，断言全错。
-
-### 6.7 类型解析中 `*int` 与 `int*` 同时支持（Phase 2.2 决定）
-
-**问题**：spec 用 C 风格后缀 `int* p`，而 Rust parser 只支持前缀 `*int`。这意味
-着 parse_type 需要两种入口。
-
-**决策**：C 端口同时接受两种写法。Prefix `*` 分支显式包一层 `uc_type_pointer`，
-后缀 `*` 由独立的 while 循环处理。后续如要跟 Rust `--dump-ast` 字节级对齐，需要
-确认 spec 写法优先（避免在 dump 中出现差异）。
-
 ---
 
-## 七、故障排查
+## 八、故障排查
 
 | 症状 | 原因 | 解决 |
-|------|------|------|
-| `pwd` 显示 `/home/zjtti/Coding/UltraCpp` | bash 每次调用 cwd 重置 | 命令前加 `cd .../.worktrees/borrow-check-verification &&` |
-| `make -C src-c` 在 `src-c/src/main.c` 报 `multiple definition of main` | 测试和 main 都链接了 | 不需要改，Makefile 已经排除 `main.o` |
-| `cargo test --offline` 报 `assert_cmd` 下载失败 | dev-deps 不在本地缓存 | 联网时 `cargo fetch`；或暂时删 `Cargo.toml` 中 dev-deps |
-| C 编译警告：`/*` within comment | 我在注释里写了 `/* ... * /` | 改成 `forward-slash-star ... star-slash` 文字描述 |
-| Rust `--dump-tokens` 列号与 C 不同 | Rust 列号 bug（已知） | 见 `tools/tokenize_test.sh` 的 normalize 步骤 |
-
----
-
-## 八、git 工作流建议
-
-```bash
-# 每次开始新工作
-cd /home/zjtti/Coding/UltraCpp/.worktrees/borrow-check-verification
-git status                                # 看是否有遗留
-git fetch origin                          # 拿 main 最新
-git rebase main                           # 基础对齐（可选）
-git log --oneline -5                      # 看历史
-make -C src-c test                        # 确认基线通过
-
-# 提交粒度
-# - 一个逻辑改动 = 一个 commit
-# - 测试和实现放同一个 commit
-
-# 推送（可选）
-git push -u origin feature/borrow-check-verification
-```
+|---|---|---|
+| `pwd` 不是 worktree | bash 每次 cwd 重置 | 命令前 `cd .../.worktrees/borrow-check-verification &&` |
+| `make -C src-c` 报 `multiple definition of main` | 测试和 main 都链接了 | 不需要改，Makefile 已排除 `main.o` |
+| `cargo test --offline` 报 dev-deps 下载失败 | dev-deps 不在本地缓存 | 联网时 `cargo fetch`；或临时删 `Cargo.toml` dev-deps |
+| C 编译警告 | 代码有问题 | 零容忍，警告即 fix |
+| `tools/ast_test.sh` 不通过 | Rust `--dump-ast` 或 C `--ast` 输出改了 | 重新跑两者，diff 看差异 |
+| `tools/codegen_test.sh` 不通过 | 同上 | 同上 |
+| `tools/build_test.sh` 中 hello_world/io 失败 | 已知：libio 缺失 | 接受；Phase 6+ 再处理 |
+| `src-asm/uc_lexer_asm` 跑 segfault | 完整 lexer 实现未提交；当前是 stub | 应该只跑 banner 然后 exit 0 |
 
 ---
 
 ## 九、相关文档指针
 
 | 需求 | 看哪里 |
-|------|--------|
-| 完整迁移规划（含阶段图、风险、决策） | `.sisyphus/plans/UltraCPP-v0.2.0-c-asm-bootstrap-zh-CN.md` |
-| C 端口代码结构、API 用法 | `src-c/README.md` |
-| UltraCPP 语言规范 | `docs/UltraCPP-v0.1.0-spec-zh-CN.md`（中文）、`docs/UltraCPP-v0.1.0-spec-en.md`（英文） |
-| 原 Rust 实现（迁移参照） | `src/frontend/{ast,parser,lexer,token,mod}.rs` |
-| 测试程序（验证目标） | `test/test_*/main.upp` |
-| 端到端验证工具 | `tools/tokenize_test.sh` |
+|---|---|
+| 完整迁移规划 | `.sisyphus/plans/UltraCPP-v0.2.0-c-asm-bootstrap-zh-CN.md` |
+| C 端口代码结构 | `src-c/README.md` |
+| asm 端口状态 + 失败分析 | `src-asm/README.md` |
+| UltraCPP 语言规范 | `docs/UltraCPP-v0.1.0-spec-zh-CN.md`、`docs/UltraCPP-v0.1.0-spec-en.md` |
+| 原 Rust 实现（迁移参照） | `src/frontend/{ast,parser,lexer,token,dump_ast}.rs`、`src/codegen/{generator,builtin}.rs` |
+| 测试程序 | `test/test_*/main.upp`、`test/test_simple.uc` |
 
 ---
 
-*最后更新：Phase 1 + 1.1 + 2 + 3 + 4 + 5(部分) 已提交（`329cd4b`），Phase 5 仅落地 asm 工具链骨架（C 端编译器已完备），完整 lexer 留待未来*
+*最后更新：项目状态整理（asm 工具链 stub 状态）；Phase 1+2+3+4 完成；Phase 5 工具链骨架已就位但完整 lexer 未实现；接下来按推荐路径 B 直接进 Phase 6（UC-Frontend）。*
