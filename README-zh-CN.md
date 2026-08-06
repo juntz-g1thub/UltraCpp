@@ -3,7 +3,21 @@
 **融合 C++ 语法与 Rust 内存安全特性的编程语言**
 
 [![版本](https://img.shields.io/badge/version-0.1.0--alpha-orange.svg)](Cargo.toml)
-[![许可证](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
+|[[许可证](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
+
+> **⚠️ 项目状态（2026-08-06）**
+>
+> 编译器正处于多阶段重写过程中。C 端口（`src-c/`）是当前主线实现；
+> Rust 端口（`src/`）作为参考保留。asm 端口已删除；自举是下一方向。
+>
+> **先看这些**：
+> - [`HANDOFF.md`](HANDOFF.md) — 30 秒恢复 + 完整项目状态
+> - [`bootstrap/PLAN.md`](bootstrap/PLAN.md) — 自举路线图
+> - [`src-c/README.md`](src-c/README.md) — 当前实现
+> - [`AGENTS.md`](AGENTS.md) — Agent 工作约定
+> - [`.dev/README.md`](.dev/README.md) — 开发过程文档（plans, drafts）
+>
+> 下文 "当前状态 (v0.1.0)" / "下一步" 是 v0.1.0 原版状态，已**不**是当前路线图。请看上面链接。
 
 ## 项目目标
 

@@ -1,23 +1,35 @@
-# UltraCPP C Port (Phase 1: Lexer)
+# UltraCPP C Port
 
-C99 rewrite of the UltraCPP compiler's lexer, faithful to the Rust
-implementation in `src/frontend/lexer.rs`.
+C99 rewrite of the entire UltraCPP compiler (lexer + parser + AST + codegen + CLI).
+Faithful to the Rust reference in `src/`, producing byte-identical LLVM IR
+for the existing test programs.
+
+> **Status (2026-08-06)**: Phase 1 + 1.1 + 2 + 3 + 4 complete. See `HANDOFF.md` and `bootstrap/PLAN.md`.
+> The Phase 5 (asm-Lexer) stub was deleted; bootstrap is the next direction.
+>
+> The C port is the **host compiler** for the bootstrap: the new UltraCPP
+> compiler written in UltraCPP itself (in `src-uc/`) is compiled by this
+> C port and must produce LLVM IR byte-equal to the reference baseline in
+> `bootstrap/baseline/`.
 
 ## Why
 
-The project is migrating from Rust → C → x86-64 asm → self-hosted
-UltraCPP. The C port is the production implementation that all later
-phases depend on.
+The project is migrating from Rust → C → **UltraCPP** (self-hosted). The C
+port replaces the Rust implementation as the production target. The
+asm-Lexer plan (Phase 5) was deferred because the C port can already
+serve as the bootstrap host.
 
-See [`.sisyphus/plans/UltraCPP-v0.2.0-c-asm-bootstrap-zh-CN.md`](../.sisyphus/plans/UltraCPP-v0.2.0-c-asm-bootstrap-zh-CN.md)
-for the full migration plan.
+See:
+- [`HANDOFF.md`](../HANDOFF.md) — project status, 30-second recovery
+- [`bootstrap/PLAN.md`](../bootstrap/PLAN.md) — bootstrap roadmap
+- [`.dev/plans/0.2.0-c-asm-bootstrap.md`](../.dev/plans/0.2.0-c-asm-bootstrap.md) — historical plan documenting Phase 1-5
 
 ## Build
 
 ```bash
 cd src-c
 make            # build bin/uc_lexer
-make test       # run unit tests
+make test       # run unit tests (4 binaries, 505/505 assertions)
 make clean
 ```
 
@@ -25,87 +37,91 @@ Requires a C99 compiler (gcc or clang). No external dependencies.
 
 ## What this build does
 
-Only the **lexer** is implemented in C99. Other phases (parser, semantic
-analysis, codegen, CLI for IR emission) still live in the Rust reference
-implementation.
+The full C port — **not just the lexer** anymore.  The binary supports:
+
+| Mode | Flag | Output |
+|---|---|---|
+| Tokenize | `--tokens` (default) | one line per token (used by `tools/tokenize_test.sh`) |
+| Dump AST | `--ast` | AST tree (used by `tools/ast_test.sh`) |
+| Emit LLVM IR | `--emit-ll` / `-S` | LLVM IR text (used by `tools/codegen_test.sh`) |
+| End-to-end build | `--build` | `.ll` → `llc` → `.s` → `gcc` → native executable (used by `tools/build_test.sh`) |
+
+Example end-to-end:
 
 ```
-$ ./build/uc_lexer test/test_hello_world/main.upp
-TOKEN PpImport        1:1    #import
-TOKEN String          1:9    "lib/io"
-TOKEN Ident           3:1    int
-TOKEN Ident           3:5    main
-TOKEN LParen          3:9    (
-...
+$ src-c/build/uc_lexer --build test/test_t1/main.upp -o /tmp/test_t1
+Wrote IR to /tmp/uc_build_main.ll
+Running: llc /tmp/uc_build_main.ll -o /tmp/uc_build_main.s
+Compiled to /tmp/uc_build_main.s
+Running: gcc -no-pie /tmp/uc_build_main.s -o /tmp/test_t1
+Built executable /tmp/test_t1
+$ /tmp/test_t1; echo "exit: $?"
+exit: 0
 ```
 
 ## Layout
 
 ```
 src-c/
-├── Makefile           GNU Make build
-├── include/
-│   ├── uc_version.h   version constants
-│   ├── uc_error.h     error reporting types
-│   ├── uc_token.h     token kinds + token struct
-│   └── uc_lexer.h     lexer interface
-├── src/
+├── Makefile                       GNU Make build
+├── include/                       public API
+│   ├── uc_version.h
+│   ├── uc_error.h
+│   ├── uc_token.h
+│   ├── uc_lexer.h
+│   ├── uc_ast.h
+│   ├── uc_parser.h
+│   └── uc_codegen.h
+├── src/                           implementation
 │   ├── error.c
-│   ├── token.c        token operations + keyword table
-│   ├── lexer.c        lexer (port of lexer.rs)
-│   └── main.c         CLI entry, --dump-tokens
-└── tests/
-    └── test_lexer.c   smoke tests
+│   ├── token.c
+│   ├── lexer.c
+│   ├── ast.c
+│   ├── parser.c
+│   ├── codegen.c
+│   └── main.c                     CLI entry
+└── tests/                         unit tests (4 binaries)
+    ├── test_lexer.c
+    ├── test_ast.c
+    ├── test_parser.c
+    └── test_codegen.c
 ```
 
 ## C interface (public API)
 
-```c
-#include "uc_lexer.h"
+Same conventions across all modules: `UCLexer` / `UCParser` /
+`UCCodeGenerator` structs with `_init` / `_reset` / `_free` entry points;
+errors propagated via `UCError*` out parameter; never `setjmp`/throw.
+See the individual `uc_*.h` files for details.
 
-UCError err;
-uc_error_init(&err);
+## Code conventions
 
-UCLexer lex;
-uc_lexer_init(&lex, source, source_len, "input.uc", &err);
-
-for (;;) {
-    UCToken tok = uc_lexer_next(&lex);
-    if (tok.kind == UC_TOK_EOF) {
-        uc_token_free(&tok);
-        break;
-    }
-    /* consume tok.lexeme (NUL-terminated), tok.as.int_val, etc. */
-    uc_token_free(&tok);
-}
-```
-
-`uc_token_free` releases the `lexeme` string. For `UC_TOK_STRING` tokens
-it also releases `as.string_val`. All strings are heap-allocated and owned
-by the token.
+- C99 (`-std=c99`)
+- `-Wall -Wextra -Wpedantic -Wshadow -Wstrict-prototypes -Wmissing-prototypes` (zero warnings)
+- `snake_case`; public symbols prefixed `uc_`; enum values `UC_*`
+- Public API in `include/uc_*.h`; ownership declared in header comments
+- `char*` + `size_t len` for strings; NUL-terminated
+- Release flags: `-O2 -g` (or `-O3 -DNDEBUG` for production)
 
 ## Verified equivalence
 
-The lexer is designed for byte-for-byte equivalence with the Rust
-reference. **Known divergences** (preserved from Rust source, documented
-in `lexer.c`):
+Byte-exact match with the Rust port for the 5 existing test programs:
 
-- Compound-assignment operators (`+=`, `-=`, `*=`, `/=`, `%=`, `&=`,
-  `|=`, `^=`, `<<=`, `>>=`) are NOT produced; the lexer returns the bare
-  operator. The Rust parser also doesn't consume them, so behavior is
-  unchanged at the moment.
+| Test | C port | Rust port | Notes |
+|---|---|---|---|
+| `tools/tokenize_test.sh` | 7/7 ✅ | (same) | byte-exact after column normalization |
+| `tools/ast_test.sh` | 5/5 ✅ | (same) | byte-exact (after fixing 2 Rust bugs) |
+| `tools/codegen_test.sh` | 5/5 ✅ | (same) | byte-exact LLVM IR |
+| `tools/build_test.sh` | 3/3 ✅ | (same) | end-to-end exec, exit codes match |
 
-End-to-end comparison against the Rust reference is partial — the Rust
-compiler does not yet expose `--dump-tokens`. The unit tests
-(`tests/test_lexer.c`) cover all token kinds; `tools/tokenize_test.sh`
-runs the C lexer on every program under `test/` and reports line counts.
+The IR for `test_t1/main.upp` is checked in to `bootstrap/baseline/`
+as the bootstrap target — the new UltraCPP compiler (in `src-uc/`) must
+produce the same `.ll` byte-for-byte.
 
 ## Next steps
 
-- Phase 2: AST + parser (`.h` interfaces are reserved under `include/`)
-- Phase 3: LLVM IR code generator
-- Phase 4: CLI for end-to-end compilation (matching the current
-  `./target/debug/ultracpp` interface)
-- Phase 5: Re-implement the lexer in x86-64 AT&T asm
-- Phase 6: Re-implement parser + codegen in UltraCPP itself
-- Phase 7: Self-hosting — UltraCPP compiler compiles itself
+- **Phase 6+ (Bootstrap)**: write the new UltraCPP compiler in `src-uc/`.
+  See `bootstrap/PLAN.md` for the 4-level roadmap. Level 0 (a minimal
+  UltraCPP lexer) is the next concrete milestone.
+- The Rust port at `src/` is the reference implementation; expect
+  gradual retirement as the UltraCPP port matures.

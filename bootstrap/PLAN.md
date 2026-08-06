@@ -171,8 +171,8 @@ Level 1+ 需要 `src-uc` 编译器的输出与 `bootstrap/baseline/test_t1.c.ll`
 
 ## 6. 与 `.dev/` 的关系
 
-- 本文件（`bootstrap/PLAN.md`）是 `.dev/plans/0.2.0-c-asm-bootstrap.md` 的**后续**
-- 原 0.2.0 计划已大幅完成（Phase 1-4），且 Phase 5（asm）放弃
+- 本文件（`bootstrap/PLAN.md`）是 [`.dev/plans/0.2.0-c-asm-bootstrap.md`](../.dev/plans/0.2.0-c-asm-bootstrap.md) 的**后续**
+- 原 0.2.0 计划已大幅完成（Phase 1-4），且 Phase 5（asm）放弃（详见该计划 §7 与本文件 §7.1）
 - 本计划继承了"Path B：用 C 端做底层，跳过 asm"的决定
 - 本文件应被考虑作为 0.3.0 计划的雏形（未来可重命名为 `.dev/plans/0.3.0-bootstrap.md`）
 

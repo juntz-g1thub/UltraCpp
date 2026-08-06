@@ -5,6 +5,24 @@
 [![Version](https://img.shields.io/badge/version-0.1.0--alpha-orange.svg)](Cargo.toml)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 
+> **⚠️ Project state (2026-08-06)**
+>
+> The compiler is in the middle of a multi-stage rewrite. The C port
+> (`src-c/`) is the production implementation; the Rust port (`src/`)
+> remains the reference. The asm port was deleted; bootstrap is the
+> next direction.
+>
+> **Read first**:
+> - [`HANDOFF.md`](HANDOFF.md) — 30-second recovery + complete project status
+> - [`bootstrap/PLAN.md`](bootstrap/PLAN.md) — bootstrap roadmap
+> - [`src-c/README.md`](src-c/README.md) — current implementation
+> - [`AGENTS.md`](AGENTS.md) — agent working rules
+> - [`.dev/README.md`](.dev/README.md) — development-process docs (plans, drafts)
+>
+> The "Current Status (v0.1.0)" / "What's Next" sections below are the
+> original v0.1.0 state and are no longer the active roadmap. See the
+> links above for current status.
+
 ## Project Goal
 
 UltraCPP is a research project exploring whether C++ developers can work with a language that has:
