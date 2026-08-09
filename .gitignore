@@ -53,3 +53,12 @@ test_hello
 # Misc
 *.log
 *.tmp
+
+# pi coding agent session exports (HTML session logs)
+# Filename shape: pi-session-<ISO-UTC-timestamp>Z_<UUID>.html
+# The `Z_` anchor is the UTC timestamp marker followed by the underscore
+# separator before the UUID, which uniquely identifies this file family.
+pi-session-*Z_*.html
+
+# MCP / agent tool caches (do not track runtime artifacts)
+.serena/
