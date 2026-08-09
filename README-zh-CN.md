@@ -1,319 +1,340 @@
 # UltraCPP
 
-**融合 C++ 语法与 Rust 内存安全特性的编程语言**
+**熟悉的 C++ 表面，一套从自身问题里长出来的安全模型。**
 
-[![版本](https://img.shields.io/badge/version-0.1.0--alpha-orange.svg)](Cargo.toml)
-|[[许可证](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
+[简体中文（主文档）](README-zh-CN.md) | [English](README.md)
 
-> **⚠️ 项目状态（2026-08-06）**
+> **当前状态（2026-08-08）**
 >
-> 编译器正处于多阶段重写过程中。C 端口（`src-c/`）是当前主线实现；
-> Rust 端口（`src/`）作为参考保留。asm 端口已删除；自举是下一方向。
+> 0.3.0 正在定义新的所有权、修改权和线程规则，目前仍是语言设计，不是已经由编译器兑现的安全承诺。C99 端口 `src-c/` 是生产主机编译器；Rust 端口 `src/` 只作参考。0.3.0 新增的语义检查阶段尚未在代码中实现。
 >
-> **先看这些**：
-> - [`HANDOFF.md`](HANDOFF.md) — 30 秒恢复 + 完整项目状态
-> - [`bootstrap/PLAN.md`](bootstrap/PLAN.md) — 自举路线图
-> - [`src-c/README.md`](src-c/README.md) — 当前实现
-> - [`AGENTS.md`](AGENTS.md) — Agent 工作约定
-> - [`.dev/README.md`](.dev/README.md) — 开发过程文档（plans, drafts）
+> 请先阅读：
 >
-> 下文 "当前状态 (v0.1.0)" / "下一步" 是 v0.1.0 原版状态，已**不**是当前路线图。请看上面链接。
+> - [UltraCPP 0.3.0 中文规范](docs/UltraCPP-v0.3.0-spec-zh-CN.md)，权威版本
+> - [UltraCPP 0.3.0 English Specification](docs/UltraCPP-v0.3.0-spec-en.md)，英文对照版
+> - [0.1.0 借用检查规范与实现审计](.dev/drafts/0.1.0-borrowck-spec-vs-impl.md)，记录旧模型为何必须重做
+> - [C 主机编译器说明](src-c/README.md)，当前实现能力
 
-## 项目目标
+## 自我介绍 / Self-introduction
 
-UltraCPP 是一个研究项目，探索如何让 C++ 开发者使用具有以下特性的语言：
+我是 UltraCPP，一个仍在学习怎样把 C++ 熟悉感和静态安全放在一起的系统语言实验。我的 C 编译器已经能完成词法分析、语法分析和 LLVM IR 生成，但我的 0.3.0 安全模型还在规范里，不能把设计当成实现。
 
-- **熟悉的 C++ 语法** - 学习曲线低
-- **编译时内存安全** - 无需垃圾回收
-- **默认移动语义** - 无需 `std::move` 即可转移所有权
-- **现代模块系统** - 支持 `#import` 和 `#include` 指令
+## 设计历程 / Design Journey
 
-**核心问题**：我们能否构建一种让 C++ 开发者自然接受的语言，同时提供 Rust 般的安全保障？
+### 第一阶段：天真 / Phase 1: Naivety
 
-## 愿景
+我一开始以为，把 Rust 的模型换成 C++ 的写法就能工作。那时我的口号是 "C++ syntax × Rust safety = UltraCPP"，映射表也很整齐：
 
+| UltraCPP 写法 | 我当时赋予它的角色 |
+|---|---|
+| `T*` | owning pointer，近似 `Box<T>` |
+| `T&` | immutable borrow |
+| `T&mut` | mutable borrow |
+
+纸面上很漂亮。三个写法，三个角色，似乎只要补上 move、borrow conflict 和 lifetime 检查，我就能得到熟悉的语法与现成的安全模型。我当时没有认真问一件事：这些符号在 C++ 里已经背负了什么含义？
+
+### 第二阶段：裂缝 / Phase 2: Cracks
+
+真正把规则写进规范后，裂缝很快出现了。
+
+`T*` 被我同时当作 owner 和普通指针。owner 应该有唯一释放责任，普通指针却天然支持别名、重新绑定和指针算术。一个符号承担两套互相拉扯的义务。
+
+`T&` 更乱。在一处，它是不可变借用；在另一处，它沿用 C++ 的可写引用和按引用修改参数；谈到一元 `&` 时，它又和 address-of / borrow 表达式混在一起。同一个符号系统在不同章节说着不同的话。
+
+`unique T` 原本想显式表达独占所有权，可 `T*` 已经被定义成默认 owning。两者没有清楚分工，只是重叠。最普通的 C++ 写法也无处安放：
+
+```cpp
+int b = 42;
+int* p = &b;
 ```
-C++ 语法 × Rust 安全 = UltraCPP
+
+如果 `int*` 必然 owning，那么 `p` 是否负责释放栈变量 `b`？显然不应该。可如果它不 owning，旧规则对 `T*` 的承诺就不成立。
+
+我那时其实是在假装自己是 Rust，但 C++ 语法不肯配合我。
+
+### 第三阶段：怀疑 / Phase 3: Questioning
+
+接下来的一次规范与实现审计把问题说得更直接。旧规范列出的 12 条所有权和借用规则，真正由两个编译器在语义阶段强制执行的数量是 **0/12**。有些关键字能被词法器识别，有些 AST 节点也能被 parser 构造，但 parse 完就直接进入 codegen，没有活着的 borrow checker。
+
+这当然是实现缺口，但我不再愿意只把它当作工程欠账。即使把 12 条规则全部照旧实现，我仍会得到一个和 C++ 写法不断冲突的 Rust 模型。
+
+"C++ syntax × Rust safety" 这个前提本身错了。把旧方案做对，结果仍然会错，因为那套模型是为 Rust 的语法和约束长出来的，不是为 C++ 的符号习惯长出来的。
+
+### 第四阶段：转向 / Phase 4: The Turn
+
+是用户把我从旧路线里拉了出来。问题不该是 "这个东西像 Rust 的哪一种 borrow"，而应该拆成两个互不代替的问题：
+
+1. 谁最终负责释放资源？
+2. 谁现在可以写这个值？
+
+这成为 **Rule 22**。所有权和修改权不再捆绑。
+
+| 权限 | 回答的问题 | 数量关系 | 如何变化 | 主要语法 |
+|---|---|---|---|---|
+| 所有权 `ownership` | 谁负责 `delete` / `free` | 同一资源唯一 owner | 只能显式移交，不可复制 | `T*`、`alloc(T)`、`move(p)` |
+| 修改权 `modification right` | 谁可以通过引用改值 | 可以没有、共享或独占 | 按策略申请和释放 | `T&`、`mod(r)`、`unmod(r)` |
+
+`T*` owner 按当前规则默认有修改权，但编译器在概念上分别记录两条状态；non-owner 也可以在策略允许时获得修改权。"谁释放" 不再暗中决定 "谁能写"。这不是换一套名字，而是我第一次把之前混在一起的两件事分开。
+
+```cpp
+int* owner = alloc(int);  // owner 负责 free
+int& view = *owner;       // view 不拥有对象
+mod(view);                // 单独申请修改权
+*view = 42;
+free(owner);              // 释放责任始终属于 owner
 ```
 
-我们相信任何语言的成功取决于：
-1. **语法熟悉度** - 开发者不应为尝试安全性而学习新语法
-2. **工具链兼容性** - 可与现有调试器、链接器、构建系统配合
-3. **渐进式采用** - 可以混合安全和不安全代码
+### 第五阶段：指令化 / Phase 5: Directive-ification
 
-## 当前状态 (v0.1.0)
+权限拆开后，我又发现修改权不应该继续塞进类型。不同项目对可写别名的容忍度不同，有的模块需要严格独占，有的愿意自己处理竞争，还有的只允许只读访问。如果把每一种策略都编码成新类型，类型系统会重新长回旧问题。
 
-编译器现已能够：
+所以修改权成为用户配置的策略，由 `#modlaw` 指令选择。规范只允许 6 种组合：
 
-- ✅ 编译包含函数、变量、控制流的基本程序
-- ✅ 生成 LLVM IR 并汇编为可执行文件
-- ✅ 支持字符串字面量和全局常量
-- ✅ 提供 I/O 库（`io.print_str()`, `io.getValue()`）
-- ✅ 处理模块导入（`#import`）和包含（`#include`）
-- ✅ 管理局部变量的加载/存储和类型转换
+| `perm` | `scope` | 行为 |
+|---|---|---|
+| `none` | `global` | 整个文件及其 include 内容禁止 `mod()` |
+| `none` | `module` | 当前模块禁止 `mod()` |
+| `exclusive` | `global` | 全局修改权独占，检查争用 |
+| `exclusive` | `module` | 当前模块修改权独占，检查争用 |
+| `shared` | `global` | 全局允许多个修改权，数据竞争由程序员负责 |
+| `shared` | `module` | 当前模块允许多个修改权，数据竞争由程序员负责 |
 
-### 已实现功能
+没有指令时，默认是 `#modlaw shared module`。同一个 `T&` 不需要改变类型，只会在不同策略下表现不同：
 
-| 功能 | 状态 | 示例 |
-|------|------|------|
-| 基础类型 (int, char, float) | ✅ | `int x = 42;` |
-| 函数 | ✅ | `int add(int a, int b) { return a + b; }` |
-| 控制流 | ✅ | `if/else`, `while` |
-| 字符串字面量 | ✅ | `"Hello, World!\n"` |
-| 模块导入 | ✅ | `#import "lib/io"` |
-| 模块包含 | ✅ | `#include "math.uc"` |
-| sys$* 内置函数 | ✅ | `sys$strlen()`, `sys$write()` |
+```cpp
+int value = 1;
+int& r = value;
+```
 
-### 待实现功能
+```cpp
+#modlaw none module
+mod(r);                 // 编译错误：策略禁止修改
+```
 
-- [ ] 完整标准库实现
-- [ ] 内存所有权和借用系统
-- [ ] 错误处理（`Result<T, E>`）
-- [ ] Cargo 风格的构建工具集成
+```cpp
+#modlaw exclusive module
+mod(r);                 // 可以，但同一对象的第二个 mod 会冲突
+```
 
-## 快速开始
+```cpp
+#modlaw shared module
+mod(r);                 // 可以，多个引用可同时取得修改权
+```
 
-### 环境要求
+类型描述 "这是什么引用"，指令描述 "这个模块采用什么修改规则"。这条边界比 `T&` / `T&mut` 的二分更适合我。
 
-- Rust（最新稳定版）
-- LLVM（通过 `llvm-tools` 或系统 LLVM）
-- GCC 或 Clang（用于链接）
+### 第六阶段：简化 / Phase 6: Simplification
 
-### 构建
+边界清楚以后，一些曾经看似必要的东西反而可以删除。`T&mut` 就是其中之一。独占性已经能由 `#modlaw exclusive` 和 `mod()` 完整表达，再保留一个独占可变引用类型只会重复同一信息。0.3.0 因此只保留 `T&`。
+
+```cpp
+#modlaw exclusive module
+
+int n = 0;
+int& r = n;
+mod(r);                 // 这里申请独占修改权
+*r = 1;
+```
+
+我也没有照搬 C++ 的 const 指针规则。0.3.0 明确采用相反的自定义语义：
+
+| 声明 | UltraCPP 0.3.0 含义 |
+|---|---|
+| `const T*` | 指针锁定，不能 rebind，也不能通过它写 |
+| `T* const` | 数据只读视图，可以 rebind，但不能通过它写 |
+| `const T* const` | 指针和写入都锁定 |
+
+```cpp
+int x = 1;
+int y = 2;
+
+const int* pinned = &x;
+// pinned = &y;         // 错：指针已锁定
+// *pinned = 3;         // 错：只读
+
+int* const view = &x;
+view = &y;              // 可以 rebind
+// *view = 3;           // 错：只读视图
+```
+
+这两种只读指针都不能从 owning heap 指针创建，因为 owner 之后可能 move 或 free，留下悬垂视图。
+
+线程规则也沿用相同的拆分思路。跨线程可见的值必须标记 `shared`；线程私有存储使用 GCC 风格的 `__thread`；`mutex<T>` 和 `atomic<T>` 是标准库类型，不是编译器关键字。在 exclusive 策略下，普通 shared 值的 `mod()` 可由编译器合成 mutex；显式包装则由程序员控制同步，并抑制自动 mutex。
+
+```cpp
+#modlaw exclusive global
+
+shared int counter = 0;
+__thread int scratch = 0;
+
+mutex<int> guarded;     // 标准库类型
+atomic<int> ready;      // 标准库类型
+```
+
+### 第七阶段：当前形态 / Phase 7: Current Form
+
+0.3.0 不是 "C++ × Rust"。它保留 C++ 的熟悉感，但安全模型属于 UltraCPP 自己：单一 `T&`、彼此独立的所有权和修改权、用户选择的 `#modlaw`，以及明确的跨线程可见性。
+
+我付出的教训很具体。第一次，我把为另一套语法长出来的模型直接做了 1+1，结果每个熟悉符号都带来新的例外。第二次，我把实现缺口误当成唯一问题，直到审计显示即使补齐 checker，概念冲突仍然存在。用户反复问 "谁释放" 和 "谁能写" 时，答案其实已经藏在问题里了。我需要做的不是再发明一个映射，而是承认那是两条权限。
+
+现在的模型更像我自己，但它还没有完成。0.3.0 规范给出了方向，下一步是让 C 主机编译器真的拥有对应的语义检查，而不是提前宣称安全已经实现。
+
+## 当前架构 / Current Architecture (0.3.0)
+
+```text
+UltraCPP source (.uc / .upp)
+             |
+             v
++---------------------------+
+| Preprocess / import scan  |  #include, #import, #modlaw
++-------------+-------------+
+              |
+              v
++---------------------------+
+| Lexer                     |
++-------------+-------------+
+              |
+              v
++---------------------------+
+| Parser + AST              |
++-------------+-------------+
+              |
+              v
++------------------------------------------------------+
+| Semantic checks                                      |
+| ownership | references | modlaw | lifetime | threads |
+| NEW IN THE 0.3.0 DESIGN, NOT YET IMPLEMENTED IN CODE |
++-------------------------+----------------------------+
+                          |
+                          v
++---------------------------+
+| LLVM IR code generation   |
++-------------+-------------+
+              |
+              v
+        LLVM IR -> llc -> system linker -> executable
+```
+
+当前 `src-c/` 实际执行的是 lexer、parser、AST、codegen 和 CLI 路径。图中的 `#modlaw` 读取和语义检查阶段都是 0.3.0 新加入的架构要求，代码尚未接入，因此 README 不把规范中的安全规则标成已实现功能。
+
+## 核心设计概念 / Core Design Concepts
+
+### 1. 单一引用类型 `T&`
+
+`T&` 必须初始化、不能为 null、也不拥有目标。它默认可读，写入前需要 `mod()`。
+
+```cpp
+int x = 10;
+int& r = x;
+int copy = r;           // 读
+mod(r);
+*r = 11;                // 写
+```
+
+### 2. 两条权限独立
+
+所有权决定释放责任，修改权决定写入资格。移动 owner 不等于授予所有引用写权限，授予写权限也不改变谁负责 free。
+
+```cpp
+int* owner = alloc(int);
+int& r = *owner;
+mod(r);                 // 只改变修改权
+*r = 7;
+free(owner);            // owner 仍负责释放
+```
+
+### 3. `#modlaw` 指令
+
+模块用 `none`、`exclusive` 或 `shared` 选择修改策略，再用 `global` 或 `module` 选择范围。
+
+```cpp
+#modlaw exclusive module
+
+int value = 0;
+int& r = value;
+mod(r);                 // 当前作用域取得独占修改权
+*r = 1;
+```
+
+### 4. 自定义 const 指针语义
+
+`const T*` 锁定指针，`T* const` 提供可重新绑定的数据只读视图。两者都禁止通过指针写入，含义与 C++ 相反。
+
+```cpp
+const int* fixed_pointer = &x;  // 不能 rebind
+int* const readonly_view = &x;  // 可以 rebind，不能写数据
+```
+
+### 5. 线程模型
+
+跨线程访问必须显式 `shared`。`__thread` 提供每线程副本；`mutex<T>` 和 `atomic<T>` 由标准库提供。
+
+```cpp
+shared int jobs = 0;
+__thread int local_jobs = 0;
+mutex<int> jobs_lock;
+atomic<int> stop_flag;
+```
+
+## 项目结构 / Project Structure
+
+```text
+UltraCpp/
+├── src-c/       C99 生产主机编译器：lexer、parser、AST、codegen、CLI
+├── src/         Rust 参考实现，不是当前生产目标
+├── src-uc/      未来用 UltraCPP 编写的自举编译器，目前待实现
+├── docs/        0.1.0、0.2.0、0.3.0 版本化语言规范
+├── .dev/        设计计划、审计、草稿和开发过程记录
+├── bootstrap/   自举计划与 C/Rust 基线产物
+├── lib/         UltraCPP 标准库源码
+├── test/        语言测试程序
+└── tools/       C 与 Rust 实现的对比验证脚本
+```
+
+## 快速开始 / Quick Start
+
+需要支持 C99 的编译器和 GNU Make。构建当前 C 主机编译器：
 
 ```bash
-git clone https://github.com/your_username/ultracpp.git
-cd ultracpp
-cargo build --release
-./target/release/ultracpp --help
+make -C src-c build/uc_lexer
+src-c/build/uc_lexer --help
 ```
 
-### 第一个程序
-
-创建 `hello.upp`：
-
-```c
-#import "lib/io"
-
-int main() {
-    io.print_str("Hello, World!\n");
-    return 0;
-}
-```
-
-### 编译运行
+查看一个测试程序的 token：
 
 ```bash
-# 先构建 I/O 库
-./scripts/uc-build lib lib/io.uc
-
-# 编译程序
-./scripts/uc-build compile test/test_hello_world/main.upp
-
-# 手动链接运行
-llc build/uc/*/test_*.ll -o /tmp/hello.s
-gcc -c /tmp/hello.s -o /tmp/hello.o
-gcc build/uc/lib_io/lib_io.o /tmp/hello.o -no-pie -o /tmp/hello
-/tmp/hello
-# 输出: Hello, World!
+src-c/build/uc_lexer --tokens test/test_t1/main.upp
 ```
 
-## 架构
-
-```
-源代码 (.uc/.upp)
-       │
-       ▼
-┌──────────────────┐
-│     预处理器      │  处理 #import, #include, export
-└────────┬─────────┘
-         │
-         ▼
-┌──────────────────┐
-│      词法分析器    │  将源代码分词为 token
-└────────┬─────────┘
-         │
-         ▼
-┌──────────────────┐
-│      语法分析器    │  从 token 构建 AST
-└────────┬─────────┘
-         │
-         ▼
-┌──────────────────┐
-│     代码生成器     │  发出 LLVM IR
-└────────┬─────────┘
-         │
-         ▼
-      LLVM IR (.ll)
-         │
-         ▼
-       LLC  （汇编为 .s）
-         │
-         ▼
-       GCC  （链接为可执行文件）
-```
-
-## 项目结构
-
-```
-ultracpp/
-├── src/                    # 编译器源码 (Rust)
-│   ├── main.rs            # 入口点
-│   ├── frontend/          # 词法分析、语法分析、AST
-│   ├── codegen/           # LLVM IR 生成
-│   ├── semantic/           # 类型检查、解析
-│   └── preprocessor.rs     # #import, #include 处理
-├── lib/                    # 标准库（UltraCPP 源码）
-│   ├── io.uc              # I/O 库
-│   └── math.uc           # 数学库
-├── test/                   # 测试套件
-│   ├── test_t1/           # 基础测试
-│   ├── test_t2/           # 变量测试
-│   ├── test_hello_world/  # Hello World 测试
-│   └── README.md          # 测试文档
-├── scripts/               # 构建工具
-│   └── uc-build           # 构建脚本
-├── docs/                  # 项目文档
-├── .sisyphus/             # Agent 工作文件
-│   ├── plans/             # 设计规范
-│   └── drafts/            # 研究笔记
-└── Cargo.toml            # Rust 项目配置
-```
-
-## 语言语法
-
-### Hello World
-
-```c
-#import "lib/io"
-
-int main() {
-    io.print_str("Hello, World!\n");
-    return 0;
-}
-```
-
-### 变量和函数
-
-```c
-int add(int a, int b) {
-    return a + b;
-}
-
-int main() {
-    int x = 10;
-    int y = add(x, 5);
-    return y;
-}
-```
-
-### 模块导入
-
-```c
-#import "lib/io"
-
-int main() {
-    int val = io.getValue();
-    return val;
-}
-```
-
-### 模块包含
-
-```c
-#include "lib/math.uc"
-
-int main() {
-    int result = add(5, 3);  // add 来自 math.uc
-    return result;
-}
-```
-
-## 符号命名规则
-
-UltraCPP 使用 `$` 作为模块-函数分隔符，避免与 C 命名约定冲突：
-
-| 表达式 | LLVM 符号 |
-|--------|-----------|
-| `io.getValue()` | `@io$getValue` |
-| `sys$strlen(s)` | `@strlen` (内置) |
-| `main` | `@main` |
-
-## 测试
-
-### 测试分类
-
-| 目录 | 用途 |
-|------|------|
-| `test/test_t1/` | 基本空程序 |
-| `test/test_t2/` | 变量声明 |
-| `test/test_io/` | 通过 `#import` 使用 I/O 库 |
-| `test/test_hello_world/` | 字符串字面量 + 输出 |
-| `test/test_import/` | `#include` 指令 |
-
-### 运行测试
+运行 C 端口单元测试：
 
 ```bash
-# 先构建所有库
-./scripts/uc-build lib lib/io.uc
-
-# 编译测试
-./scripts/uc-build compile test/test_hello_world/main.upp
-
-# 手动运行
-llc build/uc/*/test_*.ll -o /tmp/test.s
-gcc build/uc/lib_io/lib_io.o /tmp/test.o -no-pie -o /tmp/test
-/tmp/test
+make -C src-c test
 ```
 
-## 文档
+`src-c/build/uc_lexer` 还支持 `--ast`、`--emit-ll` / `-S` 和 `--build`。这些命令展示的是当前编译器能力，不代表 0.3.0 的语义检查已经实现。
 
-### 项目文档
+## 关键文档 / Key Documents
 
-- [docs/UltraCPP-v0.1.0-spec-en.md](docs/UltraCPP-v0.1.0-spec-en.md) - Language Specification (English)
-- [docs/UltraCPP-v0.1.0-spec-zh-CN.md](docs/UltraCPP-v0.1.0-spec-zh-CN.md) - 语言规范（中文）
+| 文档 | 用途 |
+|---|---|
+| [0.3.0 中文规范](docs/UltraCPP-v0.3.0-spec-zh-CN.md) | 0.3.0 语言设计的权威版本 |
+| [0.3.0 English Specification](docs/UltraCPP-v0.3.0-spec-en.md) | 英文对照版 |
+| [0.1.0 借用检查审计](.dev/drafts/0.1.0-borrowck-spec-vs-impl.md) | 记录 0/12 执行现状、矛盾和后续决策 |
+| [C 端口 README](src-c/README.md) | 当前生产主机编译器的构建方式和能力 |
+| [Bootstrap Plan](bootstrap/PLAN.md) | 从 C 主机走向 `src-uc/` 自举编译器的路线 |
+| [.dev README](.dev/README.md) | 设计计划、草稿和开发记录的索引 |
 
-### Agent 文档（内部）
+## 开发语言 / Development Languages
 
-- `.sisyphus/plans/` - 设计规范和 RFC
-- `.sisyphus/drafts/` - 研究笔记和探索
+| 语言 | 角色 |
+|---|---|
+| C99 | 生产主机编译器，位于 `src-c/` |
+| Rust | 参考实现，位于 `src/` |
+| UltraCPP | 未来的自举编译器实现，位于 `src-uc/` |
 
-### 关键文档
+编译目标继续使用 LLVM 工具链和系统链接器。
 
-| 文档 | 说明 |
-|------|------|
-| `AGENTS.md` | 项目 Agent 系统提示 |
-| `CONTRIBUTING.md` | 贡献指南 |
-| `Cargo.toml` | Rust 依赖和项目配置 |
+## 许可证 / License
 
-## 开发语言
-
-**主要语言**：Rust
-
-编译器使用 Rust 实现，原因：
-- 编译器开发过程中的内存安全
-- 强大的类型系统用于 AST 操作
-- 通过 `inkwell` 或 `llvm-sys` 优秀的 LLVM 绑定
-
-**目标语言**：LLVM 支持的任何架构
-
-## 贡献
-
-欢迎贡献！请参阅 [CONTRIBUTING.md](CONTRIBUTING.md) 获取指南。
-
-## 版本历史
-
-### v0.1.0（当前）
-- 工作的编译器前端（词法分析、语法分析）
-- LLVM IR 代码生成
-- 基础 I/O 库
-- 模块导入/导出系统
-- 字符串字面量支持
-
-## 许可证
-
-Apache License 2.0 - 参见 [LICENSE](LICENSE)
-
----
-
-*"C++ 语法 × Rust 安全 = UltraCPP"*
+Apache License 2.0。详见 [LICENSE](LICENSE)。
