@@ -1,7 +1,9 @@
 # `.dev/` — 开发过程专用文档
 
-> 本目录收纳项目开发过程中产生的**过程文档**：任务规划、实现计划、设计草稿。
+> 本目录收纳项目开发过程中产生的**过程文档**：任务规划、实现计划、设计草稿、决策记录。
 > 区别于面向最终用户的文档（`README.md` / `HANDOFF.md` / `docs/` 等）。
+>
+> **历史归档**：v0.1.0 / v0.2.0 时代的设计草稿已移至 `.dev/_archive/`。仅 0.3.0 相关的活跃文档保留在主目录。
 >
 > **位置**：`/dev`（相对项目根），原先在 `.sisyphus/` 下，2026-08-06 重组迁移而来。
 >
@@ -10,55 +12,36 @@
 
 ---
 
-## 目录结构
+## 当前目录结构
 
 ```
 .dev/
-├── README.md                       本文件（索引）
-├── plans/                          实施计划与设计文档
-│   ├── 0.1.0-compiler-architecture.md   编译器整体架构设计
-│   ├── 0.1.0-devhandbook.md             开发者手册（2009 行，最详尽）
-│   ├── 0.1.0-docs-update.md             文档更新与整理计划
-│   ├── 0.1.0-guide.md                   快速指南
-│   ├── 0.1.0-spec-snapshot.md          0.1.0 语言规范旧版快照
-│   └── 0.2.0-c-asm-bootstrap.md         0.2.0 迁移与自举规划（当前）
-└── drafts/                         探索性草稿与设计讨论
-    ├── 0.1.0-module-system.md           模块/预编译系统设计
-    ├── 0.1.0-pointer-design.md          指针类型设计讨论
-    └── 0.1.0-syntax-features.md         C++ 语法特性梳理（设计输入）
+├── README.md                                     本文件（索引）
+├── plans/                                        （当前为空；活跃计划见下方）
+└── drafts/                                       探索性草稿与决策记录
+    ├── 0.1.0-borrowck-spec-vs-impl.md           借用检查审计 + 21+ 决策 + 0.3.0 对齐
+    └── 0.1.0-module-system.md                   模块/预编译系统设计（仍适用 0.3.0）
 ```
 
----
-
-## plans/ — 实施计划与设计文档
-
-这些是相对正式的计划与设计文档。每个文件代表一个明确的工作方向。
+## 当前活跃文档
 
 | 文件 | 状态 | 用途 |
 |---|---|---|
-| `0.1.0-compiler-architecture.md` | 历史 | 0.1.0 编译器架构设计（Rust 实现的总体蓝图） |
-| `0.1.0-devhandbook.md` | 历史 | 0.1.0 开发者手册（最详尽的内部参考，2009 行） |
-| `0.1.0-docs-update.md` | 历史 | 0.1.0 文档更新与整理计划 |
-| `0.1.0-guide.md` | 历史 | 0.1.0 快速指南 |
-| `0.1.0-spec-snapshot.md` | 历史 | 0.1.0 语言规范早期快照（1102 行；当前规范在 `docs/`，1254 行） |
-| `0.2.0-c-asm-bootstrap.md` | **当前** | 0.2.0 迁移与自举规划（Phase 1-5 的实施依据） |
+| `drafts/0.1.0-borrowck-spec-vs-impl.md` | **活跃** | 借用检查审计 + 21+ 决策记录 + 与 0.3.0 对齐（§10-7）。C 主机 ownership checker 实现以此为决策源 |
+| `drafts/0.1.0-module-system.md` | **活跃** | 模块/预编译系统设计（#import / #include）。0.3.0 spec §9 沿用此设计 |
 
-> 注：0.1.0 文档为历史快照，**参考用**。当前语言规范请看 [`docs/UltraCPP-v0.1.0-spec-zh-CN.md`](../docs/UltraCPP-v0.1.0-spec-zh-CN.md) / [`-en.md`](../docs/UltraCPP-v0.1.0-spec-en.md)。
+## 归档（`.dev/_archive/`）
 
-## drafts/ — 探索性草稿与设计讨论
+历史快照，保留以备查阅，**不再用于活跃开发**。
 
-这些是早期探索阶段的草稿，用于辅助决策。**已沉淀为正式计划或被放弃**。
-
-| 文件 | 用途 |
-|---|---|
-| `0.1.0-module-system.md` | 模块/预编译系统设计探索（最终未在 0.1.0 实现） |
-| `0.1.0-pointer-design.md` | 指针类型（unique/move/free）设计讨论（部分实现于 0.1.0） |
-| `0.1.0-syntax-features.md` | C++11-23 语法特性梳理（0.1.0 语法选型的输入） |
-
----
+| 路径 | 内容 | 备注 |
+|---|---|---|
+| `.dev/_archive/v0.1.0/` | 0.1.0 时代的设计（编译器架构、devhandbook、guide、spec-snapshot、pointer-design） | 概念已与 0.3.0 不一致；devhandbook 的算法伪代码 (§12.2/§12.4) 仍可作 C 主机实现参考 |
+| `.dev/_archive/v0.2.0/` | 0.2.0 迁移与自举规划 | Phase 1-5 已完成；当前活跃路线见 `bootstrap/PLAN.md` |
 
 ## 历史
 
+- **2026-08-07**：归档 v0.1.0 / v0.2.0 文档；删除 `docs-update.md`（任务完成）和 `syntax-features.md`（与项目无关）。
 - **2026-08-06**：从 `.sisyphus/{plans,drafts}/` 重组而来。`.sisyphus/` 删除。
   改名规则：去掉 `UltraCPP-` 前缀和 `-zh-CN` 后缀，保留版本号作为文件名前缀。
   例：`UltraCPP-v0.2.0-c-asm-bootstrap-zh-CN.md` → `0.2.0-c-asm-bootstrap.md`。
