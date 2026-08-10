@@ -2,14 +2,10 @@
 # UltraCPP build verification - run both the Rust and C compilers all
 # the way to a native executable and compare runtime outputs.
 #
-# For each test program in test/, runs:
+# For each test program in test/programs/baseline/, runs:
 #   1) Rust compiler: <src> -o <name>.ll; llc + gcc -> <name>_rust
 #   2) C compiler:    --build <src> -o <name>_c
 # then executes both and compares exit codes + stdout.
-#
-# Tests that need an external `io` module (test_hello_world / test_io)
-# are expected to FAIL at the link step because the real libio isn't
-# present in the repo. They are skipped here.
 #
 # Pre-requisites:
 #   - `cargo build --release` produced target/release/ultracpp
@@ -32,11 +28,58 @@ if [[ ! -x "$RUST_BIN" ]]; then
     exit 2
 fi
 
-# Tests that DO NOT need libio - safe to build & run end-to-end.
+# M0 baseline: m0_01 through m0_06 + m0_08 through m0_37 + m0_39 through m0_50
+# (skipping m0_07 compound_assign and m0_38 typedef which were moved to M1 —
+#  the C lexer has no tokens for those yet; see .dev/plans/0.4.0-test-milestones.md §3.0)
 TESTS=(
-    "test/test_t1"
-    "test/test_t2"
-    "test/test_t3"
+    test/programs/baseline/m0_01_minimal_main
+    test/programs/baseline/m0_02_int_arithmetic
+    test/programs/baseline/m0_03_int_precedence
+    test/programs/baseline/m0_04_comparison
+    test/programs/baseline/m0_05_logical
+    test/programs/baseline/m0_06_bitwise
+    test/programs/baseline/m0_08_unary
+    test/programs/baseline/m0_09_if_else
+    test/programs/baseline/m0_10_if_else_chain
+    test/programs/baseline/m0_11_nested_if
+    test/programs/baseline/m0_12_while_loop
+    test/programs/baseline/m0_13_for_loop
+    test/programs/baseline/m0_14_nested_loops
+    test/programs/baseline/m0_15_break_continue
+    test/programs/baseline/m0_16_function_simple
+    test/programs/baseline/m0_17_function_void
+    test/programs/baseline/m0_18_function_multi_params
+    test/programs/baseline/m0_19_function_recursion
+    test/programs/baseline/m0_20_function_nested_calls
+    test/programs/baseline/m0_21_local_global
+    test/programs/baseline/m0_22_const_global
+    test/programs/baseline/m0_23_string_literal
+    test/programs/baseline/m0_24_string_escape
+    test/programs/baseline/m0_25_string_io
+    test/programs/baseline/m0_26_array_basic
+    test/programs/baseline/m0_27_array_init
+    test/programs/baseline/m0_28_array_index
+    test/programs/baseline/m0_29_pointer_basic
+    test/programs/baseline/m0_30_pointer_deref
+    test/programs/baseline/m0_31_pointer_addr
+    test/programs/baseline/m0_32_struct_basic
+    test/programs/baseline/m0_33_struct_field
+    test/programs/baseline/m0_34_alloc_free
+    test/programs/baseline/m0_35_unique_keyword
+    test/programs/baseline/m0_36_move_keyword
+    test/programs/baseline/m0_37_function_pointer
+    test/programs/baseline/m0_39_module_import
+    test/programs/baseline/m0_40_module_include
+    test/programs/baseline/m0_41_extern_c
+    test/programs/baseline/m0_42_unsafe_block
+    test/programs/baseline/m0_43_main_with_args
+    test/programs/baseline/m0_44_multiple_files
+    test/programs/baseline/m0_45_const_expr
+    test/programs/baseline/m0_46_global_init
+    test/programs/baseline/m0_47_increment_decrement
+    test/programs/baseline/m0_48_ternary
+    test/programs/baseline/m0_49_comments_mixed
+    test/programs/baseline/m0_50_chinese_identifiers
 )
 
 cd "$ROOT"
@@ -46,7 +89,7 @@ fail=0
 fails_list=""
 
 for d in "${TESTS[@]}"; do
-    src="$d/main.upp"
+    src="$d.uc"
     name="$(basename "$d")"
     echo "=== $name ==="
 

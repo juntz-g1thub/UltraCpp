@@ -16,19 +16,23 @@
 
 ```
 .dev/
-├── README.md                                     本文件（索引）
-├── plans/                                        （当前为空；活跃计划见下方）
-└── drafts/                                       探索性草稿与决策记录
-    ├── 0.1.0-borrowck-spec-vs-impl.md           借用检查审计 + 21+ 决策 + 0.3.0 对齐
-    └── 0.1.0-module-system.md                   模块/预编译系统设计（仍适用 0.3.0）
+├── README.md                                  本文件（索引）
+├── plans/                                     实施计划与设计文档
+│   └── 0.4.0-test-milestones.md              借用检查实现测试里程碑规划（M0-M5）
+└── drafts/                                    探索性草稿与决策记录
+    ├── 0.1.0-borrowck-spec-vs-impl.md         借用检查审计 + 21+ 决策 + 0.3.0 对齐（活跃决策源）
+    ├── 0.1.0-module-system.md                模块/预编译系统设计（仍适用 0.3.0）
+    └── 0.4.0-mutable-pointer-todo.md         UC_TYPE_MUTABLE_POINTER 残留清理待办
 ```
 
 ## 当前活跃文档
 
 | 文件 | 状态 | 用途 |
 |---|---|---|
+| `plans/0.4.0-test-milestones.md` | **活跃** | 借用检查实现测试里程碑规划（M0-M5）。102 个 .uc 测试项目录 + 状态更新流程 |
 | `drafts/0.1.0-borrowck-spec-vs-impl.md` | **活跃** | 借用检查审计 + 21+ 决策记录 + 与 0.3.0 对齐（§10-7）。C 主机 ownership checker 实现以此为决策源 |
 | `drafts/0.1.0-module-system.md` | **活跃** | 模块/预编译系统设计（#import / #include）。0.3.0 spec §9 沿用此设计 |
+| `drafts/0.4.0-mutable-pointer-todo.md` | **活跃** | `UC_TYPE_MUTABLE_POINTER` 残留清理待办（M1 期间处理） |
 
 ## 归档（`.dev/_archive/`）
 

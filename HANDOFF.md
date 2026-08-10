@@ -288,22 +288,23 @@ cb8bfae Phase 3: C LLVM IR code generator + end-to-end verification
 
 ## 九、相关文档指针
 
+> **2026-08-08 更新**：0.1.0 / 0.2.0 时代的设计文档已迁移到 `.dev/_archive/`（commit `9f5297b`），本节路径同步更新。**当前活跃的实施计划**是 `.dev/plans/0.4.0-test-milestones.md`（借用检查实现测试里程碑）。
+
 | 需求 | 看哪里 |
 |---|---|
-| 当前迁移规划 | `.dev/plans/0.2.0-c-asm-bootstrap.md`（已大部分完成） |
+| **当前活跃计划** | **`.dev/plans/0.4.0-test-milestones.md`**（M0-M5 测试里程碑 + 借用检查实现路线） |
+| **.uc 测试总览** | **`docs/test-outline.md`**（102 个 .uc 测试项目录 + 状态） |
 | **Bootstrap 路线图** | **`bootstrap/PLAN.md`**（2026-08-06 新建） |
-| 0.1.0 开发者手册 | `.dev/plans/0.1.0-devhandbook.md` |
-| 0.1.0 架构设计 | `.dev/plans/0.1.0-compiler-architecture.md` |
-| 0.1.0 快速指南 | `.dev/plans/0.1.0-guide.md` |
-| 0.1.0 文档更新计划 | `.dev/plans/0.1.0-docs-update.md` |
-| 0.1.0 语言规范（旧快照） | `.dev/plans/0.1.0-spec-snapshot.md` |
-| 设计草稿 | `.dev/drafts/*.md`（3 个） |
+| 借用检查决策记录 | `.dev/drafts/0.1.0-borrowck-spec-vs-impl.md`（21+ 决策 + 0.3.0 outcome） |
+| 模块系统设计 | `.dev/drafts/0.1.0-module-system.md`（0.3.0 仍适用） |
+| 0.2.0 dead code 清理 | `.dev/drafts/0.4.0-mutable-pointer-todo.md`（M1 处理） |
+| 0.1.0 历史快照 | `.dev/_archive/v0.1.0/`（devhandbook §12.2/§12.4 算法伪代码仍可作 C 主机实现参考） |
+| 0.2.0 历史 | `.dev/_archive/v0.2.0/c-asm-bootstrap.md`（Phase 1-5 已完成） |
 | `.dev/` 索引 | `.dev/README.md` |
 | C 端口代码结构 | `src-c/README.md` |
-| asm 端口状态 + 失败分析 | `src-asm/README.md` |
-| **0.1.0 语言规范（用户面向，当前版）** | **`docs/UltraCPP-v0.1.0-spec-zh-CN.md`、`docs/UltraCPP-v0.1.0-spec-en.md`** |
+| **0.3.0 语言规范（用户面向，当前版）** | **`docs/UltraCPP-v0.3.0-spec-zh-CN.md`、`docs/UltraCPP-v0.3.0-spec-en.md`** |
 | 原 Rust 实现（迁移参照） | `src/frontend/{ast,parser,lexer,token,dump_ast}.rs`、`src/codegen/{generator,builtin}.rs` |
-| 测试程序 | `test/test_*/main.upp`、`test/test_simple.uc` |
+| 测试程序 | `test/test_*/main.upp`、`test/test_simple.uc`（旧）；`test/programs/baseline/m0_*.uc`（M0 新） |
 
 ---
 
