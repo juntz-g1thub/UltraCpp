@@ -1,3 +1,17 @@
+> **⏸️ Dormant (since 2026-08-08)**
+>
+> This bootstrap roadmap was written 2026-08-06. Since then, the project's
+> active direction has shifted to **borrow-check implementation in `src-c/`**
+> (M0-M5 per `.dev/plans/0.4.0-test-milestones.md`). The bootstrap Level 0
+> ("minimal UltraCPP lexer") has not been started.
+>
+> This file is preserved as a long-term roadmap reference. Level 0+ work
+> may resume once the M0-M5 borrow-check milestones are complete and the
+> spec is stable in practice.
+>
+> For the **current** active direction: see `.dev/plans/0.4.0-test-milestones.md`
+> and `docs/UltraCPP-v0.3.0-spec-zh-CN.md`.
+
 # Bootstrap Plan — 用 UltraCPP 写 UltraCPP 编译器
 
 > **目标**：在 `src-uc/` 用 UltraCPP 语言写一个 UltraCPP 编译器，最终能用 UltraCPP 自身编译。

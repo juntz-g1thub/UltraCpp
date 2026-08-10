@@ -2,4 +2,5 @@
 
 | 文件 | 用途 | 与当前关系 |
 |---|---|---|
-| `c-asm-bootstrap.md` | 0.2.0 迁移与自举规划 | Phase 1-5 已完成；asm 已删除；自举已启动。当前活跃路线见 `bootstrap/PLAN.md` |
+| `c-asm-bootstrap.md` | 0.2.0 迁移与自举规划 | Phase 1-5 已完成；asm 已删除；自举已启动。当前活跃路线是 M0-M5 借用检查 |
+| `handoff.md` | 2026-08-06 项目状态快照 | 已用 `.dev/plans/0.4.0-test-milestones.md` 取代 |

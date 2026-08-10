@@ -41,7 +41,8 @@
 | 路径 | 内容 | 备注 |
 |---|---|---|
 | `.dev/_archive/v0.1.0/` | 0.1.0 时代的设计（编译器架构、devhandbook、guide、spec-snapshot、pointer-design） | 概念已与 0.3.0 不一致；devhandbook 的算法伪代码 (§12.2/§12.4) 仍可作 C 主机实现参考 |
-| `.dev/_archive/v0.2.0/` | 0.2.0 迁移与自举规划 | Phase 1-5 已完成；当前活跃路线见 `bootstrap/PLAN.md` |
+| `.dev/_archive/v0.2.0/handoff.md` | 2026-08-06 项目状态快照 | 已用 0.4.0-test-milestones 取代 |
+| `.dev/_archive/v0.2.0/c-asm-bootstrap.md` | 0.2.0 迁移与自举规划 | Phase 1-5 已完成；asm 已删除；当前活跃路线是 M0-M5 借用检查 |
 
 ## 历史
 

@@ -1,3 +1,16 @@
+> **📦 Archived (2026-08-08)**
+>
+> This was the project status snapshot from 2026-08-06. Its contents (Phase 5 asm-Lexer history, Phase 6/7 status, path B/C recommendations) are now obsolete.
+>
+> **Current authoritative documents**:
+> - **Active implementation plan**: `.dev/plans/0.4.0-test-milestones.md` (M0-M5 borrow-check milestones)
+> - **Language specification**: `docs/UltraCPP-v0.3.0-spec-zh-CN.md` (zh-CN authoritative), `docs/UltraCPP-v0.3.0-spec-en.md`
+> - **.uc test catalog**: `docs/test-outline.md` (102 .uc tests across milestones)
+> - **C port status**: `src-c/README.md`
+> - **Bootstrap roadmap (dormant)**: `bootstrap/PLAN.md`
+>
+> Kept as historical record of the 2026-08-06 transition state.
+
 # Worktree Handoff — `feature/borrow-check-verification`
 
 > **TL;DR**：把 UltraCPP 编译器从 Rust 改写到 C 的迁移已完成到 Phase 4；asm 路径已放弃；**bootstrap 启动**。

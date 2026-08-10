@@ -4,8 +4,8 @@ C99 rewrite of the entire UltraCPP compiler (lexer + parser + AST + codegen + CL
 Faithful to the Rust reference in `src/`, producing byte-identical LLVM IR
 for the existing test programs.
 
-> **Status (2026-08-06)**: Phase 1 + 1.1 + 2 + 3 + 4 complete. See `HANDOFF.md` and `bootstrap/PLAN.md`.
-> The Phase 5 (asm-Lexer) stub was deleted; bootstrap is the next direction.
+> **Status (2026-08-08)**: Phase 1 + 1.1 + 2 + 3 + 4 complete. See `.dev/_archive/v0.2.0/handoff.md` for the historical project-state snapshot.
+> The current active implementation direction is borrow-check (M0-M5) per `.dev/plans/0.4.0-test-milestones.md`.
 >
 > The C port is the **host compiler** for the bootstrap: the new UltraCPP
 > compiler written in UltraCPP itself (in `src-uc/`) is compiled by this
@@ -20,9 +20,10 @@ asm-Lexer plan (Phase 5) was deferred because the C port can already
 serve as the bootstrap host.
 
 See:
-- [`HANDOFF.md`](../HANDOFF.md) — project status, 30-second recovery
-- [`bootstrap/PLAN.md`](../bootstrap/PLAN.md) — bootstrap roadmap
-- [`.dev/plans/0.2.0-c-asm-bootstrap.md`](../.dev/plans/0.2.0-c-asm-bootstrap.md) — historical plan documenting Phase 1-5
+- [`.dev/_archive/v0.2.0/handoff.md`](../.dev/_archive/v0.2.0/handoff.md) — historical project-state snapshot (2026-08-06)
+- [`.dev/plans/0.4.0-test-milestones.md`](../.dev/plans/0.4.0-test-milestones.md) — current active implementation plan (borrow-check M0-M5)
+- [`bootstrap/PLAN.md`](../bootstrap/PLAN.md) — bootstrap roadmap (currently dormant)
+- [`docs/UltraCPP-v0.3.0-spec-zh-CN.md`](../docs/UltraCPP-v0.3.0-spec-zh-CN.md) — current authoritative language spec
 
 ## Build
 
@@ -120,8 +121,8 @@ produce the same `.ll` byte-for-byte.
 
 ## Next steps
 
-- **Phase 6+ (Bootstrap)**: write the new UltraCPP compiler in `src-uc/`.
-  See `bootstrap/PLAN.md` for the 4-level roadmap. Level 0 (a minimal
-  UltraCPP lexer) is the next concrete milestone.
+- **Borrow-check implementation (M0-M5)**: the current active direction.
+  See `.dev/plans/0.4.0-test-milestones.md` for the milestone breakdown
+  and `.dev/drafts/0.1.0-borrowck-spec-vs-impl.md` for the 21+ design decisions.
 - The Rust port at `src/` is the reference implementation; expect
   gradual retirement as the UltraCPP port matures.
