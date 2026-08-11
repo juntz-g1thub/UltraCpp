@@ -265,6 +265,61 @@ static UCTopLevel* parse_top_level(UCParser* p) {
         return parse_extern_decl(p);
     }
 
+    /* M0 P0-1: accept `const T name = expr;` at top level.
+     * Per UltraCPP 0.1/0.3 spec §12.1:
+     *   const_declaration ::= 'const' type identifier '=' expression ';'
+     * This is parsed as a UC_TL_CONST_DECL (distinct from UC_TL_VAR_DECL)
+     * so the codegen can mark the global as `constant` (read-only) in IR.
+     * 'const' on a function declaration is rejected (we have no const-fn
+     * semantics in this minimal port). */
+    if (match(p, UC_TOK_KW_CONST)) {
+        UCType* ty = parse_type(p);
+        if (is_err(p)) { uc_type_free(ty); return NULL; }
+        if (!ty) {
+            err_here(p, "expected type after 'const'");
+            return NULL;
+        }
+        if (!check(p, UC_TOK_IDENT)) {
+            err_here(p, "expected identifier after const type");
+            uc_type_free(ty);
+            return NULL;
+        }
+        UCString name = uc_string_new(p->current.lexeme,
+                                      p->current.lexeme_len);
+        advance(p);
+        if (check(p, UC_TOK_LPAREN)) {
+            err_here(p, "'const' cannot modify a function declaration");
+            uc_string_free(&name);
+            uc_type_free(ty);
+            return NULL;
+        }
+        if (!expect(p, UC_TOK_OP_ASSIGN, "'=' after const name")) {
+            uc_string_free(&name);
+            uc_type_free(ty);
+            return NULL;
+        }
+        UCExpr* init = parse_expression(p);
+        if (is_err(p)) {
+            uc_string_free(&name);
+            uc_type_free(ty);
+            uc_expr_free(init);
+            return NULL;
+        }
+        if (!init) {
+            uc_string_free(&name);
+            uc_type_free(ty);
+            err_here(p, "expected initializer expression after '='");
+            return NULL;
+        }
+        if (!expect(p, UC_TOK_SEMICOLON, "';' after const declaration")) {
+            uc_string_free(&name);
+            uc_type_free(ty);
+            uc_expr_free(init);
+            return NULL;
+        }
+        return uc_tl_const_decl(uc_const_decl_new(name, ty, init));
+    }
+
     if (check(p, UC_TOK_KW_VOID)
         || check(p, UC_TOK_KW_UNIQUE)
         || check(p, UC_TOK_OP_STAR)
