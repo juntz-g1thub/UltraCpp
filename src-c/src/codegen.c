@@ -145,6 +145,8 @@ struct UCCodeGenerator {
 
     Map local_types;   /* param name -> LLVM type */
     Map local_vars;    /* var name   -> LLVM type */
+    Map global_vars;   /* global var/const name -> LLVM type (M0 P0-1) */
+    Map const_init_values; /* const-global name -> folded long long (as string) */
     Map local_funcs;   /* func name  -> module name (for mangling) */
     Map imported_modules; /* module name -> module name */
     Map declared_externals; /* symbol -> "1" (set membership) */
@@ -172,6 +174,8 @@ UCCodeGenerator* uc_codegen_new(const char* module_name) {
     g->last_expr_type = cgen_strdup("i32");
     map_init(&g->local_types);
     map_init(&g->local_vars);
+    map_init(&g->global_vars);
+    map_init(&g->const_init_values);
     map_init(&g->local_funcs);
     map_init(&g->imported_modules);
     map_init(&g->declared_externals);
@@ -187,6 +191,8 @@ void uc_codegen_free(UCCodeGenerator* g) {
     free(g->last_expr_type);
     map_free(&g->local_types);
     map_free(&g->local_vars);
+    map_free(&g->global_vars);
+    map_free(&g->const_init_values);
     map_free(&g->local_funcs);
     map_free(&g->imported_modules);
     map_free(&g->declared_externals);
@@ -303,6 +309,78 @@ static char* llvm_type_of(UCCodeGenerator* g, const UCType* ty) {
 }
 
 /* ------------------------------------------------------------------------- */
+/* Constant folding for global initializers (M0 P0-1)                        */
+/*                                                                           */
+/* The 3 failing tests (m0_22/m0_45/m0_46) all use literal/identifier/binary */
+/* expressions to initialize globals. LLVM requires global initializers to  */
+/* be constant IR expressions, so we evaluate them at codegen time and emit  */
+/* a literal `i32 <value>`. The function is recursive: identifiers resolve  */
+/* against the previously-emitted const_global_values map (so `Y = X * 4`   */
+/* in m0_45 can fold after `X = 1 + 2` was processed first).                */
+/*                                                                           */
+/* Returns 1 on success (sets *out_value); 0 on any non-foldable shape.    */
+/* ------------------------------------------------------------------------- */
+
+static int fold_const_init(UCCodeGenerator* g, const UCExpr* e,
+                           long long* out_value) {
+    if (!e) return 0;
+    switch (e->kind) {
+        case UC_EXPR_LITERAL:
+            if (e->as.literal.kind == UC_LIT_INT) {
+                *out_value = e->as.literal.as.int_val;
+                return 1;
+            }
+            if (e->as.literal.kind == UC_LIT_TRUE) {
+                *out_value = 1;
+                return 1;
+            }
+            if (e->as.literal.kind == UC_LIT_FALSE) {
+                *out_value = 0;
+                return 1;
+            }
+            return 0;
+        case UC_EXPR_IDENT: {
+            const char* cached = map_get(&g->const_init_values,
+                                         e->as.ident.data);
+            if (cached) {
+                *out_value = strtoll(cached, NULL, 10);
+                return 1;
+            }
+            return 0;
+        }
+        case UC_EXPR_BINARY: {
+            long long lv = 0, rv = 0;
+            if (!fold_const_init(g, e->as.binary.lhs, &lv)) return 0;
+            if (!fold_const_init(g, e->as.binary.rhs, &rv)) return 0;
+            switch (e->as.binary.op) {
+                case UC_BIN_ADD: *out_value = lv + rv; return 1;
+                case UC_BIN_SUB: *out_value = lv - rv; return 1;
+                case UC_BIN_MUL: *out_value = lv * rv; return 1;
+                case UC_BIN_DIV:
+                    if (rv == 0) return 0;
+                    *out_value = lv / rv; return 1;
+                case UC_BIN_MOD:
+                    if (rv == 0) return 0;
+                    *out_value = lv % rv; return 1;
+                default: return 0;
+            }
+        }
+        case UC_EXPR_UNARY: {
+            long long v = 0;
+            if (!fold_const_init(g, e->as.unary.operand, &v)) return 0;
+            switch (e->as.unary.op) {
+                case UC_UN_NEG:     *out_value = -v; return 1;
+                case UC_UN_BIT_NOT: *out_value = ~v; return 1;
+                case UC_UN_NOT:     *out_value = !v; return 1;
+                default: return 0;
+            }
+        }
+        default:
+            return 0;
+    }
+}
+
+/* ------------------------------------------------------------------------- */
 /* emit helpers                                                              */
 /* ------------------------------------------------------------------------- */
 
@@ -400,6 +478,54 @@ static void gen_toplevel(UCCodeGenerator* g, const UCTopLevel* decl) {
                 gen_func(g, decl->as.export_->as.func_def, 1);
             }
             break;
+        case UC_TL_VAR_DECL: {
+            /* M0 P0-1: emit top-level mutable global variables so that
+             * functions can read them via a `load` in UC_EXPR_IDENT. */
+            UCVarDecl* d = decl->as.var_decl;
+            if (!d || !d->name.data) break;
+            char* ll_type = llvm_type_of(g, d->ty);
+            long long folded = 0;
+            if (d->init && fold_const_init(g, d->init, &folded)) {
+                emit_fmt_writeln(g, "@%s = global %s %lld",
+                                 d->name.data, ll_type, folded);
+                /* Cache so subsequent const-fold references resolve. */
+                char buf[32];
+                snprintf(buf, sizeof(buf), "%lld", folded);
+                map_put(&g->const_init_values, d->name.data, buf);
+            } else {
+                /* No init or un-foldable init: zero-init the storage.
+                 * (Future P-level work may add a __uc_init_globals
+                 * constructor for un-foldable cases.) */
+                emit_fmt_writeln(g, "@%s = global %s 0",
+                                 d->name.data, ll_type);
+            }
+            map_put(&g->global_vars, d->name.data, ll_type);
+            free(ll_type);
+            break;
+        }
+        case UC_TL_CONST_DECL: {
+            /* M0 P0-1: emit `const` top-level globals as LLVM `constant`s.
+             * The init expression must evaluate to an integer literal at
+             * codegen time so we can emit `private constant i32 <N>`. */
+            UCConstDecl* c = decl->as.const_decl;
+            if (!c || !c->name.data) break;
+            char* ll_type = llvm_type_of(g, c->ty);
+            long long folded = 0;
+            if (c->value && fold_const_init(g, c->value, &folded)) {
+                emit_fmt_writeln(g, "@%s = private constant %s %lld",
+                                 c->name.data, ll_type, folded);
+                char buf[32];
+                snprintf(buf, sizeof(buf), "%lld", folded);
+                map_put(&g->const_init_values, c->name.data, buf);
+            } else {
+                /* Fallback: zero-init constant. */
+                emit_fmt_writeln(g, "@%s = private constant %s 0",
+                                 c->name.data, ll_type);
+            }
+            map_put(&g->global_vars, c->name.data, ll_type);
+            free(ll_type);
+            break;
+        }
         case UC_TL_EXTERN: {
             char* mangled = mangle_name(g, decl->as.extern_.name.data, 0);
             char* parts = cgen_strdup("");
@@ -421,8 +547,8 @@ static void gen_toplevel(UCCodeGenerator* g, const UCTopLevel* decl) {
             break;
         }
         default:
-            /* Imports, var/const decls, struct defs are not emitted
-             * into IR in this minimal Phase 3 port. */
+            /* Imports and struct defs remain not-emitted in this minimal
+             * Phase 3 port (struct/array types are P2 work). */
             break;
     }
 }
@@ -726,6 +852,43 @@ static char* gen_expr(UCCodeGenerator* g, const UCExpr* expr, UCError* err) {
             free(v);
             return res;
         }
+        case UC_EXPR_ASSIGN: {
+            /* M0 P0-1 follow-up: assignment expressions must be lowered to
+             * an LLVM `store` so that m0_46_global_init's `copy_g = ...`
+             * line updates copy_g's alloca. The lhs must be a pointer
+             * (addressable lvalue); for plain local var identifiers we
+             * can use the alloca name directly. The expression result is
+             * a fresh unused SSA value (matching the loose behaviour the
+             * other cases already provide when an expression result is
+             * discarded). */
+            char* target_addr = NULL;
+            if (expr->as.assign.target
+                && expr->as.assign.target->kind == UC_EXPR_IDENT) {
+                const char* n = expr->as.assign.target->as.ident.data;
+                const char* ll_type = map_get(&g->local_vars, n);
+                if (ll_type) {
+                    size_t l = strlen(n) + 3;
+                    target_addr = (char*)malloc(l);
+                    snprintf(target_addr, l, "%%%s", n);
+                    free(g->last_expr_type);
+                    g->last_expr_type = cgen_strdup(ll_type);
+                }
+            }
+            if (!target_addr) {
+                target_addr = gen_expr(g, expr->as.assign.target, err);
+                if (!target_addr || err->kind != UC_ERR_NONE) return target_addr;
+            }
+            char* value = gen_expr(g, expr->as.assign.value, err);
+            if (!value || err->kind != UC_ERR_NONE) { free(target_addr); return value; }
+            const char* ty = g->last_expr_type
+                             ? g->last_expr_type : "i32";
+            emit_fmt_writeln(g, "store %s %s, %s* %s",
+                             ty, value, ty, target_addr);
+            free(target_addr);
+            free(value);
+            char* res = mk_temp(g);
+            return res;
+        }
         case UC_EXPR_CALL: {
             UCExpr* callee = expr->as.call.callee;
             char* symbol = NULL;
@@ -797,7 +960,19 @@ static char* gen_expr(UCCodeGenerator* g, const UCExpr* expr, UCError* err) {
                 free(g->last_expr_type);
                 g->last_expr_type = cgen_strdup(ll_type);
                 return loaded;
+            } else if ((ll_type = map_get(&g->global_vars, n)) != NULL) {
+                /* M0 P0-1: global var/const — emit a load from `@name`. */
+                char* loaded = mk_temp(g);
+                emit_fmt_writeln(g, "%s = load %s, %s* @%s",
+                                 loaded, ll_type, ll_type, n);
+                free(g->last_expr_type);
+                g->last_expr_type = cgen_strdup(ll_type);
+                return loaded;
             } else {
+                /* Parameter or function-name SSA value: return `%name`
+                 * directly. For params, the type was registered in
+                 * local_types; we leave last_expr_type unchanged so
+                 * downstream call-arg coercion uses its prior state. */
                 size_t l = strlen(n) + 3;
                 char* r = (char*)malloc(l);
                 snprintf(r, l, "%%%s", n);
