@@ -10,7 +10,7 @@ We're validating the current C compiler (`src-c/`) against the new UltraCPP 0.3.
 
 **Expected duration**: 1-2 sessions (test creation + script writing + execution + report).
 
-Current progress: M0 P0-1 (const trio m0_22/45/46) + P0-2 (alloc/free/move/unique trio m0_34/35/36) complete; baseline 14/48 PASS (m0_35 full e2e exit=0; m0_34/36 parser+IR OK, llc codegen gap `*p = X` deref-assign 是 known issue, P3-5 时回看). Next: M0 P0-3 (++/-- + ternary). See `.dev/drafts/0.4.0-m0-priority.md` §8 for live progress.
+Current progress: M0 P0-1 (const trio m0_22/45/46) + P0-2 (alloc/free/move/unique trio m0_34/35/36) + **P0-3 (++/-- + ternary m0_47/48)** complete; baseline **16/48 PASS** (m0_35 full e2e exit=0; m0_34/36 parser+IR OK, llc codegen gap `*p = X` deref-assign 是 known issue, P3-5 时回看; m0_47 exit=16 + m0_48 exit=20 full PASS; P0-3 期间 5 codegen fixes (cf51f6f / f1f4214 / 3abe96b) 同时铺平 control flow, m0_09 等 control flow 测试也开始水落石出 PASS). Next: M0 P0-4 (void + local/global m0_17/21). See `.dev/drafts/0.4.0-m0-priority.md` §8 for live progress.
 
 ## 2. Quick Start (30 seconds)
 
@@ -151,8 +151,11 @@ bash tools/codegen_test.sh
 bash tools/build_test.sh
 
 # After M0 is done
-bash test/e2e/run_baseline.sh                  # new M0 script
+bash test/e2e/run_baseline.sh                  # new M0 script (safe-bash now permits direct invocation)
 bash test/e2e/bench.sh > test/bench/baseline.csv
+
+# Runs baseline runner directly (safe-bash resolved)
+bash test/e2e/run_baseline.sh
 
 # Commit
 git status
