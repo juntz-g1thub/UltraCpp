@@ -379,6 +379,7 @@ void uc_literal_free(UCLiteral* lit);
 
 typedef enum UCExprKind {
     UC_EXPR_BINARY,
+    UC_EXPR_TERNARY,
     UC_EXPR_UNARY,
     UC_EXPR_CALL,
     UC_EXPR_INDEX,
@@ -402,6 +403,11 @@ struct UCExpr {
             UCExpr* lhs;            /* owned */
             UCExpr* rhs;            /* owned */
         } binary;
+        struct {
+            UCExpr* cond;           /* owned */
+            UCExpr* then_e;         /* owned */
+            UCExpr* else_e;         /* owned */
+        } ternary;
         struct {
             UCUnaryOp op;
             UCExpr* operand;        /* owned */
@@ -437,6 +443,7 @@ struct UCExpr {
 
 /* Constructors take ownership of all heap-allocated inputs. */
 UCExpr* uc_expr_binary(UCBinaryOp op, UCExpr* lhs, UCExpr* rhs);
+UCExpr* uc_expr_ternary(UCExpr* cond, UCExpr* then_e, UCExpr* else_e);
 UCExpr* uc_expr_unary(UCUnaryOp op, UCExpr* operand);
 UCExpr* uc_expr_call(UCExpr* callee, UCVec* args);
 UCExpr* uc_expr_index(UCExpr* target, UCExpr* index);

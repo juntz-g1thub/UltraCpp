@@ -658,6 +658,15 @@ UCExpr* uc_expr_unary(UCUnaryOp op, UCExpr* operand) {
     return e;
 }
 
+UCExpr* uc_expr_ternary(UCExpr* cond, UCExpr* then_e, UCExpr* else_e) {
+    UCExpr* e = (UCExpr*)xcalloc(1, sizeof(UCExpr));
+    e->kind = UC_EXPR_TERNARY;
+    e->as.ternary.cond = cond;
+    e->as.ternary.then_e = then_e;
+    e->as.ternary.else_e = else_e;
+    return e;
+}
+
 UCExpr* uc_expr_call(UCExpr* callee, UCVec* args) {
     UCExpr* e = (UCExpr*)xcalloc(1, sizeof(UCExpr));
     e->kind = UC_EXPR_CALL;
@@ -756,6 +765,11 @@ static void expr_free(void* p) {
             break;
         case UC_EXPR_UNARY:
             expr_free(e->as.unary.operand);
+            break;
+        case UC_EXPR_TERNARY:
+            expr_free(e->as.ternary.cond);
+            expr_free(e->as.ternary.then_e);
+            expr_free(e->as.ternary.else_e);
             break;
         case UC_EXPR_CALL:
             expr_free(e->as.call.callee);
@@ -883,6 +897,15 @@ static void expr_dump(const UCExpr* e, FILE* out, int indent) {
         case UC_EXPR_UNARY:
             fprintf(out, "Unary op=%s\n", uc_unary_op_name(e->as.unary.op));
             expr_dump(e->as.unary.operand, out, indent + 2);
+            break;
+        case UC_EXPR_TERNARY:
+            fputs("Ternary\n", out);
+            fputs("  Cond:\n", out);
+            expr_dump(e->as.ternary.cond, out, indent + 2);
+            fputs("  Then:\n", out);
+            expr_dump(e->as.ternary.then_e, out, indent + 2);
+            fputs("  Else:\n", out);
+            expr_dump(e->as.ternary.else_e, out, indent + 2);
             break;
         case UC_EXPR_CALL:
             fprintf(out, "Call args=%zu\n", uc_vec_len(e->as.call.args));

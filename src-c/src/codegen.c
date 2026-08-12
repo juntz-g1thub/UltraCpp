@@ -400,6 +400,26 @@ static void emit_fmt_writeln(UCCodeGenerator* g, const char* fmt, ...) {
     emit_writeln(g, tmp);
 }
 
+/* Emit an LLVM IR basic-block label definition at column 1 (no indent).
+ * LLVM IR requires block labels at column 1 (LangRef: "Each basic block
+ * ... is required to start with a label"). emit_fmt_writeln prepends
+ * g->indent pairs of spaces, which would place '%name:' at column 3
+ * (or deeper), confusing llc / the IR parser. Use this for every
+ * label-definition site; use emit_fmt_writeln("br label %s", lbl) for
+ * label *references* where the '%' is part of the literal format.
+ *
+ * LLVM 18 llc (and clang -x ir) requires label defs in 'name:' form
+ * (no leading '%') — '%name:' is parsed as an SSA value reference
+ * expecting '=' after, then the ':' yields 'expected = after
+ * instruction name'. mk_label returns '%prefix_N' (refs need the %);
+ * we strip it here. All 6 emit_label call sites benefit.
+ */
+static void emit_label(UCCodeGenerator* g, const char* lbl) {
+    const char* p = (lbl && lbl[0] == '%') ? lbl + 1 : lbl;
+    buf_append(&g->output, p, strlen(p));
+    buf_append(&g->output, ":\n", 2);
+}
+
 static char* mk_temp(UCCodeGenerator* g) {
     char buf[32];
     snprintf(buf, sizeof(buf), "%%t%d", g->temp_counter++);
@@ -624,19 +644,19 @@ static void gen_stmt(UCCodeGenerator* g, const UCStmt* stmt) {
             char* end_lbl  = mk_label(g, "if_end");
             emit_fmt_writeln(g, "br i1 %s, label %s, label %s",
                              cv, else_lbl, end_lbl);
-            emit_fmt_writeln(g, "%s:", else_lbl);
+            emit_label(g, else_lbl);
             g->indent += 1;
             gen_stmt(g, stmt->as.if_stmt.then_branch);
             g->indent -= 1;
             if (stmt->as.if_stmt.else_branch) {
                 emit_fmt_writeln(g, "br label %s", end_lbl);
-                emit_fmt_writeln(g, "%s:", end_lbl);
+                emit_label(g, end_lbl);
                 g->indent += 1;
                 gen_stmt(g, stmt->as.if_stmt.else_branch);
                 g->indent -= 1;
             } else {
                 emit_fmt_writeln(g, "br label %s", end_lbl);
-                emit_fmt_writeln(g, "%s:", end_lbl);
+                emit_label(g, end_lbl);
             }
             free(cv); free(else_lbl); free(end_lbl);
             break;
@@ -646,18 +666,18 @@ static void gen_stmt(UCCodeGenerator* g, const UCStmt* stmt) {
             char* b_lbl = mk_label(g, "while_body");
             char* e_lbl = mk_label(g, "while_end");
             emit_fmt_writeln(g, "br label %s", c_lbl);
-            emit_fmt_writeln(g, "%s:", c_lbl);
+            emit_label(g, c_lbl);
             UCError err; uc_error_init(&err);
             char* cv = gen_expr(g, stmt->as.while_stmt.cond, &err);
             if (!cv || err.kind != UC_ERR_NONE) { free(cv); return; }
             emit_fmt_writeln(g, "br i1 %s, label %s, label %s",
                              cv, b_lbl, e_lbl);
-            emit_fmt_writeln(g, "%s:", b_lbl);
+            emit_label(g, b_lbl);
             g->indent += 1;
             gen_stmt(g, stmt->as.while_stmt.body);
             g->indent -= 1;
             emit_fmt_writeln(g, "br label %s", c_lbl);
-            emit_fmt_writeln(g, "%s:", e_lbl);
+            emit_label(g, e_lbl);
             free(cv); free(c_lbl); free(b_lbl); free(e_lbl);
             break;
         }

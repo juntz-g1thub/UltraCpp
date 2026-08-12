@@ -208,6 +208,7 @@ static UCStmt* parse_decl_stmt(UCParser* p, UCType* ty);
 static UCStmt* parse_free_stmt(UCParser* p);
 static UCStmt* parse_unsafe_stmt(UCParser* p);
 static UCExpr* parse_expression(UCParser* p);
+static UCExpr* parse_ternary(UCParser* p);
 static UCExpr* parse_assignment(UCParser* p);
 static UCExpr* parse_or(UCParser* p);
 static UCExpr* parse_and(UCParser* p);
@@ -1261,7 +1262,27 @@ static UCExpr* parse_multiplicative(UCParser* p) {
 
 /* Top-level entry for expressions. */
 static UCExpr* parse_expression(UCParser* p) {
-    return parse_assignment(p);
+    return parse_ternary(p);
+}
+
+/* Ternary conditional: right-associative.
+ *   assign ? expr : ternary
+ * Lower precedence than all assignment/binary/unary/postfix forms. */
+static UCExpr* parse_ternary(UCParser* p) {
+    UCExpr* cond = parse_assignment(p);
+    if (is_err(p) || !cond) return cond;
+    if (!check(p, UC_TOK_OP_QUESTION)) return cond;
+    advance(p);
+    UCExpr* then_e = parse_expression(p);
+    if (is_err(p) || !then_e) { uc_expr_free(cond); return NULL; }
+    if (!expect(p, UC_TOK_COLON, "':' in ternary")) {
+        uc_expr_free(cond); uc_expr_free(then_e); return NULL;
+    }
+    UCExpr* else_e = parse_ternary(p);
+    if (is_err(p) || !else_e) {
+        uc_expr_free(cond); uc_expr_free(then_e); return NULL;
+    }
+    return uc_expr_ternary(cond, then_e, else_e);
 }
 
 /* Unary prefix operators: right-associative (recurses on self).
