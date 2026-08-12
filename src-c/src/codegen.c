@@ -622,20 +622,20 @@ static void gen_stmt(UCCodeGenerator* g, const UCStmt* stmt) {
             if (!cv || err.kind != UC_ERR_NONE) { free(cv); return; }
             char* else_lbl = mk_label(g, "else");
             char* end_lbl  = mk_label(g, "if_end");
-            emit_fmt_writeln(g, "br i1 %s, label %%%s, label %%%s",
+            emit_fmt_writeln(g, "br i1 %s, label %s, label %s",
                              cv, else_lbl, end_lbl);
             emit_fmt_writeln(g, "%s:", else_lbl);
             g->indent += 1;
             gen_stmt(g, stmt->as.if_stmt.then_branch);
             g->indent -= 1;
             if (stmt->as.if_stmt.else_branch) {
-                emit_fmt_writeln(g, "br label %%%s", end_lbl);
+                emit_fmt_writeln(g, "br label %s", end_lbl);
                 emit_fmt_writeln(g, "%s:", end_lbl);
                 g->indent += 1;
                 gen_stmt(g, stmt->as.if_stmt.else_branch);
                 g->indent -= 1;
             } else {
-                emit_fmt_writeln(g, "br label %%%s", end_lbl);
+                emit_fmt_writeln(g, "br label %s", end_lbl);
                 emit_fmt_writeln(g, "%s:", end_lbl);
             }
             free(cv); free(else_lbl); free(end_lbl);
@@ -645,18 +645,18 @@ static void gen_stmt(UCCodeGenerator* g, const UCStmt* stmt) {
             char* c_lbl = mk_label(g, "while_cond");
             char* b_lbl = mk_label(g, "while_body");
             char* e_lbl = mk_label(g, "while_end");
-            emit_fmt_writeln(g, "br label %%%s", c_lbl);
+            emit_fmt_writeln(g, "br label %s", c_lbl);
             emit_fmt_writeln(g, "%s:", c_lbl);
             UCError err; uc_error_init(&err);
             char* cv = gen_expr(g, stmt->as.while_stmt.cond, &err);
             if (!cv || err.kind != UC_ERR_NONE) { free(cv); return; }
-            emit_fmt_writeln(g, "br i1 %s, label %%%s, label %%%s",
+            emit_fmt_writeln(g, "br i1 %s, label %s, label %s",
                              cv, b_lbl, e_lbl);
             emit_fmt_writeln(g, "%s:", b_lbl);
             g->indent += 1;
             gen_stmt(g, stmt->as.while_stmt.body);
             g->indent -= 1;
-            emit_fmt_writeln(g, "br label %%%s", c_lbl);
+            emit_fmt_writeln(g, "br label %s", c_lbl);
             emit_fmt_writeln(g, "%s:", e_lbl);
             free(cv); free(c_lbl); free(b_lbl); free(e_lbl);
             break;
