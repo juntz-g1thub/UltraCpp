@@ -957,6 +957,44 @@ static char* gen_expr(UCCodeGenerator* g, const UCExpr* expr, UCError* err) {
             char* res = mk_temp(g);
             return res;
         }
+        case UC_EXPR_TERNARY: {
+            /* cond ? then_e : else_e — right-assoc. Generates:
+             *   br i1 %cv, label %tern_t_N, label %tern_e_N
+             * tern_t_N: %tv = <then_e>   br label %tern_j_N
+             * tern_e_N: %ev = <else_e>   br label %tern_j_N
+             * tern_j_N:
+             *   %res = phi %ty [%tv, %tern_t_N], [%ev, %tern_e_N]
+             * Single join label (tern_j) is fine: each predecessor has
+             * exactly one successor (the join), so the merge is not on
+             * a critical edge and the phi lives in the join block. */
+            char* cv = gen_expr(g, expr->as.ternary.cond, err);
+            if (!cv || err->kind != UC_ERR_NONE) { free(cv); return NULL; }
+
+            char* then_lbl = mk_label(g, "tern_t");
+            char* else_lbl = mk_label(g, "tern_e");
+            char* join_lbl = mk_label(g, "tern_j");
+
+            emit_fmt_writeln(g, "br i1 %s, label %s, label %s",
+                             cv, then_lbl, else_lbl);
+
+            emit_label(g, then_lbl);
+            char* tv = gen_expr(g, expr->as.ternary.then_e, err);
+            if (!tv || err->kind != UC_ERR_NONE) { free(cv); free(tv); return NULL; }
+            emit_fmt_writeln(g, "br label %s", join_lbl);
+
+            emit_label(g, else_lbl);
+            char* ev = gen_expr(g, expr->as.ternary.else_e, err);
+            if (!ev || err->kind != UC_ERR_NONE) { free(cv); free(tv); free(ev); return NULL; }
+            emit_fmt_writeln(g, "br label %s", join_lbl);
+
+            emit_label(g, join_lbl);
+            char* res = mk_temp(g);
+            const char* ty = g->last_expr_type ? g->last_expr_type : "i32";
+            emit_fmt_writeln(g, "%s = phi %s [%s, %s], [%s, %s]",
+                             res, ty, tv, then_lbl, ev, else_lbl);
+            free(cv); free(tv); free(ev);
+            return res;
+        }
         case UC_EXPR_CALL: {
             UCExpr* callee = expr->as.call.callee;
             char* symbol = NULL;
