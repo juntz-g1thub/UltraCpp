@@ -22,7 +22,9 @@
 └── drafts/                                    探索性草稿与决策记录
     ├── 0.1.0-borrowck-spec-vs-impl.md         借用检查审计 + 21+ 决策 + 0.3.0 对齐（活跃决策源）
     ├── 0.1.0-module-system.md                模块/预编译系统设计（仍适用 0.3.0）
-    └── 0.4.0-mutable-pointer-todo.md         UC_TYPE_MUTABLE_POINTER 残留清理待办
+    ├── 0.4.0-m0-priority.md                  M0 47 失败修复优先级清单（P0-P3，src-c/ 修复路线）
+    ├── 0.4.0-mutable-pointer-todo.md         UC_TYPE_MUTABLE_POINTER 残留清理待办
+    └── 0.4.0-session-context.md              M0 session-only 元数据（重启后上下文，含 safe-bash workaround、P0-2 计划）
 ```
 
 ## 当前活跃文档
@@ -33,6 +35,8 @@
 | `drafts/0.1.0-borrowck-spec-vs-impl.md` | **活跃** | 借用检查审计 + 21+ 决策记录 + 与 0.3.0 对齐（§10-7）。C 主机 ownership checker 实现以此为决策源 |
 | `drafts/0.1.0-module-system.md` | **活跃** | 模块/预编译系统设计（#import / #include）。0.3.0 spec §9 沿用此设计 |
 | `drafts/0.4.0-mutable-pointer-todo.md` | **活跃** | `UC_TYPE_MUTABLE_POINTER` 残留清理待办（M1 期间处理） |
+| `drafts/0.4.0-m0-priority.md` | **活跃** | M0 47 失败修复优先级清单（P0-P3），含 §8 进度追踪表与 §9 风险回退 |
+| `drafts/0.4.0-session-context.md` | **活跃** | M0 session-only 元数据（safe-bash workaround / P0-2 计划 / 已知开放项），session 重启后上下文恢复用 |
 
 ## 归档（`.dev/_archive/`）
 

@@ -72,26 +72,26 @@
 
 | ID | 程序名 | 测什么 | 关键语法 | 状态 |
 |---|---|---|---|---|
-| m0_16 | `m0_16_function_simple.uc` | Function def | `int f(int x) { return x; }` | ⬜ |
+| m0_16 | `m0_16_function_simple.uc` | Function def | `int f(int x) { return x; }` | ✓ |
 | m0_17 | `m0_17_function_void.uc` | Void function | `void f() {}` | ⬜ |
-| m0_18 | `m0_18_function_multi_params.uc` | Multi params | `int add(int a, int b)` | ⬜ |
+| m0_18 | `m0_18_function_multi_params.uc` | Multi params | `int add(int a, int b)` | ✓ |
 | m0_19 | `m0_19_function_recursion.uc` | Recursion | factorial/fibonacci | ⬜ |
-| m0_20 | `m0_20_function_nested_calls.uc` | Nested calls | `f(g(x))` | ⬜ |
+| m0_20 | `m0_20_function_nested_calls.uc` | Nested calls | `f(g(x))` | ✓ |
 
 ### 3.4 作用域与存储期
 
 | ID | 程序名 | 测什么 | 关键语法 | 状态 |
 |---|---|---|---|---|
-| m0_21 | `m0_21_local_global.uc` | Local vs global scope | `int g; int main() { int l; }` | ⬜ |
-| m0_22 | `m0_22_const_global.uc` | const global | `const int MAX = 100;` | ⬜ |
-| m0_45 | `m0_45_const_expr.uc` | const expr | `const int X = 1 + 2;` | ⬜ |
-| m0_46 | `m0_46_global_init.uc` | Global init | `int g = 42;` | ⬜ |
+| m0_21 | `m0_21_local_global.uc` | Local vs global scope | `int g; int main() { int l; }` | ✓ |
+| m0_22 | `m0_22_const_global.uc` | const global | `const int MAX = 100;` | ✓ |
+| m0_45 | `m0_45_const_expr.uc` | const expr | `const int X = 1 + 2;` | ✓ |
+| m0_46 | `m0_46_global_init.uc` | Global init | `int g = 42;` | ✓ |
 
 ### 3.5 字符串
 
 | ID | 程序名 | 测什么 | 关键语法 | 状态 |
 |---|---|---|---|---|
-| m0_23 | `m0_23_string_literal.uc` | String literal | `"hello"` | ⬜ |
+| m0_23 | `m0_23_string_literal.uc` | String literal | `"hello"` | ✓ |
 | m0_24 | `m0_24_string_escape.uc` | String escape | `"\n\t\\"` | ⬜ |
 | m0_25 | `m0_25_string_io.uc` | String + sys$write | `sys$write(1, s, len)` | ⬜ |
 
@@ -144,7 +144,7 @@
 
 | ID | 程序名 | 测什么 | 关键语法 | 状态 |
 |---|---|---|---|---|
-| m0_39 | `m0_39_module_import.uc` | #import | `#import "lib/io"` | ⬜ |
+| m0_39 | `m0_39_module_import.uc` | #import | `#import "lib/io"` | ✓ |
 | m0_40 | `m0_40_module_include.uc` | #include | `#include "lib/math.uc"` | ⬜ |
 
 ### 3.13 FFI 与 unsafe
@@ -165,7 +165,7 @@
 
 | ID | 程序名 | 测什么 | 关键语法 | 状态 |
 |---|---|---|---|---|
-| m0_49 | `m0_49_comments_mixed.uc` | Mixed comments | `// + /* */` | ⬜ |
+| m0_49 | `m0_49_comments_mixed.uc` | Mixed comments | `// + /* */` | ✓ |
 | m0_50 | `m0_50_chinese_identifiers.uc` | Chinese identifiers | `int 变量 = 42;` | ⬜ |
 
 ---

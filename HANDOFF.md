@@ -10,6 +10,8 @@ We're validating the current C compiler (`src-c/`) against the new UltraCPP 0.3.
 
 **Expected duration**: 1-2 sessions (test creation + script writing + execution + report).
 
+Current progress: M0 P0-1 (const trio m0_22/45/46) complete; baseline 11/48 PASS. Next: M0 P0-2 (alloc/free/move/unique PARSE-ONLY trio). See `.dev/drafts/0.4.0-m0-priority.md` §8 for live progress.
+
 ## 2. Quick Start (30 seconds)
 
 ```bash
@@ -181,5 +183,5 @@ git commit -m "..."
 
 ---
 
-*Last updated: 2026-08-08*
+*Last updated: 2026-08-10*
 *M0 expected duration: 1-2 sessions (test creation + execution + report)*
