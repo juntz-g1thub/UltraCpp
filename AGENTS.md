@@ -87,14 +87,15 @@
 
 ## Current Phase
 
-> 最后更新：2026-08-10
+> 最后更新：2026-08-12
 
 - [x] **Language design documentation**：0.3.0 完成（两条权限独立 + `#modlaw` + 线程模型）
 - [x] **C port of the compiler**：Phase 1+1.1+2+3+4 完成，505 单元测试，5/5 byte-exact 端到端
 - [x] ~~asm port of the lexer~~：2026-08-06 删除（asm 路径放弃，走 bootstrap）
 - [ ] **Borrow-check implementation in C host**：**当前活跃方向**，按 `.dev/plans/0.4.0-test-milestones.md` M0-M5 推进
   - [x] **M0 P0-1**: const trio (m0_22/45/46) done; baseline 11/48 PASS as of 2026-08-10
-  - [ ] **M0 P0-2**: alloc/free/move/unique PARSE-ONLY trio (m0_34/35/36) — pending
+  - [x] **M0 P0-2**: alloc/free/move/unique trio (m0_34/35/36) done as of 2026-08-12 (commits a173f07 + 66406da); baseline 14/48; m0_35 FULL PASS exit=0, m0_34/36 parse+IR OK; known llc-fail gap on deref-assign to be revisited at P3-5
+  - [ ] **M0 P0-3**: ++/-- + ternary (m0_47/48) — pending
 - [ ] **Bootstrap**（UltraCPP 写 UltraCPP）：路线见 `bootstrap/PLAN.md`，**当前休眠**
 
 > 当前焦点是**借用检查在 C 主机中的实现**：

@@ -10,7 +10,7 @@ We're validating the current C compiler (`src-c/`) against the new UltraCPP 0.3.
 
 **Expected duration**: 1-2 sessions (test creation + script writing + execution + report).
 
-Current progress: M0 P0-1 (const trio m0_22/45/46) complete; baseline 11/48 PASS. Next: M0 P0-2 (alloc/free/move/unique PARSE-ONLY trio). See `.dev/drafts/0.4.0-m0-priority.md` §8 for live progress.
+Current progress: M0 P0-1 (const trio m0_22/45/46) + P0-2 (alloc/free/move/unique trio m0_34/35/36) complete; baseline 14/48 PASS (m0_35 full e2e exit=0; m0_34/36 parser+IR OK, llc codegen gap `*p = X` deref-assign 是 known issue, P3-5 时回看). Next: M0 P0-3 (++/-- + ternary). See `.dev/drafts/0.4.0-m0-priority.md` §8 for live progress.
 
 ## 2. Quick Start (30 seconds)
 
@@ -183,5 +183,5 @@ git commit -m "..."
 
 ---
 
-*Last updated: 2026-08-10*
+*Last updated: 2026-08-12*
 *M0 expected duration: 1-2 sessions (test creation + execution + report)*
