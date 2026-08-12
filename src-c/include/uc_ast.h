@@ -345,7 +345,8 @@ typedef enum UCBinaryOp {
 } UCBinaryOp;
 
 typedef enum UCUnaryOp {
-    UC_UN_NEG, UC_UN_NOT, UC_UN_BIT_NOT, UC_UN_DEREF, UC_UN_ADDR_OF
+    UC_UN_NEG, UC_UN_NOT, UC_UN_BIT_NOT, UC_UN_DEREF, UC_UN_ADDR_OF,
+    UC_UN_PRE_INC, UC_UN_PRE_DEC, UC_UN_POST_INC, UC_UN_POST_DEC
 } UCUnaryOp;
 
 typedef enum UCLiteralKind {

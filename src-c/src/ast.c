@@ -1182,6 +1182,10 @@ const char* uc_unary_op_name(UCUnaryOp op) {
         case UC_UN_BIT_NOT: return "BitNot";
         case UC_UN_DEREF:   return "Deref";
         case UC_UN_ADDR_OF: return "AddrOf";
+        case UC_UN_PRE_INC:  return "PreInc";
+        case UC_UN_PRE_DEC:  return "PreDec";
+        case UC_UN_POST_INC: return "PostInc";
+        case UC_UN_POST_DEC: return "PostDec";
     }
     return "Unknown";
 }

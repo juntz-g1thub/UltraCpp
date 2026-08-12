@@ -1330,6 +1330,26 @@ static UCExpr* parse_unary(UCParser* p) {
         }
         return uc_expr_unary(UC_UN_DEREF, operand);
     }
+    if (check(p, UC_TOK_OP_INC)) {
+        advance(p);
+        UCExpr* operand = parse_unary(p);
+        if (is_err(p)) { uc_expr_free(operand); return NULL; }
+        if (!operand) {
+            err_here(p, "expected expression after '++'");
+            return NULL;
+        }
+        return uc_expr_unary(UC_UN_PRE_INC, operand);
+    }
+    if (check(p, UC_TOK_OP_DEC)) {
+        advance(p);
+        UCExpr* operand = parse_unary(p);
+        if (is_err(p)) { uc_expr_free(operand); return NULL; }
+        if (!operand) {
+            err_here(p, "expected expression after '--'");
+            return NULL;
+        }
+        return uc_expr_unary(UC_UN_PRE_DEC, operand);
+    }
     return parse_postfix(p);
 }
 
@@ -1414,6 +1434,10 @@ static UCExpr* parse_postfix(UCParser* p) {
                 return NULL;
             }
             expr = uc_expr_index(expr, idx);
+        } else if (match(p, UC_TOK_OP_INC)) {
+            expr = uc_expr_unary(UC_UN_POST_INC, expr);
+        } else if (match(p, UC_TOK_OP_DEC)) {
+            expr = uc_expr_unary(UC_UN_POST_DEC, expr);
         } else {
             break;
         }

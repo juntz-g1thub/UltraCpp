@@ -842,6 +842,53 @@ static char* gen_expr(UCCodeGenerator* g, const UCExpr* expr, UCError* err) {
                 case UC_UN_DEREF:
                     emit_fmt_writeln(g, "%s = load i32, i32* %s", res, v);
                     break;
+                case UC_UN_PRE_INC:
+                case UC_UN_PRE_DEC:
+                case UC_UN_POST_INC:
+                case UC_UN_POST_DEC: {
+                    /* m0_47: ++/-- operand must be a tracked local
+                     * (UC_EXPR_IDENT with an entry in g->local_vars).
+                     * For m0_47 we only handle i32 locals. */
+                    UCExpr* opd = expr->as.unary.operand;
+                    if (!opd || opd->kind != UC_EXPR_IDENT) {
+                        uc_error_set(err, UC_ERR_CODEGEN, 0, 0, NULL,
+                                     "inc/dec requires a local variable operand");
+                        free(v); free(res);
+                        return NULL;
+                    }
+                    const char* name = opd->as.ident.data;
+                    const char* ll_ty = map_get(&g->local_vars, name);
+                    if (!ll_ty) {
+                        uc_error_set(err, UC_ERR_CODEGEN, 0, 0, NULL,
+                                     "inc/dec: local variable '%s' not found",
+                                     name);
+                        free(v); free(res);
+                        return NULL;
+                    }
+                    UCUnaryOp op = expr->as.unary.op;
+                    int is_inc = (op == UC_UN_PRE_INC || op == UC_UN_POST_INC);
+                    int is_pre = (op == UC_UN_PRE_INC || op == UC_UN_PRE_DEC);
+                    char* old_v = mk_temp(g);
+                    char* new_v = mk_temp(g);
+                    size_t addr_len = strlen(name) + 3;
+                    char* addr = (char*)malloc(addr_len);
+                    snprintf(addr, addr_len, "%%%s", name);
+                    emit_fmt_writeln(g, "%s = load %s, %s* %s",
+                                     old_v, ll_ty, ll_ty, addr);
+                    emit_fmt_writeln(g, "%s = %s %s %s, 1",
+                                     new_v, is_inc ? "add" : "sub",
+                                     ll_ty, old_v);
+                    emit_fmt_writeln(g, "store %s %s, %s* %s",
+                                     ll_ty, new_v, ll_ty, addr);
+                    free(addr);
+                    emit_fmt_writeln(g, "%s = add %s 0, %s",
+                                     res, ll_ty, is_pre ? new_v : old_v);
+                    free(old_v); free(new_v);
+                    free(g->last_expr_type);
+                    g->last_expr_type = cgen_strdup(ll_ty);
+                    free(v);
+                    return res;
+                }
                 default:
                     uc_error_set(err, UC_ERR_CODEGEN, 0, 0, NULL,
                                  "unsupported unary op: %d",
