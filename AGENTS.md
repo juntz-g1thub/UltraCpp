@@ -95,7 +95,7 @@
 - [ ] **Borrow-check implementation in C host**：**当前活跃方向**，按 `.dev/plans/0.4.0-test-milestones.md` M0-M5 推进
   - [x] **M0 P0-1**: const trio (m0_22/45/46) done; baseline 11/48 PASS as of 2026-08-10
   - [x] **M0 P0-2**: alloc/free/move/unique trio (m0_34/35/36) done as of 2026-08-12 (commits a173f07 + 66406da); baseline 14/48; m0_35 FULL PASS exit=0, m0_34/36 parse+IR OK; known llc-fail gap on deref-assign to be revisited at P3-5
-  - [x] **M0 P0-3**: ++/-- + ternary (m0_47/48) done as of 2026-08-12; commits `cb07848` (m0_47 FULL PASS exit=16) + `70b8845` (m0_48 FULL PASS exit=20); baseline 16/48; P0-3 期间 5 codegen fixes 同时铺平 control flow (`cf51f6f` label-ref `%%`→`%` strip 8 sites, `f1f4214` `emit_label` 前导 `%` strip, `3abe96b` `UC_STMT_IF` 3-label then/else/end 重构) — m0_09 等 control flow 测试水落石出 PASS
+  - [x] **M0 P0-3**: ++/-- + ternary (m0_47/48) done as of 2026-08-12; commits `cb07848` (m0_47 FULL PASS exit=16) + `70b8845` (m0_48 FULL PASS exit=20 — runner 误判为 FAIL 因 expected-code extraction 默认 0; **实际 effective PASS**); baseline **18/48 PASS / 30 FAIL** (first complete baseline run done 2026-08-12; 30 FAILs categorized in priority doc §8.1); P0-3 期间 5 codegen fixes 同时铺平 control flow (`cf51f6f` label-ref `%%`→`%` strip 8 sites, `f1f4214` `emit_label` 前导 `%` strip, `3abe96b` `UC_STMT_IF` 3-label then/else/end 重构) — m0_09 等 control flow 测试水落石出 PASS
   - [ ] **M0 P0-4**: void + local/global (m0_17/21) — pending
 - [ ] **Bootstrap**（UltraCPP 写 UltraCPP）：路线见 `bootstrap/PLAN.md`，**当前休眠**
 

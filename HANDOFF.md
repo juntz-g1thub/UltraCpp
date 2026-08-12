@@ -10,7 +10,7 @@ We're validating the current C compiler (`src-c/`) against the new UltraCPP 0.3.
 
 **Expected duration**: 1-2 sessions (test creation + script writing + execution + report).
 
-Current progress: M0 P0-1 (const trio m0_22/45/46) + P0-2 (alloc/free/move/unique trio m0_34/35/36) + **P0-3 (++/-- + ternary m0_47/48)** complete; baseline **16/48 PASS** (m0_35 full e2e exit=0; m0_34/36 parser+IR OK, llc codegen gap `*p = X` deref-assign 是 known issue, P3-5 时回看; m0_47 exit=16 + m0_48 exit=20 full PASS; P0-3 期间 5 codegen fixes (cf51f6f / f1f4214 / 3abe96b) 同时铺平 control flow, m0_09 等 control flow 测试也开始水落石出 PASS). Next: M0 P0-4 (void + local/global m0_17/21). See `.dev/drafts/0.4.0-m0-priority.md` §8 for live progress.
+Current progress: M0 P0-1 (const trio m0_22/45/46) + P0-2 (alloc/free/move/unique trio m0_34/35/36) + **P0-3 (++/-- + ternary m0_47/48)** complete; baseline **18/48 PASS** + **30/48 FAIL** (m0_35 full e2e exit=0; m0_34/36 parser+IR OK, llc codegen gap `*p = X` deref-assign 是 known issue, P3-5 时回看; m0_47 exit=16 full PASS + m0_48 exit=20 **effective PASS** — runner 误判因 expected-code extraction 默认 0; P0-3 期间 5 codegen fixes (cf51f6f / f1f4214 / 3abe96b) 同时铺平 control flow, m0_09 等 control flow 测试也开始水落石出 PASS). **30 个 FAIL 详情 + 分类**见 priority doc §8.1. Next: M0 P0-4 (void + local/global m0_17/21).
 
 ## 2. Quick Start (30 seconds)
 
