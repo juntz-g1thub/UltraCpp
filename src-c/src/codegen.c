@@ -1024,6 +1024,19 @@ static char* gen_expr(UCCodeGenerator* g, const UCExpr* expr, UCError* err) {
         }
         case UC_EXPR_NULL:
             return cgen_strdup("null");
+        case UC_EXPR_MOVE:
+            /* PARSE-ONLY: ownership transfer is M2. Pass through. */
+            return gen_expr(g, expr->as.move_expr, err);
+        case UC_EXPR_ALLOC: {
+            /* PARSE-ONLY: minimal codegen — emit `call i8* @malloc(i64 4)`
+             * and leave last_expr_type as i8*. Proper sized alloc +
+             * ownership transfer is M2. */
+            char* res = mk_temp(g);
+            emit_fmt_writeln(g, "%s = call i8* @malloc(i64 4)", res);
+            free(g->last_expr_type);
+            g->last_expr_type = cgen_strdup("i8*");
+            return res;
+        }
         default:
             uc_error_set(err, UC_ERR_CODEGEN, 0, 0, NULL,
                          "unsupported expression kind: %d", (int)expr->kind);

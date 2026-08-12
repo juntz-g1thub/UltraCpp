@@ -1455,6 +1455,23 @@ static UCExpr* parse_primary(UCParser* p) {
         return uc_expr_move(inner);
     }
 
+    /* alloc(type) — PARSE-ONLY: ownership semantics live in M2 */
+    if (check(p, UC_TOK_KW_ALLOC)) {
+        advance(p);
+        if (!expect(p, UC_TOK_LPAREN, "'(' after 'alloc'")) return NULL;
+        UCType* t = parse_type(p);
+        if (is_err(p)) { uc_type_free(t); return NULL; }
+        if (!t) {
+            err_here(p, "expected type inside alloc(...)");
+            return NULL;
+        }
+        if (!expect(p, UC_TOK_RPAREN, "')' after alloc argument")) {
+            uc_type_free(t);
+            return NULL;
+        }
+        return uc_expr_alloc(t);
+    }
+
     /* clone(expr) */
     if (check(p, UC_TOK_KW_CLONE)) {
         advance(p);

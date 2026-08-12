@@ -385,6 +385,7 @@ typedef enum UCExprKind {
     UC_EXPR_ASSIGN,
     UC_EXPR_MOVE,
     UC_EXPR_CLONE,
+    UC_EXPR_ALLOC,
     UC_EXPR_SIZEOF,
     UC_EXPR_IDENT,
     UC_EXPR_LITERAL,
@@ -422,6 +423,7 @@ struct UCExpr {
         } assign;
         UCExpr* move_expr;          /* owned */
         UCExpr* clone_expr;         /* owned */
+        UCType* alloc_type;         /* owned */
         UCType* sizeof_ty;          /* owned */
         UCString ident;
         UCLiteral literal;
@@ -441,6 +443,7 @@ UCExpr* uc_expr_field(UCExpr* target, UCString field);
 UCExpr* uc_expr_assign(UCExpr* target, UCExpr* value);
 UCExpr* uc_expr_move(UCExpr* inner);
 UCExpr* uc_expr_clone(UCExpr* inner);
+UCExpr* uc_expr_alloc(UCType* alloc_type);
 UCExpr* uc_expr_sizeof(UCType* ty);
 UCExpr* uc_expr_ident(const char* name, size_t len);     /* copies */
 UCExpr* uc_expr_literal(UCLiteral lit);                  /* moves string if any */
