@@ -155,7 +155,9 @@ static UCType* parse_type(UCParser* p) {
         base = uc_type_void();
     } else if (check(p, UC_TOK_KW_UNIQUE)) {
         advance(p);
-        base = uc_type_pointer(uc_type_int());
+        UCType* inner = parse_type(p);
+        if (!inner) return NULL;
+        base = uc_type_pointer(inner);
     } else if (check(p, UC_TOK_OP_STAR)
                && p->peek.kind == UC_TOK_IDENT
                && p->peek.lexeme
