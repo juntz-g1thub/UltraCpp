@@ -640,25 +640,26 @@ static void gen_stmt(UCCodeGenerator* g, const UCStmt* stmt) {
             UCError err; uc_error_init(&err);
             char* cv = gen_expr(g, stmt->as.if_stmt.cond, &err);
             if (!cv || err.kind != UC_ERR_NONE) { free(cv); return; }
-            char* else_lbl = mk_label(g, "else");
+            char* then_lbl = mk_label(g, "if_then");
+            char* else_lbl = stmt->as.if_stmt.else_branch
+                                 ? mk_label(g, "if_else") : NULL;
             char* end_lbl  = mk_label(g, "if_end");
             emit_fmt_writeln(g, "br i1 %s, label %s, label %s",
-                             cv, else_lbl, end_lbl);
-            emit_label(g, else_lbl);
+                             cv, then_lbl, else_lbl ? else_lbl : end_lbl);
+            emit_label(g, then_lbl);
             g->indent += 1;
             gen_stmt(g, stmt->as.if_stmt.then_branch);
             g->indent -= 1;
-            if (stmt->as.if_stmt.else_branch) {
-                emit_fmt_writeln(g, "br label %s", end_lbl);
-                emit_label(g, end_lbl);
+            emit_fmt_writeln(g, "br label %s", end_lbl);
+            if (else_lbl) {
+                emit_label(g, else_lbl);
                 g->indent += 1;
                 gen_stmt(g, stmt->as.if_stmt.else_branch);
                 g->indent -= 1;
-            } else {
                 emit_fmt_writeln(g, "br label %s", end_lbl);
-                emit_label(g, end_lbl);
             }
-            free(cv); free(else_lbl); free(end_lbl);
+            emit_label(g, end_lbl);
+            free(cv); free(then_lbl); free(else_lbl); free(end_lbl);
             break;
         }
         case UC_STMT_WHILE: {
