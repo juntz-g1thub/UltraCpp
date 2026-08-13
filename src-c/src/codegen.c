@@ -740,8 +740,27 @@ static void gen_stmt(UCCodeGenerator* g, const UCStmt* stmt) {
                                             ? g->last_expr_type : "i32";
                     if (strcmp(expr_type, ll_type) != 0) {
                         char* conv = mk_temp(g);
-                        emit_fmt_writeln(g, "%s = trunc i64 %s to i32", conv, v);
-                        emit_fmt_writeln(g, "store i32 %s, i32* %s", conv, alloc);
+                        if (strcmp(expr_type, "i1") == 0
+                            && strcmp(ll_type, "i32") == 0) {
+                            emit_fmt_writeln(g, "%s = zext i1 %s to i32",
+                                             conv, v);
+                            emit_fmt_writeln(g, "store i32 %s, i32* %s",
+                                             conv, alloc);
+                        } else if (strcmp(expr_type, "i64") == 0
+                                   && strcmp(ll_type, "i32") == 0) {
+                            emit_fmt_writeln(g, "%s = trunc i64 %s to i32",
+                                             conv, v);
+                            emit_fmt_writeln(g, "store i32 %s, i32* %s",
+                                             conv, alloc);
+                        } else {
+                            uc_error_set(&err, UC_ERR_CODEGEN, 0, 0, NULL,
+                                         "type mismatch in decl: "
+                                         "expr=%s target=%s",
+                                         expr_type, ll_type);
+                            free(conv);
+                            free(v);
+                            return;
+                        }
                         free(conv);
                     } else {
                         emit_fmt_writeln(g, "store %s %s, %s* %s",
@@ -862,6 +881,13 @@ static char* gen_expr(UCCodeGenerator* g, const UCExpr* expr, UCError* err) {
             }
             emit_fmt_writeln(g, "%s = %s i32 %s, %s", res, irop, lv, rv);
             free(lv); free(rv);
+            /* Comparison ops (icmp *) produce i1; arithmetic ops produce i32.
+             * Without this, UC_STMT_DECL defaults to 'i32' and tries to
+             * store the i1 result into an i32 slot, which llc rejects. */
+            if (irop && strncmp(irop, "icmp", 4) == 0) {
+                free(g->last_expr_type);
+                g->last_expr_type = cgen_strdup("i1");
+            }
             return res;
         }
         case UC_EXPR_UNARY: {
