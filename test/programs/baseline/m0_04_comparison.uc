@@ -8,5 +8,5 @@ int main() {
     int gt  = (a >  b);   // 0
     int le  = (a <= b);   // 1
     int ge  = (a >= b);   // 0
-    return eq + ne + lt + gt + le + ge;
+    return eq + ne + lt + gt + le + ge;  // 3
 }
