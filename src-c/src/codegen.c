@@ -988,6 +988,7 @@ static char* gen_expr(UCCodeGenerator* g, const UCExpr* expr, UCError* err) {
                 case UC_BIN_SUB: irop = "sub"; break;
                 case UC_BIN_MUL: irop = "mul"; break;
                 case UC_BIN_DIV: irop = "sdiv"; break;
+                case UC_BIN_MOD: irop = "srem"; break;
                 case UC_BIN_LT:  irop = "icmp slt"; break;
                 case UC_BIN_GT:  irop = "icmp sgt"; break;
                 case UC_BIN_LE:  irop = "icmp sle"; break;
@@ -1286,11 +1287,25 @@ static char* gen_expr(UCCodeGenerator* g, const UCExpr* expr, UCError* err) {
                     emit_fmt_writeln(g, "%s = getelementptr [%zu x i8], "
                                      "[%zu x i8]* %s, i64 0, i64 0",
                                      res, strlen(s) + 1, strlen(s) + 1, gname);
-                    free(g->last_expr_type);
-                    g->last_expr_type = cgen_strdup("i8*");
                     break;
                 }
             }
+            /* Map lit kind to the LLVM type actually emitted above; without
+             * this, a stale last_expr_type (often i1 from a prior icmp)
+             * leaks into a subsequent UC_STMT_DECL and triggers bogus
+             * 'zext i1 %v to i32' against an i32 %v, failing llc. */
+            const char* lit_ty;
+            switch (lit->kind) {
+                case UC_LIT_INT:    lit_ty = "i32";   break;
+                case UC_LIT_TRUE:   lit_ty = "i32";   break;
+                case UC_LIT_FALSE:  lit_ty = "i32";   break;
+                case UC_LIT_CHAR:   lit_ty = "i32";   break;
+                case UC_LIT_FLOAT:  lit_ty = "double"; break;
+                case UC_LIT_STRING: lit_ty = "i8*";   break;
+                default:            lit_ty = "i32";   break;
+            }
+            free(g->last_expr_type);
+            g->last_expr_type = cgen_strdup(lit_ty);
             return res;
         }
         case UC_EXPR_NULL:
