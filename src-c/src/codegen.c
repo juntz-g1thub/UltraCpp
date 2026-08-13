@@ -152,6 +152,8 @@ struct UCCodeGenerator {
     Map declared_externals; /* symbol -> "1" (set membership) */
 
     char* last_expr_type;
+
+    UCVec* loop_scopes;  /* stack of LoopScope* for break/continue targets */
 };
 
 static char* cgen_strdup(const char* s) {
@@ -162,6 +164,11 @@ static char* cgen_strdup(const char* s) {
     memcpy(r, s, n + 1);
     return r;
 }
+
+/* LoopScope is referenced from uc_codegen_free above (line ~200); the full
+ * typedef + helpers live near gen_stmt below. */
+typedef struct LoopScope LoopScope;
+static void free_loop_scope(LoopScope* ls);
 
 UCCodeGenerator* uc_codegen_new(const char* module_name) {
     UCCodeGenerator* g = (UCCodeGenerator*)calloc(1, sizeof(UCCodeGenerator));
@@ -179,6 +186,7 @@ UCCodeGenerator* uc_codegen_new(const char* module_name) {
     map_init(&g->local_funcs);
     map_init(&g->imported_modules);
     map_init(&g->declared_externals);
+    g->loop_scopes = uc_vec_new();
     return g;
 }
 
@@ -196,6 +204,7 @@ void uc_codegen_free(UCCodeGenerator* g) {
     map_free(&g->local_funcs);
     map_free(&g->imported_modules);
     map_free(&g->declared_externals);
+    uc_vec_free(g->loop_scopes, (void (*)(void*))free_loop_scope);
     free(g);
 }
 
@@ -642,6 +651,42 @@ static void gen_func(UCCodeGenerator* g, const UCFuncDef* func, int exported) {
 /* Statements                                                                */
 /* ------------------------------------------------------------------------- */
 
+/* Per-loop frame: the labels break/continue should jump to inside the
+ * nearest enclosing loop. break_lbl is emitted after the loop body;
+ * continue_lbl is emitted at the step (for) / cond (while) point. The
+ * labels are owned by this frame and freed on pop. */
+struct LoopScope {
+    char* break_lbl;    /* owned */
+    char* continue_lbl; /* owned */
+};
+
+static void free_loop_scope(LoopScope* ls) {
+    if (!ls) return;
+    free(ls->break_lbl);
+    free(ls->continue_lbl);
+    free(ls);
+}
+
+static void push_loop_scope(UCCodeGenerator* g, char* break_lbl, char* continue_lbl) {
+    LoopScope* s = (LoopScope*)malloc(sizeof(LoopScope));
+    if (!s) { fprintf(stderr, "uc_codegen: OOM\n"); abort(); }
+    s->break_lbl = break_lbl;
+    s->continue_lbl = continue_lbl;
+    uc_vec_push(g->loop_scopes, s);
+}
+
+static LoopScope* current_loop_scope(UCCodeGenerator* g) {
+    if (!g->loop_scopes || g->loop_scopes->len == 0) return NULL;
+    return (LoopScope*)uc_vec_at(g->loop_scopes, g->loop_scopes->len - 1);
+}
+
+static void pop_loop_scope(UCCodeGenerator* g) {
+    if (!g->loop_scopes || g->loop_scopes->len == 0) return;
+    LoopScope* top = (LoopScope*)uc_vec_at(g->loop_scopes, g->loop_scopes->len - 1);
+    free_loop_scope(top);
+    g->loop_scopes->len -= 1;
+}
+
 static void gen_stmt(UCCodeGenerator* g, const UCStmt* stmt) {
     switch (stmt->kind) {
         case UC_STMT_BLOCK: {
@@ -681,11 +726,18 @@ static void gen_stmt(UCCodeGenerator* g, const UCStmt* stmt) {
             char* c_lbl = mk_label(g, "while_cond");
             char* b_lbl = mk_label(g, "while_body");
             char* e_lbl = mk_label(g, "while_end");
+            /* push scope (e_lbl=break target, c_lbl=continue target) */
+            push_loop_scope(g, e_lbl, c_lbl);
             emit_fmt_writeln(g, "br label %s", c_lbl);
             emit_label(g, c_lbl);
             UCError err; uc_error_init(&err);
             char* cv = gen_expr(g, stmt->as.while_stmt.cond, &err);
-            if (!cv || err.kind != UC_ERR_NONE) { free(cv); return; }
+            if (!cv || err.kind != UC_ERR_NONE) {
+                free(cv);
+                pop_loop_scope(g);  /* frees e_lbl + c_lbl */
+                free(b_lbl);
+                return;
+            }
             emit_fmt_writeln(g, "br i1 %s, label %s, label %s",
                              cv, b_lbl, e_lbl);
             emit_label(g, b_lbl);
@@ -694,7 +746,8 @@ static void gen_stmt(UCCodeGenerator* g, const UCStmt* stmt) {
             g->indent -= 1;
             emit_fmt_writeln(g, "br label %s", c_lbl);
             emit_label(g, e_lbl);
-            free(cv); free(c_lbl); free(b_lbl); free(e_lbl);
+            pop_loop_scope(g);  /* frees e_lbl + c_lbl */
+            free(cv); free(b_lbl);
             break;
         }
         case UC_STMT_RETURN: {
@@ -773,12 +826,83 @@ static void gen_stmt(UCCodeGenerator* g, const UCStmt* stmt) {
             free(ll_type);
             break;
         }
-        case UC_STMT_BREAK:
-        case UC_STMT_CONTINUE:
-        case UC_STMT_FOR:
-            /* Phase 3.1 minimal: not yet emitted. The Rust compiler also
-             * has these as known gaps (HANDOFF §6.4). */
+        case UC_STMT_FOR: {
+            /* for (init; cond; step) body — init/cond/step may be NULL. */
+            UCError err; uc_error_init(&err);
+            char* cond_lbl = mk_label(g, "for_cond");
+            char* body_lbl = mk_label(g, "for_body");
+            char* step_lbl = mk_label(g, "for_step");
+            char* end_lbl  = mk_label(g, "for_end");
+
+            /* init: emit in linear flow (before loop back-edges). */
+            if (stmt->as.for_stmt.init) {
+                gen_stmt(g, stmt->as.for_stmt.init);
+            }
+            /* push scope (end_lbl=break target, step_lbl=continue target) */
+            push_loop_scope(g, end_lbl, step_lbl);
+            /* jump to cond check */
+            emit_fmt_writeln(g, "br label %s", cond_lbl);
+
+            emit_label(g, cond_lbl);
+            if (stmt->as.for_stmt.cond) {
+                char* cv = gen_expr(g, stmt->as.for_stmt.cond, &err);
+                if (!cv || err.kind != UC_ERR_NONE) {
+                    free(cv);
+                    pop_loop_scope(g);  /* frees end_lbl + step_lbl */
+                    free(cond_lbl); free(body_lbl);
+                    return;
+                }
+                emit_fmt_writeln(g, "br i1 %s, label %s, label %s",
+                                 cv, body_lbl, end_lbl);
+                free(cv);
+            } else {
+                /* missing cond == infinite loop; exit only via break */
+                emit_fmt_writeln(g, "br i1 1, label %s, label %s",
+                                 body_lbl, end_lbl);
+            }
+
+            emit_label(g, body_lbl);
+            gen_stmt(g, stmt->as.for_stmt.body);
+            /* after body, jump to step (continue target) */
+            emit_fmt_writeln(g, "br label %s", step_lbl);
+
+            emit_label(g, step_lbl);
+            if (stmt->as.for_stmt.step) {
+                char* sv = gen_expr(g, stmt->as.for_stmt.step, &err);
+                if (err.kind != UC_ERR_NONE) {
+                    free(sv);
+                    pop_loop_scope(g);
+                    free(cond_lbl); free(body_lbl);
+                    return;
+                }
+                free(sv);
+            }
+            /* back-edge to cond check */
+            emit_fmt_writeln(g, "br label %s", cond_lbl);
+
+            emit_label(g, end_lbl);
+            pop_loop_scope(g);  /* frees end_lbl + step_lbl */
+            free(cond_lbl); free(body_lbl);
             break;
+        }
+        case UC_STMT_BREAK: {
+            LoopScope* s = current_loop_scope(g);
+            if (!s) {
+                fprintf(stderr, "uc_codegen: 'break' outside loop\n");
+                break;
+            }
+            emit_fmt_writeln(g, "br label %s", s->break_lbl);
+            break;
+        }
+        case UC_STMT_CONTINUE: {
+            LoopScope* s = current_loop_scope(g);
+            if (!s) {
+                fprintf(stderr, "uc_codegen: 'continue' outside loop\n");
+                break;
+            }
+            emit_fmt_writeln(g, "br label %s", s->continue_lbl);
+            break;
+        }
     }
 }
 
