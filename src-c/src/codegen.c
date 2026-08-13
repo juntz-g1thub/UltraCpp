@@ -1012,6 +1012,15 @@ static char* gen_expr(UCCodeGenerator* g, const UCExpr* expr, UCError* err) {
             if (irop && strncmp(irop, "icmp", 4) == 0) {
                 free(g->last_expr_type);
                 g->last_expr_type = cgen_strdup("i1");
+            } else if (g->last_expr_type
+                       && strcmp(g->last_expr_type, "i8*") == 0) {
+                /* Arithmetic ops always emit `i32` results; reset a stale
+                 * pointer type left by a prior UC_UN_ADDR_OF so the
+                 * subsequent decl sees the correct i32 type. m0_31 uses
+                 * `int sum = (*p) + (*q);` after `int* p = &x;` and
+                 * relied on this implicit reset. */
+                free(g->last_expr_type);
+                g->last_expr_type = cgen_strdup("i32");
             }
             return res;
         }
@@ -1029,6 +1038,43 @@ static char* gen_expr(UCCodeGenerator* g, const UCExpr* expr, UCError* err) {
                 case UC_UN_DEREF:
                     emit_fmt_writeln(g, "%s = load i32, i32* %s", res, v);
                     break;
+                case UC_UN_ADDR_OF: {
+                    /* m0_31 (&x): the operand IDENT is a tracked local alloca.
+                     * The IDENT branch loads its value into a fresh temp,
+                     * which we discard; the alloca name itself is already a
+                     * pointer. Return it directly.
+                     *
+                     * The `int*` decl side allocates as `i8*` (see
+                     * llvm_type(UC_TYPE_POINTER)), and LLVM 18 uses opaque
+                     * pointers, so emitting `store i8* %x, i8** %p` with
+                     * %x = `i32*` (from `alloca i32`) is accepted.
+                     * last_expr_type must match the decl slot type. */
+                    UCExpr* opd = expr->as.unary.operand;
+                    if (!opd || opd->kind != UC_EXPR_IDENT) {
+                        uc_error_set(err, UC_ERR_CODEGEN, 0, 0, NULL,
+                                     "address-of requires a local variable "
+                                     "operand");
+                        free(v); free(res);
+                        return NULL;
+                    }
+                    const char* name = opd->as.ident.data;
+                    const char* ll_ty = map_get(&g->local_vars, name);
+                    if (!ll_ty) {
+                        uc_error_set(err, UC_ERR_CODEGEN, 0, 0, NULL,
+                                     "address-of: local variable '%s' not "
+                                     "found", name);
+                        free(v); free(res);
+                        return NULL;
+                    }
+                    (void)ll_ty; /* opaque-ptr: type tag unused at IR level */
+                    free(v); free(res);
+                    size_t addr_len = strlen(name) + 3;
+                    char* addr = (char*)malloc(addr_len);
+                    snprintf(addr, addr_len, "%%%s", name);
+                    free(g->last_expr_type);
+                    g->last_expr_type = cgen_strdup("i8*");
+                    return addr;
+                }
                 case UC_UN_PRE_INC:
                 case UC_UN_PRE_DEC:
                 case UC_UN_POST_INC:
