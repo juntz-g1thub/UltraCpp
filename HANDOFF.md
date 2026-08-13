@@ -10,7 +10,7 @@ We're validating the current C compiler (`src-c/`) against the new UltraCPP 0.3.
 
 **Expected duration**: 1-2 sessions (test creation + script writing + execution + report).
 
-Current progress: M0 P0-1 (const trio m0_22/45/46) + P0-2 (alloc/free/move/unique trio m0_34/35/36) + **P0-3 (++/-- + ternary m0_47/48)** complete; baseline **18/48 PASS** + **30/48 FAIL** (m0_35 full e2e exit=0; m0_34/36 parser+IR OK, llc codegen gap `*p = X` deref-assign 是 known issue, P3-5 时回看; m0_47 exit=16 full PASS + m0_48 exit=20 **effective PASS** — runner 误判因 expected-code extraction 默认 0; P0-3 期间 5 codegen fixes (cf51f6f / f1f4214 / 3abe96b) 同时铺平 control flow, m0_09 等 control flow 测试也开始水落石出 PASS). **30 个 FAIL 详情 + 分类**见 priority doc §8.1. Next: M0 P0-4 (void + local/global m0_17/21).
+Current progress: M0 P0-1 (const trio m0_22/45/46) + P0-2 (alloc/free/move/unique trio m0_34/35/36) + **P0-3 (++/-- + ternary m0_47/48)** + **P0-4 (void + local/global m0_17/21)** all complete; baseline **19/48 PASS** + **29/48 FAIL** (m0_35 full e2e exit=0; m0_34/36 parser+IR OK, llc codegen gap `*p = X` deref-assign 是 known issue, P3-5 时回看; m0_47 exit=16 full PASS + m0_48 exit=20 **effective PASS** — runner 误判因 expected-code extraction 默认 0; P0-3 期间 5 codegen fixes (cf51f6f / f1f4214 / 3abe96b) 同时铺平 control flow, m0_09 等 control flow 测试也开始水落石出 PASS; **m0_17 just flipped from compile_failed → ✓ exit=0 with commit `c052d2c` (void 函数 return path 修复)**; m0_21 早已 PASS — P0-4 净增 1 通过). **29 个 FAIL 详情 + 分类**见 priority doc §8.1. Next: **M0 P1-2** (control-flow trio: m0_10 if/else chain; m0_13 for loop; m0_15 break/continue) + 5 misc codegen (m0_04 / m0_19 / m0_31 / m0_42 / m0_50).
 
 ## 2. Quick Start (30 seconds)
 

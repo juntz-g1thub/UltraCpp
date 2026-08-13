@@ -1,7 +1,19 @@
 # UltraCPP Project Agent Guide
 
 > Project-specific rules for agents working in this repository.
-> 最后更新：2026-08-08
+> 最后更新：2026-08-12
+
+---
+
+## 📍 当前工作状态（Status Pointer）
+
+完整 M0 进展请查看 **`HANDOFF.md`**（项目根目录）。**AGENTS.md 仅作索引 / 入口**，
+不重复维护具体进度数字，以避免与 HANDOFF 不一致。涉及决策/计划/历史/
+当下 milestone 的所有问题，以 **`HANDOFF.md` 为单一权威来源（single source of truth）**。
+
+> 当前快速摘要（最新一次 baseline）：M0 **19/48 PASS / 29 FAIL**（commit `c052d2c` 起；
+> P0-1 → P0-2 → P0-3 → P0-4 全部完成；下一站 P1-2 control-flow trio）。
+> 详情与分类见 `HANDOFF.md` §1 + `.dev/drafts/0.4.0-m0-priority.md` §8。
 
 ---
 
@@ -94,9 +106,10 @@
 - [x] ~~asm port of the lexer~~：2026-08-06 删除（asm 路径放弃，走 bootstrap）
 - [ ] **Borrow-check implementation in C host**：**当前活跃方向**，按 `.dev/plans/0.4.0-test-milestones.md` M0-M5 推进
   - [x] **M0 P0-1**: const trio (m0_22/45/46) done; baseline 11/48 PASS as of 2026-08-10
-  - [x] **M0 P0-2**: alloc/free/move/unique trio (m0_34/35/36) done as of 2026-08-12 (commits a173f07 + 66406da); baseline 14/48; m0_35 FULL PASS exit=0, m0_34/36 parse+IR OK; known llc-fail gap on deref-assign to be revisited at P3-5
-  - [x] **M0 P0-3**: ++/-- + ternary (m0_47/48) done as of 2026-08-12; commits `cb07848` (m0_47 FULL PASS exit=16) + `70b8845` (m0_48 FULL PASS exit=20 — runner 误判为 FAIL 因 expected-code extraction 默认 0; **实际 effective PASS**); baseline **18/48 PASS / 30 FAIL** (first complete baseline run done 2026-08-12; 30 FAILs categorized in priority doc §8.1); P0-3 期间 5 codegen fixes 同时铺平 control flow (`cf51f6f` label-ref `%%`→`%` strip 8 sites, `f1f4214` `emit_label` 前导 `%` strip, `3abe96b` `UC_STMT_IF` 3-label then/else/end 重构) — m0_09 等 control flow 测试水落石出 PASS
-  - [ ] **M0 P0-4**: void + local/global (m0_17/21) — pending
+  - [x] **M0 P0-2**: alloc/free/move/unique trio (m0_34/35/36) done as of 2026-08-12 (commits a173f07 + 66406da); m0_35 FULL PASS exit=0, m0_34/36 parse+IR OK; known llc-fail gap on deref-assign to be revisited at P3-5
+  - [x] **M0 P0-3**: ++/-- + ternary (m0_47/48) done as of 2026-08-12; commits `cb07848` (m0_47 FULL PASS exit=16) + `70b8845` (m0_48 FULL PASS exit=20 — runner 误判为 FAIL 因 expected-code extraction 默认 0; **实际 effective PASS**); P0-3 期间 5 codegen fixes 同时铺平 control flow (`cf51f6f` label-ref `%%`→`%` strip 8 sites, `f1f4214` `emit_label` 前导 `%` strip, `3abe96b` `UC_STMT_IF` 3-label then/else/end 重构) — m0_09 等 control flow 测试水落石出 PASS
+  - [x] **M0 P0-4**: void + local/global (m0_17/21) done as of 2026-08-12; **commit `c052d2c`** for m0_17 (void 函数 return path 修复，m0_17 翻转为 ✓ exit=0); m0_21 早已 PASS; baseline **19/48 PASS / 29 FAIL** (first complete post-P0-4 baseline run; 29 FAILs categorized in priority doc §8.1; m0_17 从 Parser 缺 bucket 移除，剩 9 个 parser 缺)
+  - [ ] **M0 P1**: control-flow trio + 5 misc codegen — next; P0-1~P0-4 全部完成；目标测试：m0_10 (else if 链) / m0_13 (for) / m0_15 (break/continue) / m0_04 (comparison) / m0_19 (recursion) / m0_31 (addr-of) / m0_42 (unsafe block) / m0_50 (CJK identifiers)
 - [ ] **Bootstrap**（UltraCPP 写 UltraCPP）：路线见 `bootstrap/PLAN.md`，**当前休眠**
 
 > 当前焦点是**借用检查在 C 主机中的实现**：
