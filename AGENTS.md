@@ -11,8 +11,8 @@
 不重复维护具体进度数字，以避免与 HANDOFF 不一致。涉及决策/计划/历史/
 当下 milestone 的所有问题，以 **`HANDOFF.md` 为单一权威来源（single source of truth）**。
 
-> 当前快速摘要（最新一次 baseline，2026-08-12 HEAD `ef3352c`）：M0 **21/48 PASS / 27 FAIL**；
-> P0-1 → P0-2 → P0-3 → P0-4 全部完成 + **P1-2 done** (m0_10 commit `09b4df5`) + **P1-4 partial** (m0_04 commits `5abb262` + `ef3352c`)；下一站 **P1-3** (m0_13 + m0_15)。
+> 当前快速摘要（最新一次 baseline，2026-08-12 HEAD `c8492ef`）：M0 **23/48 PASS / 25 FAIL**；
+> P0-1 → P0-2 → P0-3 → P0-4 全部完成 + **P1-2 done** (m0_10 commit `09b4df5`) + **P1-3 done** (m0_13/14/15 commits `afae9c9` + `c8492ef`) + **P1-4 partial** (m0_04 commits `5abb262` + `ef3352c`)；下一站 **P1-4 剩余** (m0_19/31/42) 或 **P1-1 CJK** (m0_50 高风险)。
 > 详情与分类见 `HANDOFF.md` §1 + `.dev/drafts/0.4.0-m0-priority.md` §8。
 
 ---
@@ -109,7 +109,7 @@
   - [x] **M0 P0-2**: alloc/free/move/unique trio (m0_34/35/36) done as of 2026-08-12 (commits a173f07 + 66406da); m0_35 FULL PASS exit=0, m0_34/36 parse+IR OK; known llc-fail gap on deref-assign to be revisited at P3-5
   - [x] **M0 P0-3**: ++/-- + ternary (m0_47/48) done as of 2026-08-12; commits `cb07848` (m0_47 FULL PASS exit=16) + `70b8845` (m0_48 FULL PASS exit=20 — runner 误判为 FAIL 因 expected-code extraction 默认 0; **实际 effective PASS**); P0-3 期间 5 codegen fixes 同时铺平 control flow (`cf51f6f` label-ref `%%`→`%` strip 8 sites, `f1f4214` `emit_label` 前导 `%` strip, `3abe96b` `UC_STMT_IF` 3-label then/else/end 重构) — m0_09 等 control flow 测试水落石出 PASS
   - [x] **M0 P0-4**: void + local/global (m0_17/21) done as of 2026-08-12; **commit `c052d2c`** for m0_17 (void 函数 return path 修复，m0_17 翻转为 ✓ exit=0); m0_21 早已 PASS; baseline **19/48 PASS / 29 FAIL** (first complete post-P0-4 baseline run; 29 FAILs categorized in priority doc §8.1; m0_17 从 Parser 缺 bucket 移除，剩 9 个 parser 缺)
-  - [/] **M0 P1 in-progress** (HEAD `ef3352c`，2026-08-12): **P1-2 ✅ done** (m0_10 else-if 链，commit `09b4df5` — **不是 codegen bug**，是 test runner awk 不解析函数调用式 return，加 trailing `// 255` 注释修复); **P1-4 partial done** (m0_04 comparison，commits `5abb262` codegen i1→i32 zext + `ef3352c` test trailing `// 3`); **remaining**: P1-3 (m0_13 for + m0_15 break/continue) + P1-4 (m0_19 recursion / m0_31 addr-of / m0_42 unsafe block) + P1-1 (m0_50 CJK identifiers)
+  - [/] **M0 P1 in-progress** (HEAD `c8492ef`，2026-08-12): **P1-2 ✅ done** (m0_10 else-if 链，commit `09b4df5` — **不是 codegen bug**，是 test runner awk 不解析函数调用式 return，加 trailing `// 255` 注释修复); **P1-3 ✅ done** (m0_13 for + m0_14 nested loops + m0_15 break/continue，commits `afae9c9` UC_STMT_FOR/BREAK/CONTINUE + loop scope 栈 + `c8492ef` UC_BIN_MOD + UC_EXPR_LITERAL last_expr_type per lit kind; m0_14 originally PASSed by luck, P1-3 codegen change revealed latent literal-type leak; m0_15 originally 28 → 16 after c8492ef); **P1-4 partial done** (m0_04 comparison，commits `5abb262` codegen i1→i32 zext + `ef3352c` test trailing `// 3`); **remaining**: P1-4 (m0_19 recursion / m0_31 addr-of / m0_42 unsafe block) + P1-1 (m0_50 CJK identifiers)
 - [ ] **Bootstrap**（UltraCPP 写 UltraCPP）：路线见 `bootstrap/PLAN.md`，**当前休眠**
 
 > 当前焦点是**借用检查在 C 主机中的实现**：
