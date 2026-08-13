@@ -616,6 +616,21 @@ static void gen_func(UCCodeGenerator* g, const UCFuncDef* func, int exported) {
     g->indent += 1;
     gen_stmt(g, func->body);
     g->indent -= 1;
+    /* Void-returning functions with an empty body (e.g. `void f() {}`)
+     * produce no terminator instruction, which makes llc reject the IR
+     * with "expected instruction opcode }". Emit `ret void` to close
+     * the entry block. Returns inside the body are already emitted by
+     * UC_STMT_RETURN, so we only fall through here when the body had
+     * no statements. */
+    if (func->return_ty->kind == UC_TYPE_VOID) {
+        int body_empty = (func->body == NULL) ||
+                         (func->body->kind == UC_STMT_BLOCK &&
+                          (func->body->as.block == NULL ||
+                           uc_vec_len(func->body->as.block) == 0));
+        if (body_empty) {
+            emit_writeln(g, "ret void");
+        }
+    }
     emit_writeln(g, "}");
     emit_writeln(g, "");
 
