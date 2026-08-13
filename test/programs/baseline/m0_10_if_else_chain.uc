@@ -10,5 +10,5 @@ int classify(int x) {
 }
 
 int main() {
-    return classify(0) + classify(50) + classify(-200);
+    return classify(0) + classify(50) + classify(-200);  // 255
 }
