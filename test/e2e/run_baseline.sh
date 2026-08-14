@@ -9,6 +9,12 @@
 # then runs the resulting binary (regular tests) or only checks the
 # compile (PARSE-ONLY tests).
 #
+# Negative-style tests: a .uc may carry a `// expects_compiler_error`
+# (or `// expects_error`) marker. For those, a compile failure with a
+# non-empty stderr counts as PASS — the test's verification target is
+# "compiler rejects and reports a proper diagnostic", not "source is
+# accepted". See `expects_compiler_error` below.
+#
 # Exit codes:
 #   0  all PASS
 #   1  one or more FAIL
@@ -51,6 +57,33 @@ is_in_list() {
             return 0
         fi
     done
+    return 1
+}
+
+# expects_compiler_error <file.uc>
+#
+# Return 1 if the .uc contains a marker declaring that the test's
+# verification target is "the compiler rejects and reports a proper
+# lexer/parser error" rather than "the program runs". Used to flip
+# the default verdict for negative-style tests where a compile failure
+# is the EXPECTED outcome (e.g. spec-violation probes such as m0_50
+# which uses CJK identifiers — spec §2.4 mandates ASCII ident chars;
+# the test verifies that the compiler correctly refuses and reports
+# a lexer error, NOT that the source is accepted).
+#
+# Accepted markers (any of these, on any line, in a line comment):
+#   // expects_compiler_error
+#   // expects_compiler_error: <short description>
+#   // expects_error
+#   // expects_error: <short description>
+#
+# Implementation: case-insensitive grep on the file. We do not parse
+# the comment block — this is a marker convention, not a DSL.
+expects_compiler_error() {
+    local src="$1"
+    if grep -qiE '^[[:space:]]*//[[:space:]]*expects_(compiler_)?error' "$src"; then
+        return 0   # 0 = true (matches bash idiom)
+    fi
     return 1
 }
 
@@ -218,7 +251,20 @@ for src in "$TEST_DIR"/*.uc; do
             fi
         fi
     else
-        reason="compile_failed"
+        # Compile failed. Check if the .uc marks itself as a
+        # negative-style test whose verification target IS the
+        # compiler error (e.g. m0_50 — CJK identifiers must be
+        # rejected per spec §2.4). In that case, a non-empty
+        # stderr from the compiler satisfies the test's contract
+        # and counts as PASS. An empty stderr would mean the
+        # compiler silently truncated input — that is still a
+        # failure because the spec requires a diagnostic.
+        if expects_compiler_error "$src" && [[ -s "$CURRENT_OUT_DIR/compile_err" ]]; then
+            passed=1
+            reason="compile_failed_expected"
+        else
+            reason="compile_failed"
+        fi
     fi
 
     # ── Report ──
