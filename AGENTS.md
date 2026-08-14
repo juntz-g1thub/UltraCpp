@@ -11,8 +11,8 @@
 不重复维护具体进度数字，以避免与 HANDOFF 不一致。涉及决策/计划/历史/
 当下 milestone 的所有问题，以 **`HANDOFF.md` 为单一权威来源（single source of truth）**。
 
-> 当前快速摘要（最新一次 baseline，2026-08-12 HEAD `02d7170`）：M0 **27/48 PASS / 21 FAIL**；
-> P0-1 → P0-2 → P0-3 → P0-4 全部完成 + **P1-2 ✅ done** (m0_10 commit `09b4df5`) + **P1-3 ✅ done** (m0_13/14/15 commits `afae9c9` + `c8492ef`) + **P1-4 partial done** (m0_19 / m0_29 / m0_31，commits `a513226` + `985eade`；**m0_41 / m0_42 deferred to P3-5**) + **P1-1 ✅ done** (m0_50 commit `02d7170` — runner 加 `// expects_compiler_error` marker 支持 + m0_50 .uc 加 marker；测试目标是验证编译器正确拒绝 CJK 标识符，编译器一直正确输出 lexer error，runner 旧逻辑把 `compile_failed` 一律当 FAIL 是误判)；剩 **P2**（数组/struct/函数指针/extern/include/multi-file）+ 长期推 **P3-5 pointer runtime** (m0_30/m0_34/m0_36/m0_41/m0_42)。
+> 当前快速摘要（最新一次 baseline，2026-08-12 HEAD `62befa4`）：M0 **27/48 PASS / 21 FAIL**（=56.3%）；
+> P0-1 → P0-2 → P0-3 → P0-4 全部完成 + **P1-2 ✅ done** (m0_10 commit `09b4df5`) + **P1-3 ✅ done** (m0_13/14/15 commits `afae9c9` + `c8492ef`) + **P1-4 partial done** (m0_19 / m0_29 / m0_31，commits `a513226` + `985eade`；**m0_41 / m0_42 deferred to P3-5**) + **P1-1 ✅ done** (m0_50 commit `02d7170` — runner 加 `// expects_compiler_error` marker 支持 + m0_50 .uc 加 marker；测试目标是验证编译器正确拒绝 CJK 标识符，编译器一直正确输出 lexer error，runner 旧逻辑把 `compile_failed` 一律当 FAIL 是误判) + **P1-5 🟡 deferred** (CJK 真支持推迟到 0.4.0+ spec 修订)；剩 **P2**（数组/struct/函数指针/extern/include/multi-file）+ 长期推 **P3-5 pointer runtime** (m0_30/m0_34/m0_36/m0_41/m0_42)。
 > 详情与分类见 `HANDOFF.md` §1 + `.dev/drafts/0.4.0-m0-priority.md` §8。
 
 ---
@@ -109,11 +109,12 @@
   - [x] **M0 P0-2**: alloc/free/move/unique trio (m0_34/35/36) done as of 2026-08-12 (commits a173f07 + 66406da); m0_35 FULL PASS exit=0, m0_34/36 parse+IR OK; known llc-fail gap on deref-assign to be revisited at P3-5
   - [x] **M0 P0-3**: ++/-- + ternary (m0_47/48) done as of 2026-08-12; commits `cb07848` (m0_47 FULL PASS exit=16) + `70b8845` (m0_48 FULL PASS exit=20 — runner 误判为 FAIL 因 expected-code extraction 默认 0; **实际 effective PASS**); P0-3 期间 5 codegen fixes 同时铺平 control flow (`cf51f6f` label-ref `%%`→`%` strip 8 sites, `f1f4214` `emit_label` 前导 `%` strip, `3abe96b` `UC_STMT_IF` 3-label then/else/end 重构) — m0_09 等 control flow 测试水落石出 PASS
   - [x] **M0 P0-4**: void + local/global (m0_17/21) done as of 2026-08-12; **commit `c052d2c`** for m0_17 (void 函数 return path 修复，m0_17 翻转为 ✓ exit=0); m0_21 早已 PASS; baseline **19/48 PASS / 29 FAIL** (first complete post-P0-4 baseline run; 29 FAILs categorized in priority doc §8.1; m0_17 从 Parser 缺 bucket 移除，剩 9 个 parser 缺)
-  - [/] **M0 P1 in-progress** (HEAD `02d7170`，2026-08-12，baseline **27/48 PASS / 21 FAIL**):
+  - [/] **M0 P1 in-progress** (HEAD `62befa4`，2026-08-12，baseline **27/48 PASS / 21 FAIL**):
     - **P1-2 ✅ done** (m0_10 else-if 链，commit `09b4df5` — **不是 codegen bug**，是 test runner awk 不解析函数调用式 return，加 trailing `// 255` 注释修复)
     - **P1-3 ✅ done** (m0_13 for + m0_14 nested loops + m0_15 break/continue，commits `afae9c9` UC_STMT_FOR/BREAK/CONTINUE + loop scope 栈 + `c8492ef` UC_BIN_MOD + UC_EXPR_LITERAL last_expr_type per lit kind; m0_14 was always FAIL (for-loop codegen 在 afae9c9 前是 stub)，P1-3 codegen change exposed latent literal-type leak, fixed in c8492ef; m0_15 originally 28 → 16 after c8492ef)
     - **P1-4 partial done** (m0_04 comparison commits `5abb262` + `ef3352c`; **m0_31 + m0_29** commit `a513226` UC_UN_ADDR_OF codegen; **m0_19** commit `985eade` .uc trailing `// 208` — factorial(6)=720 但 bash `$?` 只存低 8 bit); **m0_41 / m0_42 deferred to P3-5** — `df29039` + `42d75f7` 推进了 `extern "C" { ... }` block 解析与 builtin 重声明跳过，但仍 fail on deeper bugs（call signature + deref-assign LHS + abs_int linker），属 P3-5 pointer runtime 范畴，**不算 P1-4 DONE**
     - **P1-1 ✅ done** (m0_50 CJK identifier rejection, commit `02d7170` — runner 加 `// expects_compiler_error` marker 支持 + m0_50 .uc 加 marker；测试目的是验证编译器正确拒绝 CJK 标识符(违反 spec §2.4 ASCII 标识符约束)，编译器一直正确输出 `Lexer error at ...: unknown character`，runner 旧逻辑一律把 `compile_failed` 当 FAIL 是误判；新机制下 m0_50 → PASS, src-c 未改)
+    - **P1-5 🟡 deferred**（新条目，spec §2.4 范围外）— CJK identifier 真支持推迟到 0.4.0+ spec 修订；当前通过 runner `expects_compiler_error` marker 机制标 m0_50 PASS，编译器 src-c 未引入 UTF-8 支持；后续 spec 修订时再决定是否新增「CJK ident」语法点
     - **remaining**: P2 (m0_26/27/28 array + m0_32/33 struct + m0_37 fn-ptr + m0_40 include + m0_44 multi-file) + 长期推 P3-5 pointer runtime (m0_30/m0_34/m0_36/m0_41/m0_42)
 - [ ] **Bootstrap**（UltraCPP 写 UltraCPP）：路线见 `bootstrap/PLAN.md`，**当前休眠**
 
@@ -133,6 +134,24 @@
 3. Read `.dev/plans/0.4.0-test-milestones.md` for current implementation roadmap
 4. Read `.dev/drafts/0.1.0-borrowck-spec-vs-impl.md` §10-7 for 0.3.0 outcome reconciliation
 5. Ask user before making assumptions about language syntax
+
+---
+
+## 📋 Spec Amendment Candidates
+
+> 状态：草案。**下次 spec 增补修订讨论时**展开为完整分析（每项配触发 bug + 修法 + spec 章节 diff）。等用户指令。
+
+按优先级（影响 M0/M1 当前进度 + 缺失严重程度）：
+
+| ID | 章节 | 缺失 / 不清 | 触发 bug / 场景 |
+|---|---|---|---|
+| **S2** | §4.6 表达式 / 赋值 | **lvalue / rvalue 概念缺失** | m0_34/36/42 deref-assign `*p = X` 在 store 阶段类型错；assignment LHS/RHS 分类不清 |
+| **S5** | §6.2 函数声明 | **函数返回类型如何 infer** | fn 无返回类型 vs `void` vs `int` 边界；tail expression 何时可作返回值 |
+| **S6** | §10 FFI / extern | **extern 函数 body 来源** | extern "C" 是仅 declaration 还是需要 stub body；与 module 系统交互未明 |
+| **S1/S3** | §4.1 / §4.x 一元运算 | **`*` `&` `mod` `unmod` 未列** | 一元运算符优先级 + 语义（特别是 `&` 取地址 vs reference 概念区分）|
+| **S4** | §4.8 类型转换 | **C-style cast 缺失** | 当前 spec 仅 `T(x)` 一种；`(T)x` 是否允许 / 等价写法未定 |
+
+> 其他候选（S7-S9: CJK 标识符真支持 / deref-assign 类型安全 / effective-PASS runner 规则）详见 `.dev/drafts/0.4.0-m0-priority.md` §9.x。
 
 ---
 

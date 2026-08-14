@@ -4,7 +4,18 @@
 > **Status**: Ready to execute
 > **Next session should**: Run M0 baseline verification
 
+## 0. Milestone Summary (snapshot — 2026-08-12 HEAD `62befa4`)
+
+- **Milestone**: **M0 P0 + P1 完成** — baseline **27/48 PASS / 21 FAIL = 56.3%**
+- **Done**: P0-1~P0-4 (const/alloc/ternary/void, 10 tests) + P1-1 (CJK m0_50 via runner marker) + P1-2 (m0_10 else-if) + P1-3 (m0_13/14/15 for+break+continue) + P1-4 partial (m0_04/19/29/31 — m0_41/42 deferred to P3-5)
+- **Pending**: P2 (数组/struct/fn-ptr/include/multi-file, 9 tests) + P3 (runtime/codegen, 15 tests)
+- **git chain**: `cb07848` → … → `62befa4` (71 commits total, 10+ for M0)
+- **C 单元测试**: 505/505 PASS · **docs**: 4 份 sync (HANDOFF/AGENTS/priority/session-context)
+- **Next**: **M0 P2** 推进 + 长期推 **P3-5 pointer runtime** (m0_30/34/36/41/42 一并回看)
+
 ## 1. TL;DR
+
+**Milestone: P0 + P1 complete (27/48 = 56.3% PASS).**
 
 We're validating the current C compiler (`src-c/`) against the new UltraCPP 0.3.0 specification by writing 48 .uc test programs and running them through the compiler. This establishes a baseline before incrementally implementing borrow-check features (M1-M5).
 
