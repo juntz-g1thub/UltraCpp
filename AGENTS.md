@@ -137,22 +137,4 @@
 
 ---
 
-## 📋 Spec Amendment Candidates
-
-> 状态：草案。**下次 spec 增补修订讨论时**展开为完整分析（每项配触发 bug + 修法 + spec 章节 diff）。等用户指令。
-
-按优先级（影响 M0/M1 当前进度 + 缺失严重程度）：
-
-| ID | 章节 | 缺失 / 不清 | 触发 bug / 场景 |
-|---|---|---|---|
-| **S2** | §4.6 表达式 / 赋值 | **lvalue / rvalue 概念缺失** | m0_34/36/42 deref-assign `*p = X` 在 store 阶段类型错；assignment LHS/RHS 分类不清 |
-| **S5** | §6.2 函数声明 | **函数返回类型如何 infer** | fn 无返回类型 vs `void` vs `int` 边界；tail expression 何时可作返回值 |
-| **S6** | §10 FFI / extern | **extern 函数 body 来源** | extern "C" 是仅 declaration 还是需要 stub body；与 module 系统交互未明 |
-| **S1/S3** | §4.1 / §4.x 一元运算 | **`*` `&` `mod` `unmod` 未列** | 一元运算符优先级 + 语义（特别是 `&` 取地址 vs reference 概念区分）|
-| **S4** | §4.8 类型转换 | **C-style cast 缺失** | 当前 spec 仅 `T(x)` 一种；`(T)x` 是否允许 / 等价写法未定 |
-
-> 其他候选（S7-S9: CJK 标识符真支持 / deref-assign 类型安全 / effective-PASS runner 规则）详见 `.dev/drafts/0.4.0-m0-priority.md` §9.x。
-
----
-
 *Last updated: 2026-08-12*

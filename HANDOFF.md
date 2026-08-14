@@ -4,15 +4,6 @@
 > **Status**: Ready to execute
 > **Next session should**: Run M0 baseline verification
 
-## 0. Milestone Summary (snapshot — 2026-08-12 HEAD `62befa4`)
-
-- **Milestone**: **M0 P0 + P1 完成** — baseline **27/48 PASS / 21 FAIL = 56.3%**
-- **Done**: P0-1~P0-4 (const/alloc/ternary/void, 10 tests) + P1-1 (CJK m0_50 via runner marker) + P1-2 (m0_10 else-if) + P1-3 (m0_13/14/15 for+break+continue) + P1-4 partial (m0_04/19/29/31 — m0_41/42 deferred to P3-5)
-- **Pending**: P2 (数组/struct/fn-ptr/include/multi-file, 9 tests) + P3 (runtime/codegen, 15 tests)
-- **git chain**: `cb07848` → … → `62befa4` (71 commits total, 10+ for M0)
-- **C 单元测试**: 505/505 PASS · **docs**: 4 份 sync (HANDOFF/AGENTS/priority/session-context)
-- **Next**: **M0 P2** 推进 + 长期推 **P3-5 pointer runtime** (m0_30/34/36/41/42 一并回看)
-
 ## 1. TL;DR
 
 **Milestone: P0 + P1 complete (27/48 = 56.3% PASS).**
@@ -34,7 +25,7 @@ Current progress (HEAD `02d7170`): M0 P0-1 (const trio m0_22/45/46) + P0-2 (allo
 | 2026-08-12 | P1-2 else-if chain | m0_10 | 20/48 | done | commit 09b4df5 (test trailing `// 255`) |
 | 2026-08-12 | P1-3 for/break/continue | m0_13, m0_14, m0_15 | 23/48 | done | commits afae9c9 + c8492ef |
 | 2026-08-12 | P1-4 partial (m0_31 + m0_29 + m0_19) | m0_19, m0_29, m0_31 | **26/48** | partial done | commits a513226 (UC_UN_ADDR_OF) + 985eade (m0_19 .uc trailing // 208); m0_41/m0_42 P3-5 范畴待 |
-| 2026-08-12 | P1-1 标 PASS (测试目标='编译器输出 lexer error') | m0_50 | **27/48** | done | runner 加 `expects_compiler_error` 标记 + m0_50 .uc 加 marker; 编译器一直正确拒绝 CJK(违反 spec §2.4 ASCII 标识符约束); commit `02d7170`; src-c 未改 |
+| 2026-08-12 | P1-1 标 PASS (测试目标='编译器输出 lexer error') | m0_50 | **27/48** | done | runner 加 `expects_compiler_error` 标记 + m0_50 .uc 加 marker; 编译器一直正确拒绝 CJK(违反 spec §2.4 ASCII 标识符约束); commit `02d7170`; src-c 未改; M0 git chain `cb07848` → `62befa4` (~71 commits, 10+ for M0); C 单元测试 505/505 PASS |
 
 ## 2. Quick Start (30 seconds)
 
