@@ -7,5 +7,5 @@ int factorial(int n) {
 }
 
 int main() {
-    return factorial(6);   // 720
+    return factorial(6);   // 208
 }
