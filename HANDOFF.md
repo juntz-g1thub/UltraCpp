@@ -50,7 +50,7 @@ ls test/e2e/                              # empty — M0 fills it
 
 - **Language spec**: `docs/UltraCPP-v0.3.0-spec-zh-CN.md` (current authoritative)
 - **C compiler**: `src-c/` complete (Phases 1+1.1+2+3+4), 505/505 unit tests
-- **Documentation**: README (design journey), AGENTS.md, test-outline.md, 0.4.0-test-milestones.md all in sync
+- **Documentation**: README (design journey), AGENTS.md, test-outline.md, 0.3.0-borrow-check-milestones.md all in sync
 - **Borrow-check decisions**: 21+ decisions logged in `.dev/drafts/0.1.0-borrowck-spec-vs-impl.md` §10-7 (0.3.0 outcome)
 
 ### Why M0
@@ -70,7 +70,7 @@ Write 48 .uc test programs that exercise all currently-implemented language feat
 
 ### Detailed Plan
 
-See **`.dev/plans/0.4.0-test-milestones.md` §3.0 (M0 section)** for:
+See **`.dev/plans/0.3.0-borrow-check-milestones.md` §3.0 (M0 section)** for:
 - Complete list of 48 test programs (47 base + 3 PARSE-ONLY markers)
 - Per-test expected behavior
 - Implementation tasks (directories to create, scripts to to write)
@@ -95,7 +95,7 @@ test/programs/baseline/
 - `run_negative.sh` — run negative tests (used by M1+)
 - `bench.sh` — performance baseline (compile_ms, run_ms, binary_kb → CSV)
 
-Script templates are in `.dev/plans/0.4.0-test-milestones.md` §4.
+Script templates are in `.dev/plans/0.3.0-borrow-check-milestones.md` §4.
 
 ### Output
 
@@ -109,7 +109,7 @@ Generate **`docs/m0-baseline-report.md`** containing:
 
 | File | Why |
 |---|---|
-| `.dev/plans/0.4.0-test-milestones.md` | M0 test items + implementation tasks + scripts |
+| `.dev/plans/0.3.0-borrow-check-milestones.md` | M0 test items + implementation tasks + scripts |
 | `docs/test-outline.md` | Full test catalog + status legend + regression matrix |
 | `src-c/README.md` | C compiler build commands and structure |
 | `.dev/drafts/0.1.0-borrowck-spec-vs-impl.md` §10-7 | 0.3.0 outcome reconciliation |
@@ -130,7 +130,7 @@ M0 is complete when ALL of these hold:
 
 1. **Don't modify `src-c/` source code**. M0 is about **measuring** the baseline, not fixing it. Code changes happen in M1+.
 
-2. **Don't write tests for features `src-c/` doesn't have yet**. The test list in 0.4.0-test-milestones.md was specifically designed to be runnable on CURRENT src-c/. If a test fails to compile, that IS the baseline — record it, don't try to fix the compiler.
+2. **Don't write tests for features `src-c/` doesn't have yet**. The test list in 0.3.0-borrow-check-milestones.md was specifically designed to be runnable on CURRENT src-c/. If a test fails to compile, that IS the baseline — record it, don't try to fix the compiler.
 
 3. **`m0_07_compound_assign.uc` and `m0_38_typedef.uc` were MOVED to M1**. They will NOT exist in `test/programs/baseline/`. Don't try to write them — `src-c/` lexer doesn't have those tokens yet (per audit).
 
@@ -180,7 +180,7 @@ git commit -m "..."
 
 ## 9. Decision Records (Why we are here)
 
-- **2026-08-08**: Decided incremental borrow-check implementation via M0-M5 milestones (per `.dev/plans/0.4.0-test-milestones.md`)
+- **2026-08-08**: Decided incremental borrow-check implementation via M0-M5 milestones (per `.dev/plans/0.3.0-borrow-check-milestones.md`)
 - **2026-08-08**: Test-first methodology — define tests before implementing (per user directive)
 - **2026-08-08**: M0 scope corrections: typedef and compound-assign moved to M1; alloc/free/unique/move marked PARSE-ONLY (audit findings)
 - **2026-08-08**: Old HANDOFF.md archived; this NEW HANDOFF created for M0 execution
@@ -189,7 +189,7 @@ git commit -m "..."
 
 | Need | Document |
 |---|---|
-| **Current implementation plan** | `.dev/plans/0.4.0-test-milestones.md` |
+| **Current implementation plan** | `.dev/plans/0.3.0-borrow-check-milestones.md` |
 | **Test catalog** | `docs/test-outline.md` |
 | **Language specification** | `docs/UltraCPP-v0.3.0-spec-zh-CN.md` |
 | Borrow-check decisions + 0.3.0 outcome | `.dev/drafts/0.1.0-borrowck-spec-vs-impl.md` |

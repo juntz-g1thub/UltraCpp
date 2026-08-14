@@ -18,25 +18,25 @@
 .dev/
 ├── README.md                                  本文件（索引）
 ├── plans/                                     实施计划与设计文档
-│   └── 0.4.0-test-milestones.md              借用检查实现测试里程碑规划（M0-M5）
+│   └── 0.3.0-borrow-check-milestones.md              借用检查实现测试里程碑规划（M0-M5）
 └── drafts/                                    探索性草稿与决策记录
     ├── 0.1.0-borrowck-spec-vs-impl.md         借用检查审计 + 21+ 决策 + 0.3.0 对齐（活跃决策源）
     ├── 0.1.0-module-system.md                模块/预编译系统设计（仍适用 0.3.0）
-    ├── 0.4.0-m0-priority.md                  M0 47 失败修复优先级清单（P0-P3，src-c/ 修复路线）
-    ├── 0.4.0-mutable-pointer-todo.md         UC_TYPE_MUTABLE_POINTER 残留清理待办
-    └── 0.4.0-session-context.md              M0 session-only 元数据（重启后上下文，含 safe-bash workaround、P0-2 计划）
+    ├── 0.3.0-m0-priority.md                  M0 47 失败修复优先级清单（P0-P3，src-c/ 修复路线）
+    ├── 0.3.0-mutable-pointer-todo.md         UC_TYPE_MUTABLE_POINTER 残留清理待办
+    └── 0.3.0-session-context.md              M0 session-only 元数据（重启后上下文，含 safe-bash workaround、P0-2 计划）
 ```
 
 ## 当前活跃文档
 
 | 文件 | 状态 | 用途 |
 |---|---|---|
-| `plans/0.4.0-test-milestones.md` | **活跃** | 借用检查实现测试里程碑规划（M0-M5）。102 个 .uc 测试项目录 + 状态更新流程 |
+| `.dev/plans/0.3.0-borrow-check-milestones.md` | **活跃** | 借用检查实现测试里程碑规划（M0-M5）。102 个 .uc 测试项目录 + 状态更新流程 |
 | `drafts/0.1.0-borrowck-spec-vs-impl.md` | **活跃** | 借用检查审计 + 21+ 决策记录 + 与 0.3.0 对齐（§10-7）。C 主机 ownership checker 实现以此为决策源 |
 | `drafts/0.1.0-module-system.md` | **活跃** | 模块/预编译系统设计（#import / #include）。0.3.0 spec §9 沿用此设计 |
-| `drafts/0.4.0-mutable-pointer-todo.md` | **活跃** | `UC_TYPE_MUTABLE_POINTER` 残留清理待办（M1 期间处理） |
-| `drafts/0.4.0-m0-priority.md` | **活跃** | M0 47 失败修复优先级清单（P0-P3），含 §8 进度追踪表与 §9 风险回退 |
-| `drafts/0.4.0-session-context.md` | **活跃** | M0 session-only 元数据（safe-bash workaround / P0-2 计划 / 已知开放项），session 重启后上下文恢复用 |
+| `drafts/0.3.0-mutable-pointer-todo.md` | **活跃** | `UC_TYPE_MUTABLE_POINTER` 残留清理待办（M1 期间处理） |
+| `drafts/0.3.0-m0-priority.md` | **活跃** | M0 47 失败修复优先级清单（P0-P3），含 §8 进度追踪表与 §9 风险回退 |
+| `drafts/0.3.0-session-context.md` | **活跃** | M0 session-only 元数据（safe-bash workaround / P0-2 计划 / 已知开放项），session 重启后上下文恢复用 |
 
 ## 归档（`.dev/_archive/`）
 
@@ -45,7 +45,7 @@
 | 路径 | 内容 | 备注 |
 |---|---|---|
 | `.dev/_archive/v0.1.0/` | 0.1.0 时代的设计（编译器架构、devhandbook、guide、spec-snapshot、pointer-design） | 概念已与 0.3.0 不一致；devhandbook 的算法伪代码 (§12.2/§12.4) 仍可作 C 主机实现参考 |
-| `.dev/_archive/v0.2.0/handoff.md` | 2026-08-06 项目状态快照 | 已用 0.4.0-test-milestones 取代 |
+| `.dev/_archive/v0.2.0/handoff.md` | 2026-08-06 项目状态快照 | 已用 `.dev/plans/0.3.0-borrow-check-milestones.md` 取代 |
 | `.dev/_archive/v0.2.0/c-asm-bootstrap.md` | 0.2.0 迁移与自举规划 | Phase 1-5 已完成；asm 已删除；当前活跃路线是 M0-M5 借用检查 |
 
 ## 历史

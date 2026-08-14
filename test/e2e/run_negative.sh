@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # run_negative.sh — Negative test runner (fail/ directory)
 #
-# Spec: .dev/plans/0.4.0-test-milestones.md §4.2 (template)
+# Spec: .dev/plans/0.3.0-borrow-check-milestones.md §4.2 (template)
 #
 # STATUS (M0): placeholder implementation.
 #   M0 has NO negative tests (per docs/test-outline.md §1 + §3.0 — M0 is

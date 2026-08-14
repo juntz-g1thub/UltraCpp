@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # run_baseline.sh — M0 baseline .uc test runner
 #
-# Spec: .dev/plans/0.4.0-test-milestones.md §4.1 (template) + §3.0 / §3.9
+# Spec: .dev/plans/0.3.0-borrow-check-milestones.md §4.1 (template) + §3.0 / §3.9
 # Usage: bash test/e2e/run_baseline.sh
 #        (must be run from the repository root)
 #

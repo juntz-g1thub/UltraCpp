@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # bench.sh — M0 compile-time performance baseline
 #
-# Spec: .dev/plans/0.4.0-test-milestones.md §4.3 (template) + §5
+# Spec: .dev/plans/0.3.0-borrow-check-milestones.md §4.3 (template) + §5
 #
 # For every *.uc in test/programs/baseline/ (except m0_44_helper.uc),
 # runs `uc_lexer --build` N times (default 3, override with BENCH_PASSES=N)

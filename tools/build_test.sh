@@ -30,7 +30,7 @@ fi
 
 # M0 baseline: m0_01 through m0_06 + m0_08 through m0_37 + m0_39 through m0_50
 # (skipping m0_07 compound_assign and m0_38 typedef which were moved to M1 —
-#  the C lexer has no tokens for those yet; see .dev/plans/0.4.0-test-milestones.md §3.0)
+#  the C lexer has no tokens for those yet; see .dev/plans/0.3.0-borrow-check-milestones.md §3.0)
 TESTS=(
     test/programs/baseline/m0_01_minimal_main
     test/programs/baseline/m0_02_int_arithmetic
