@@ -65,7 +65,7 @@
 | **0.3.0 语言规范（用户面向，当前版）** | `docs/UltraCPP-v0.3.0-spec-zh-CN.md`、`docs/UltraCPP-v0.3.0-spec-en.md` |
 | **.uc 测试目录**（102 个测试） | `docs/test-outline.md` |
 | 借用检查审计 + 21+ 决策 + 0.3.0 outcome | `.dev/drafts/0.1.0-borrowck-spec-vs-impl.md` |
-| 0.4.0 待办（UC_TYPE_MUTABLE_POINTER 清理） | `.dev/drafts/0.3.0-mutable-pointer-todo.md` |
+| UC_TYPE_MUTABLE_POINTER 清理（M1） | `.dev/drafts/0.3.0-mutable-pointer-todo.md` |
 | 模块系统设计（0.3.0 仍适用） | `.dev/drafts/0.1.0-module-system.md` |
 | `.dev/` 索引 | `.dev/README.md` |
 | C 端口代码说明 | `src-c/README.md` |
