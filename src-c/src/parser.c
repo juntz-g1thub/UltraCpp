@@ -226,6 +226,7 @@ static UCExpr* parse_primary(UCParser* p);
 static UCVec* parse_func_params(UCParser* p);
 static UCParam* parse_one_param(UCParser* p);
 static int looks_like_type_start(const UCParser* p);
+static int looks_like_type_start_peek(const UCParser* p);
 
 /* ------------------------------------------------------------------------- */
 /* Top-level dispatch                                                        */
@@ -840,6 +841,26 @@ static int looks_like_type_start(const UCParser* p) {
     return 0;
 }
 
+/* Like looks_like_type_start, but inspects the peek token (i.e. the
+ * next token to be consumed). Used to disambiguate `(T)expr` cast from
+ * ordinary `(expr)` parenthesised expression without consuming. */
+static int looks_like_type_start_peek(const UCParser* p) {
+    UCTokenKind k = p->peek.kind;
+    if (k == UC_TOK_KW_VOID || k == UC_TOK_KW_UNIQUE) return 1;
+    if (k == UC_TOK_OP_STAR
+        && p->peek.lexeme
+        && is_prim_type_name(p->peek.lexeme)) {
+        /* Rare: '*' isn't usually a type lexeme; parse_type handles the
+         * `*T` shape via check(OP_STAR)+peek(IDENT/prim). We just guard
+         * against '*' alone with no lookahead. */
+        return 0;
+    }
+    if (k == UC_TOK_IDENT
+        && p->peek.lexeme
+        && is_prim_type_name(p->peek.lexeme)) return 1;
+    return 0;
+}
+
 static UCStmt* parse_block(UCParser* p) {
     if (!expect(p, UC_TOK_LBRACE, "'{' to start block")) return NULL;
     UCVec* stmts = uc_vec_new();
@@ -1399,6 +1420,32 @@ static UCExpr* parse_ternary(UCParser* p) {
  * Forms the new layer between multiplicative and postfix in the
  * precedence ladder. */
 static UCExpr* parse_unary(UCParser* p) {
+    /* C-style cast: '(' <type> ')' <unary>. Distinguish from parenthesised
+     * expression `(expr)` by looking at the token immediately after '(':
+     * if it can start a type (KW_VOID/KW_UNIQUE, IDENT-as-prim, '*'-prim),
+     * then it must be a cast; otherwise fall through to parse_postfix
+     * which handles ordinary `(expr)`. */
+    if (check(p, UC_TOK_LPAREN) && looks_like_type_start_peek(p)) {
+        advance(p);                            /* consume '(' */
+        UCType* ct = parse_type(p);
+        if (is_err(p)) { uc_type_free(ct); return NULL; }
+        if (!ct) {
+            err_here(p, "expected type name inside cast");
+            return NULL;
+        }
+        if (!expect(p, UC_TOK_RPAREN, "')' to close cast")) {
+            uc_type_free(ct);
+            return NULL;
+        }
+        UCExpr* op = parse_unary(p);
+        if (is_err(p)) { uc_type_free(ct); uc_expr_free(op); return NULL; }
+        if (!op) {
+            err_here(p, "expected expression after cast");
+            uc_type_free(ct);
+            return NULL;
+        }
+        return uc_expr_cast(ct, op);
+    }
     if (check(p, UC_TOK_OP_PLUS)) {
         advance(p);
         return parse_unary(p);

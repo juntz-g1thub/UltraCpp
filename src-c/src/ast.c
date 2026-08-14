@@ -713,6 +713,14 @@ UCExpr* uc_expr_clone(UCExpr* inner) {
     return e;
 }
 
+UCExpr* uc_expr_cast(UCType* ty, UCExpr* operand) {
+    UCExpr* e = (UCExpr*)xcalloc(1, sizeof(UCExpr));
+    e->kind = UC_EXPR_CAST;
+    e->as.cast.ty = ty;
+    e->as.cast.operand = operand;
+    return e;
+}
+
 UCExpr* uc_expr_alloc(UCType* alloc_type) {
     UCExpr* e = (UCExpr*)xcalloc(1, sizeof(UCExpr));
     e->kind = UC_EXPR_ALLOC;
@@ -789,6 +797,8 @@ static void expr_free(void* p) {
             break;
         case UC_EXPR_MOVE:    expr_free(e->as.move_expr); break;
         case UC_EXPR_CLONE:   expr_free(e->as.clone_expr); break;
+        case UC_EXPR_CAST:    type_free(e->as.cast.ty);
+                              expr_free(e->as.cast.operand); break;
         case UC_EXPR_ALLOC:   type_free(e->as.alloc_type); break;
         case UC_EXPR_SIZEOF:  type_free(e->as.sizeof_ty); break;
         case UC_EXPR_IDENT:   uc_string_free(&e->as.ident); break;
@@ -937,6 +947,11 @@ static void expr_dump(const UCExpr* e, FILE* out, int indent) {
         case UC_EXPR_CLONE:
             fputs("Clone\n", out);
             expr_dump(e->as.clone_expr, out, indent + 2);
+            break;
+        case UC_EXPR_CAST:
+            fputs("Cast\n", out);
+            type_dump(e->as.cast.ty, out, indent + 2);
+            expr_dump(e->as.cast.operand, out, indent + 2);
             break;
         case UC_EXPR_ALLOC:
             fputs("Alloc\n", out);

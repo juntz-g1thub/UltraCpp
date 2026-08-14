@@ -556,6 +556,16 @@ static void gen_toplevel(UCCodeGenerator* g, const UCTopLevel* decl) {
             break;
         }
         case UC_TL_EXTERN: {
+            /* Skip functions already declared by get_builtins_decls(); emitting
+             * a second `declare` triggers 'invalid redefinition of function'. */
+            const char* fname = decl->as.extern_.name.data;
+            if (fname && (strcmp(fname, "malloc") == 0
+                       || strcmp(fname, "free") == 0
+                       || strcmp(fname, "strlen") == 0
+                       || strcmp(fname, "write") == 0
+                       || strcmp(fname, "read") == 0)) {
+                break;
+            }
             char* mangled = mangle_name(g, decl->as.extern_.name.data, 0);
             char* parts = cgen_strdup("");
             for (size_t i = 0; i < uc_vec_len(decl->as.extern_.params); i++) {
@@ -1359,6 +1369,25 @@ static char* gen_expr(UCCodeGenerator* g, const UCExpr* expr, UCError* err) {
         case UC_EXPR_MOVE:
             /* PARSE-ONLY: ownership transfer is M2. Pass through. */
             return gen_expr(g, expr->as.move_expr, err);
+        case UC_EXPR_CAST: {
+            /* C-style cast `(T)expr`: lower to LLVM `bitcast`. With LLVM
+             * 18 opaque pointers both src and dst are typically `i8*`,
+             * making this a no-op IR-wise, but the instruction is still
+             * required to convey the type change. We set last_expr_type
+             * to the dst so subsequent UC_STMT_DECL/UC_EXPR_ASSIGN pick
+             * up the new type. */
+            char* v = gen_expr(g, expr->as.cast.operand, err);
+            if (!v || err->kind != UC_ERR_NONE) return v;
+            char* src = g->last_expr_type ? g->last_expr_type : "i32";
+            char* dst = llvm_type_of(g, expr->as.cast.ty);
+            char* res = mk_temp(g);
+            emit_fmt_writeln(g, "%s = bitcast %s %s to %s",
+                             res, src, v, dst);
+            free(g->last_expr_type);
+            g->last_expr_type = dst;
+            free(v);
+            return res;
+        }
         case UC_EXPR_ALLOC: {
             /* PARSE-ONLY: minimal codegen — emit `call i8* @malloc(i64 4)`
              * and leave last_expr_type as i8*. Proper sized alloc +
