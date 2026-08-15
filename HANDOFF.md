@@ -1,3 +1,48 @@
+<!-- ============================================================
+     CURRENT TASK IDENTIFICATION (session-resume aid)
+     启动新会话时,先看这里识别当前任务范围。
+     ============================================================ -->
+
+# 🔖 当前任务:0.3.1 → 0.3.3 三轮 spec 迭代
+
+**目标**:通过 3 轮 spec 修订(spec 0.3.1 → 0.3.3),让 src-c 编译器补全已声明但未实现的功能,逐步达到 baseline 27/48+。
+
+**3 轮迭代范围**:
+- **0.3.1**(S2 lvalue/rvalue)— 修编译期 lvalue/rvalue 概念缺失,m0_42 deref-assign 主要 fix
+- **0.3.2**(S4 C-style cast + S5 函数返回类型 + §11.0 builtin 签名表)— 修 m0_42 第三 bug 和 m0_41 链接
+- **0.3.3**(S1 一元 op 优先级表 + S3 deref 语义 + mod/unmod/move/clone 函数化)— 修 spec 内部矛盾(S4.1 vs §4.9/§4.10/§7.4/§7.5)
+
+**当前状态**(2026-08-12 / HEAD `6d52770`):
+- 0.3.1 / 0.3.2 / 0.3.3 草稿 **全部 commit**(7 个 .dev/drafts/ 文档)
+- baseline:**27/48 PASS / 21 FAIL / 56.3%**
+- 7 个 commits 跨 0.3.1 + 0.3.2 + 0.3.3 + 修正
+
+**进行中/未来工作**(详细见 `.dev/drafts/0.3.3-unsolved.md`):
+- **已识别但未起草的 21 个 spec 缺陷**(S6 FFI body / S7 CJK / S8 deref-assign 残余 / S9 exit code / S10-S26 各种细节)
+- **0.3.2 实施**:S4 C-style cast + S5 return type / builtin sig ~ 0.5-1 天
+- **0.3.3 实施**(plan A 简化版,无 runtime)~ 1-1.5 天
+- **0.3.3+ 修订** = S10/S6/S12/S11/S26 优先级排序
+
+**关联文档**(必读):
+1. `HANDOFF.md`(本文件)— 整体状态
+2. `.dev/drafts/0.3.1-spec-amendment-s2-lvalue.md` — S2 计划
+3. `.dev/drafts/0.3.1-spec-text-changes.md` — 0.3.1 spec
+4. `.dev/drafts/0.3.2-spec-modifications.md` — S4+S5 spec
+5. `.dev/drafts/0.3.2-implementation-plan.md` — S4+S5 计划
+6. `.dev/drafts/0.3.3-spec-text-changes.md` — S1+S3+func spec
+7. `.dev/drafts/0.3.3-implementation-plan.md` — 0.3.3 计划(plan A 简化)
+8. `.dev/drafts/0.3.3-unsolved.md` — 21 个待起草 spec 缺陷
+
+**新会话应做**:
+1. 读本任务标识 + HANDOFF §1 看当前 baseline
+2. 选下一步:实施 0.3.2 / 0.3.3 / 修剩余 spec / 其他
+3. 参考对应版本 draft + 不解决案
+4. 完成后 commit 标 "current task continues"
+
+<!-- ============================================================
+     END CURRENT TASK IDENTIFICATION
+     ============================================================ -->
+
 # HANDOFF — M0 Baseline Verification
 
 > **Active since**: 2026-08-08
