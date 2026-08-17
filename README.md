@@ -2,30 +2,32 @@
 
 **A familiar C++ surface, backed by a safety model designed for this language.**
 
-[English](README.md) | [简体中文（主文档）](README-zh-CN.md)
+> **Language editions**: [English (this file)](./README.md) · [简体中文](./README-zh-CN.md)
+>
+> **Current spec**: [UltraCPP v0.3.1 (English)](./docs/UltraCPP-v0.3.1-spec-en.md) · [UltraCPP v0.3.1 (简体中文)](./docs/UltraCPP-v0.3.1-spec-zh-CN.md)
+>
+> **Status**: draft · **Last revised**: 2026-08-17
 
 > **Current Status (2026-08-08)**
 >
-> Version 0.3.0 is defining new rules for ownership, modification rights, and threads. Those rules are a language design, not a safety guarantee already delivered by the compiler. The C99 port in `src-c/` is the production host compiler; the Rust port in `src/` is a reference. The semantic checking stage introduced by the 0.3.0 design has not been implemented yet.
+> Version 0.3.1 is defining new rules for ownership, modification rights, and threads. Those rules are a language design, not a safety guarantee already delivered by the compiler. The C99 port in `src-c/` is the production host compiler; the Rust port in `src/` is a reference. The semantic checking stage introduced by the 0.3.1 design has not been implemented yet.
 >
 > Start here:
 >
-> - [UltraCPP 0.3.0 Chinese Specification](docs/UltraCPP-v0.3.0-spec-zh-CN.md), the authoritative edition
-> - [UltraCPP 0.3.0 English Specification](docs/UltraCPP-v0.3.0-spec-en.md), the companion edition
+> - [UltraCPP v0.3.1 Chinese Specification](docs/UltraCPP-v0.3.1-spec-zh-CN.md)
+> - [UltraCPP v0.3.1 English Specification](docs/UltraCPP-v0.3.1-spec-en.md)
 > - [0.1.0 borrow-checker spec versus implementation audit](.dev/drafts/0.1.0-borrowck-spec-vs-impl.md), the record of why the old model had to be reconsidered
 > - [C host compiler README](src-c/README.md), the current implementation
 
 ## 自我介绍 / Self-introduction
 
-I'm UltraCPP, an experimental systems language still working out how to keep C++ familiarity without borrowing someone else's safety model wholesale. My C compiler can lex, parse, and emit LLVM IR. My 0.3.0 semantic rules still live in the specification, so I won't pretend that design work is already enforcement.
+I'm UltraCPP, an experimental systems language still working out how to keep C++ familiarity without borrowing someone else's safety model wholesale. My C compiler can lex, parse, and emit LLVM IR. My 0.3.1 semantic rules still live in the specification, so I won't pretend that design work is already enforcement.
 
 ## 设计历程 / Design Journey
 
 ### 第一阶段：天真 / Phase 1: Naivety
 
-I thought copying Rust onto C++ syntax would work.
-
-My first slogan was "C++ syntax × Rust safety = UltraCPP." From there, the mapping seemed almost automatic:
+I thought copying Rust onto C++ syntax would work. My first slogan was "C++ syntax × Rust safety = UltraCPP," and from there the mapping seemed almost automatic:
 
 | UltraCPP spelling | The role I assigned to it |
 |---|---|
@@ -66,9 +68,7 @@ The premise "C++ syntax × Rust safety" had been doing too much thinking for me.
 
 ### 第四阶段：转向 / Phase 4: The Turn
 
-The user asked the question that changed my direction. Why was I treating ownership and permission to modify as one thing?
-
-They answer different questions:
+The user asked the question that changed my direction. Why was I treating ownership and permission to modify as one thing? They answer different questions:
 
 1. Who must eventually release the resource?
 2. Who may write the value right now?
@@ -94,9 +94,7 @@ This was the first change that removed a contradiction instead of renaming it.
 
 ### 第五阶段：指令化 / Phase 5: Directive-ification
 
-Once modification rights stood on their own, type-level mutability stopped looking inevitable. Projects make different choices about writable aliases. A strict module may want one writer. A low-level module may deliberately allow several and take responsibility for races. Another module may want every reference to stay read-only.
-
-Encoding each policy as another reference type would rebuild the same maze. I moved the choice into a user-configured directive instead: `#modlaw`.
+Once modification rights stood on their own, type-level mutability stopped looking inevitable. Projects make different choices about writable aliases — a strict module may want one writer, a low-level module may deliberately allow several and take responsibility for races, another module may want every reference to stay read-only — so encoding each policy as another reference type would rebuild the same maze. I moved the choice into a user-configured directive instead: `#modlaw`.
 
 There are exactly six legal combinations:
 
@@ -135,7 +133,7 @@ mod(r);                 // allowed, including alongside other mod holders
 
 ### 第六阶段：简化 / Phase 6: Simplification
 
-This split let me delete syntax rather than add more. `T&mut` became redundant. `#modlaw exclusive` plus `mod()` already expresses an exclusive modification right, so 0.3.0 has one reference type: `T&`.
+This split let me delete syntax rather than add more. `T&mut` became redundant. `#modlaw exclusive` plus `mod()` already expresses an exclusive modification right, so 0.3.1 has one reference type: `T&`.
 
 ```cpp
 #modlaw exclusive module
@@ -146,9 +144,9 @@ mod(r);                 // acquire the exclusive modification right here
 *r = 1;
 ```
 
-I also chose not to preserve C++ const-pointer semantics. UltraCPP 0.3.0 deliberately reverses them:
+I also chose not to preserve C++ const-pointer semantics. UltraCPP 0.3.1 deliberately reverses them:
 
-| Declaration | UltraCPP 0.3.0 meaning |
+| Declaration | UltraCPP 0.3.1 meaning |
 |---|---|
 | `const T*` | Pointer-locked: cannot rebind and cannot write through it |
 | `T* const` | Read-only data view: may rebind but cannot write through it |
@@ -183,13 +181,13 @@ atomic<int> ready;      // standard-library type
 
 ### 第七阶段：当前形态 / Phase 7: Current Form
 
-Version 0.3.0 is not "C++ × Rust." It is C++ familiarity plus an UltraCPP-native safety model: one `T&`, independent ownership and modification rights, a user-selected `#modlaw`, and explicit rules for cross-thread visibility.
+Version 0.3.1 is not "C++ × Rust." It is C++ familiarity plus an UltraCPP-native safety model: one `T&`, independent ownership and modification rights, a user-selected `#modlaw`, and explicit rules for cross-thread visibility.
 
 The lessons cost enough to feel real. I tried to add one syntax to one foreign model and spent the result on exceptions. Then I treated missing enforcement as the whole problem, until the audit made it obvious that a finished checker would still enforce the wrong abstraction. The user's repeated questions already contained the useful split: "who frees?" and "who writes?" were never one question. I needed to stop mapping and listen to the distinction.
 
-This model fits me better, but it is not finished. The 0.3.0 specifications describe the destination. The next honest milestone is a semantic pass in the C host compiler that enforces those rules.
+This model fits me better, but it is not finished. The 0.3.1 specifications describe the destination. The next honest milestone is a semantic pass in the C host compiler that enforces those rules.
 
-## 当前架构 / Current Architecture (0.3.0)
+## 当前架构 / Current Architecture (0.3.1)
 
 ```text
 UltraCPP source (.uc / .upp)
@@ -213,7 +211,7 @@ UltraCPP source (.uc / .upp)
 +------------------------------------------------------+
 | Semantic checks                                      |
 | ownership | references | modlaw | lifetime | threads |
-| NEW IN THE 0.3.0 DESIGN, NOT YET IMPLEMENTED IN CODE |
+| NEW IN THE 0.3.1 DESIGN, NOT YET IMPLEMENTED IN CODE |
 +-------------------------+----------------------------+
                           |
                           v
@@ -225,7 +223,7 @@ UltraCPP source (.uc / .upp)
         LLVM IR -> llc -> system linker -> executable
 ```
 
-The current `src-c/` pipeline implements the lexer, parser, AST, code generator, and CLI. Reading `#modlaw` and running the semantic box are requirements of the 0.3.0 architecture, not stages already wired into the compiler. This README therefore distinguishes specified safety from implemented behavior.
+The current `src-c/` pipeline implements the lexer, parser, AST, code generator, and CLI. Reading `#modlaw` and running the semantic box are requirements of the 0.3.1 architecture, not stages already wired into the compiler. This README therefore distinguishes specified safety from implemented behavior.
 
 ## 核心设计概念 / Core Design Concepts
 
@@ -293,7 +291,7 @@ UltraCpp/
 ├── src-c/       Production C99 host: lexer, parser, AST, codegen, CLI
 ├── src/         Rust reference implementation, not the production target
 ├── src-uc/      Future self-hosted compiler written in UltraCPP
-├── docs/        Versioned 0.1.0, 0.2.0, and 0.3.0 specifications
+├── docs/        Versioned 0.1.0, 0.2.0, and 0.3.1 specifications
 ├── .dev/        Design plans, audits, drafts, and development records
 ├── bootstrap/   Bootstrap plan and C/Rust baseline artifacts
 ├── lib/         UltraCPP standard-library sources
@@ -322,14 +320,14 @@ Run the C port's unit tests:
 make -C src-c test
 ```
 
-`src-c/build/uc_lexer` also supports `--ast`, `--emit-ll` / `-S`, and `--build`. These commands exercise the current compiler. They do not enable the unimplemented 0.3.0 semantic checks.
+`src-c/build/uc_lexer` also supports `--ast`, `--emit-ll` / `-S`, and `--build`. These commands exercise the current compiler. They do not enable the unimplemented 0.3.1 semantic checks.
 
 ## 关键文档 / Key Documents
 
 | Document | Purpose |
 |---|---|
-| [0.3.0 Chinese Specification](docs/UltraCPP-v0.3.0-spec-zh-CN.md) | Authoritative definition of the 0.3.0 language design |
-| [0.3.0 English Specification](docs/UltraCPP-v0.3.0-spec-en.md) | English companion to the authoritative Chinese edition |
+| [UltraCPP v0.3.1 Chinese Specification](docs/UltraCPP-v0.3.1-spec-zh-CN.md) | Chinese edition of the v0.3.1 language specification |
+| [UltraCPP v0.3.1 English Specification](docs/UltraCPP-v0.3.1-spec-en.md) | English edition of the v0.3.1 language specification |
 | [0.1.0 borrow-checker audit](.dev/drafts/0.1.0-borrowck-spec-vs-impl.md) | Records the 0/12 enforcement result, contradictions, and later decisions |
 | [C port README](src-c/README.md) | Build instructions and capabilities of the production host compiler |
 | [Bootstrap Plan](bootstrap/PLAN.md) | Route from the C host to the future compiler in `src-uc/` |

@@ -2,22 +2,26 @@
 
 **熟悉的 C++ 表面，一套从自身问题里长出来的安全模型。**
 
-[简体中文（主文档）](README-zh-CN.md) | [English](README.md)
+> **语言版本**：[简体中文（本文件）](./README-zh-CN.md) · [English](./README.md)
+>
+> **当前规范**：[UltraCPP v0.3.1（简体中文）](./docs/UltraCPP-v0.3.1-spec-zh-CN.md) · [UltraCPP v0.3.1 (English)](./docs/UltraCPP-v0.3.1-spec-en.md)
+>
+> **状态**：草稿 · **最后修订**：2026-08-17
 
 > **当前状态（2026-08-08）**
 >
-> 0.3.0 正在定义新的所有权、修改权和线程规则，目前仍是语言设计，不是已经由编译器兑现的安全承诺。C99 端口 `src-c/` 是生产主机编译器；Rust 端口 `src/` 只作参考。0.3.0 新增的语义检查阶段尚未在代码中实现。
+> 0.3.1 正在定义新的所有权、修改权和线程规则，目前仍是语言设计，不是已经由编译器兑现的安全承诺。C99 端口 `src-c/` 是生产主机编译器；Rust 端口 `src/` 只作参考。0.3.1 新增的语义检查阶段尚未在代码中实现。
 >
 > 请先阅读：
 >
-> - [UltraCPP 0.3.0 中文规范](docs/UltraCPP-v0.3.0-spec-zh-CN.md)，权威版本
-> - [UltraCPP 0.3.0 English Specification](docs/UltraCPP-v0.3.0-spec-en.md)，英文对照版
+> - [UltraCPP v0.3.1 中文规范](docs/UltraCPP-v0.3.1-spec-zh-CN.md)
+> - [UltraCPP v0.3.1 English Specification](docs/UltraCPP-v0.3.1-spec-en.md)
 > - [0.1.0 借用检查规范与实现审计](.dev/drafts/0.1.0-borrowck-spec-vs-impl.md)，记录旧模型为何必须重做
 > - [C 主机编译器说明](src-c/README.md)，当前实现能力
 
 ## 自我介绍 / Self-introduction
 
-我是 UltraCPP，一个仍在学习怎样把 C++ 熟悉感和静态安全放在一起的系统语言实验。我的 C 编译器已经能完成词法分析、语法分析和 LLVM IR 生成，但我的 0.3.0 安全模型还在规范里，不能把设计当成实现。
+我是 UltraCPP，一个仍在学习怎样把 C++ 熟悉感和静态安全放在一起的系统语言实验。我的 C 编译器已经能完成词法分析、语法分析和 LLVM IR 生成，但我的 0.3.1 安全模型还在规范里，不能把设计当成实现。
 
 ## 设计历程 / Design Journey
 
@@ -125,7 +129,7 @@ mod(r);                 // 可以，多个引用可同时取得修改权
 
 ### 第六阶段：简化 / Phase 6: Simplification
 
-边界清楚以后，一些曾经看似必要的东西反而可以删除。`T&mut` 就是其中之一。独占性已经能由 `#modlaw exclusive` 和 `mod()` 完整表达，再保留一个独占可变引用类型只会重复同一信息。0.3.0 因此只保留 `T&`。
+边界清楚以后，一些曾经看似必要的东西反而可以删除。`T&mut` 就是其中之一。独占性已经能由 `#modlaw exclusive` 和 `mod()` 完整表达，再保留一个独占可变引用类型只会重复同一信息。0.3.1 因此只保留 `T&`。
 
 ```cpp
 #modlaw exclusive module
@@ -136,9 +140,9 @@ mod(r);                 // 这里申请独占修改权
 *r = 1;
 ```
 
-我也没有照搬 C++ 的 const 指针规则。0.3.0 明确采用相反的自定义语义：
+我也没有照搬 C++ 的 const 指针规则。0.3.1 明确采用相反的自定义语义：
 
-| 声明 | UltraCPP 0.3.0 含义 |
+| 声明 | UltraCPP 0.3.1 含义 |
 |---|---|
 | `const T*` | 指针锁定，不能 rebind，也不能通过它写 |
 | `T* const` | 数据只读视图，可以 rebind，但不能通过它写 |
@@ -173,13 +177,13 @@ atomic<int> ready;      // 标准库类型
 
 ### 第七阶段：当前形态 / Phase 7: Current Form
 
-0.3.0 不是 "C++ × Rust"。它保留 C++ 的熟悉感，但安全模型属于 UltraCPP 自己：单一 `T&`、彼此独立的所有权和修改权、用户选择的 `#modlaw`，以及明确的跨线程可见性。
+0.3.1 不是 "C++ × Rust"。它保留 C++ 的熟悉感，但安全模型属于 UltraCPP 自己：单一 `T&`、彼此独立的所有权和修改权、用户选择的 `#modlaw`，以及明确的跨线程可见性。
 
 我付出的教训很具体。第一次，我把为另一套语法长出来的模型直接做了 1+1，结果每个熟悉符号都带来新的例外。第二次，我把实现缺口误当成唯一问题，直到审计显示即使补齐 checker，概念冲突仍然存在。用户反复问 "谁释放" 和 "谁能写" 时，答案其实已经藏在问题里了。我需要做的不是再发明一个映射，而是承认那是两条权限。
 
-现在的模型更像我自己，但它还没有完成。0.3.0 规范给出了方向，下一步是让 C 主机编译器真的拥有对应的语义检查，而不是提前宣称安全已经实现。
+现在的模型更像我自己，但它还没有完成。0.3.1 规范给出了方向，下一步是让 C 主机编译器真的拥有对应的语义检查，而不是提前宣称安全已经实现。
 
-## 当前架构 / Current Architecture (0.3.0)
+## 当前架构 / Current Architecture (0.3.1)
 
 ```text
 UltraCPP source (.uc / .upp)
@@ -203,7 +207,7 @@ UltraCPP source (.uc / .upp)
 +------------------------------------------------------+
 | Semantic checks                                      |
 | ownership | references | modlaw | lifetime | threads |
-| NEW IN THE 0.3.0 DESIGN, NOT YET IMPLEMENTED IN CODE |
+| NEW IN THE 0.3.1 DESIGN, NOT YET IMPLEMENTED IN CODE |
 +-------------------------+----------------------------+
                           |
                           v
@@ -215,7 +219,7 @@ UltraCPP source (.uc / .upp)
         LLVM IR -> llc -> system linker -> executable
 ```
 
-当前 `src-c/` 实际执行的是 lexer、parser、AST、codegen 和 CLI 路径。图中的 `#modlaw` 读取和语义检查阶段都是 0.3.0 新加入的架构要求，代码尚未接入，因此 README 不把规范中的安全规则标成已实现功能。
+当前 `src-c/` 实际执行的是 lexer、parser、AST、codegen 和 CLI 路径。图中的 `#modlaw` 读取和语义检查阶段都是 0.3.1 新加入的架构要求，代码尚未接入，因此 README 不把规范中的安全规则标成已实现功能。
 
 ## 核心设计概念 / Core Design Concepts
 
@@ -283,7 +287,7 @@ UltraCpp/
 ├── src-c/       C99 生产主机编译器：lexer、parser、AST、codegen、CLI
 ├── src/         Rust 参考实现，不是当前生产目标
 ├── src-uc/      未来用 UltraCPP 编写的自举编译器，目前待实现
-├── docs/        0.1.0、0.2.0、0.3.0 版本化语言规范
+├── docs/        0.1.0、0.2.0、0.3.1 版本化语言规范
 ├── .dev/        设计计划、审计、草稿和开发过程记录
 ├── bootstrap/   自举计划与 C/Rust 基线产物
 ├── lib/         UltraCPP 标准库源码
@@ -312,14 +316,14 @@ src-c/build/uc_lexer --tokens test/test_t1/main.upp
 make -C src-c test
 ```
 
-`src-c/build/uc_lexer` 还支持 `--ast`、`--emit-ll` / `-S` 和 `--build`。这些命令展示的是当前编译器能力，不代表 0.3.0 的语义检查已经实现。
+`src-c/build/uc_lexer` 还支持 `--ast`、`--emit-ll` / `-S` 和 `--build`。这些命令展示的是当前编译器能力，不代表 0.3.1 的语义检查已经实现。
 
 ## 关键文档 / Key Documents
 
 | 文档 | 用途 |
 |---|---|
-| [0.3.0 中文规范](docs/UltraCPP-v0.3.0-spec-zh-CN.md) | 0.3.0 语言设计的权威版本 |
-| [0.3.0 English Specification](docs/UltraCPP-v0.3.0-spec-en.md) | 英文对照版 |
+| [UltraCPP v0.3.1 中文规范](docs/UltraCPP-v0.3.1-spec-zh-CN.md) | v0.3.1 语言规范的简体中文版本 |
+| [UltraCPP v0.3.1 English Specification](docs/UltraCPP-v0.3.1-spec-en.md) | v0.3.1 语言规范的英文版本 |
 | [0.1.0 借用检查审计](.dev/drafts/0.1.0-borrowck-spec-vs-impl.md) | 记录 0/12 执行现状、矛盾和后续决策 |
 | [C 端口 README](src-c/README.md) | 当前生产主机编译器的构建方式和能力 |
 | [Bootstrap Plan](bootstrap/PLAN.md) | 从 C 主机走向 `src-uc/` 自举编译器的路线 |

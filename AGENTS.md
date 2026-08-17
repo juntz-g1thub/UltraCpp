@@ -1,7 +1,7 @@
 # UltraCPP Project Agent Guide
 
 > Project-specific rules for agents working in this repository.
-> 最后更新：2026-08-12
+> 最后更新：2026-08-17
 
 ---
 
@@ -31,6 +31,29 @@
 > **历史约定**：旧文件名用 `UltraCPP-v0.x.y-...zh-CN.md` 格式存放在 `.sisyphus/`。
 > 2026-08-06 重组后，开发过程文档迁到 `.dev/`，命名简化为 `<version>-<name>.md`。
 > 用户面向的语言规范仍位于 `docs/`，保留全名格式。
+
+---
+
+## Git 操作约束 *(新增, 2026-08-17)*
+
+代理（agent）在 git 操作上有严格的权限边界：
+
+| 级别 | 操作 | 是否允许 |
+|---|---|---|
+| 本地写 | `git add` / `git commit` / `git commit --amend` | ✅ 允许 |
+| 本地只读 | `git status` / `git log` / `git diff` / `git show` / `git blame` | ✅ 允许 |
+| 本地重构 | `git rebase` / `git reset --soft/mixed`（在已 push 提交上）| ⚠️ 需用户确认 |
+| 远程写 | `git push` / `git fetch`（写入远程） / `git pull --rebase/merge` | ❌ 严禁 |
+| 远程管理 | `git remote add/remove` / `git branch -u` | ❌ 严禁 |
+
+**铁律**：任何涉及远程仓库的写操作（`git push` 及同类）必须**提示用户手动执行**，代理不得自行调用。即使是 push 到本地 fork、push 到自己的分支、push draft branch 等"无害"场景也不例外。
+
+**理由**：
+1. 远程操作不可逆（一旦 push 到共享分支，rebase/force-push 会破坏他人工作）
+2. 用户的 GitHub 凭据、SSH key、推送策略不在代理的决策范围内
+3. CI / pre-push hooks 行为可能与代理预期不符
+
+**例外**：仅当用户在同一次对话中明确说"push 吧"或类似授权时，代理才可执行一次 `git push`，并在输出中说明本次 push 的目标分支与提交摘要。
 
 ---
 
@@ -80,6 +103,73 @@
 
 ---
 
+## 文档翻译规则 *(新增, 2026-08-17)*
+
+目前**仅 spec 文档**（`docs/UltraCPP-vX.Y.Z-spec-*.md`）与 **`README`** 需要严格的中英文对照翻译。其他文档（设计草稿 `.dev/drafts/`、HANDOFF.md、AGENTS.md、本文件）保持中文单语即可。
+
+### 双语对照原则
+
+1. **独立、同行、无主从**：中英文版本是 sibling，不存在"权威版/译本"关系。任何文件不得出现 `authoritative / companion / 权威 / 配套 / 翻译滞后 / 配套译本 / lag` 等措辞。
+2. **行数对齐**（强烈建议）：双语版本行数应大致一致，便于 cross-check。例外：翻译风格本身造成的长度差（如英文表格列宽窄）允许 ±5 行偏差。
+3. **逐句翻译，结构镜像**：标题层级、章节编号、表格、列表、代码块、footnote 全部保留；代码块（除内嵌注释外）原文保留 C++ 语法。
+4. **跨语言引用最小化**：除约定的两个 header 行（见下）外，双语文件不互相引用。
+
+### 命名约定
+
+| 类型 | 格式 | 示例 |
+|---|---|---|
+| spec 中文 | `docs/UltraCPP-vX.Y.Z-spec-zh-CN.md` | `docs/UltraCPP-v0.3.1-spec-zh-CN.md` |
+| spec 英文 | `docs/UltraCPP-vX.Y.Z-spec-en.md` | `docs/UltraCPP-v0.3.1-spec-en.md` |
+| README 中文 | `README-zh-CN.md` | `README-zh-CN.md` |
+| README 英文 | `README.md` | `README.md` |
+
+### 双语 spec 文件的 header 模板
+
+每份双语 spec 文件的**前 15 行**应严格遵循以下模板（仅文件名/版本号/日期变化）：
+
+中文版（zh-CN）line 5 + line 11：
+```
+> **上一版本**：X.Y.Z — [`UltraCPP-vX.Y.Z-spec-zh-CN.md`](./UltraCPP-vX.Y.Z-spec-zh-CN.md)
+...
+> 同版本英文译本：[English](./UltraCPP-vX.Y.Z-spec-en.md)
+```
+
+英文版（en）line 5 + line 11：
+```
+> **Previous version**: X.Y.Z — [`UltraCPP-vX.Y.Z-spec-en.md`](./UltraCPP-vX.Y.Z-spec-en.md)
+...
+> Same-version Chinese translation: [简体中文](./UltraCPP-vX.Y.Z-spec-zh-CN.md)
+```
+
+注意：
+- line 5 "上一版本" **必须 self-language**（中文→中文前一版，英文→英文前一版）
+- line 11 "同版本译本指针" **必须 cross-language**（唯一允许的跨语言引用）
+- 任何其他位置的跨语言引用都属于违规
+
+### 代码示例语法
+
+所有 spec / README 中的代码示例必须使用 C++ 语法（参见上节 "Critical Syntax Rules"），包括 `int add(int a, int b)`、`const char*`、`int`、`size_t`、`const`。**严禁** Rust 风格（`fn`、`let x: int = 5;`、`&str`、`i32` 作关键字、`mut`、`-> void` 在定义中）。
+
+例外：`i32` / `i64` / `i8` / `i16` / `usize` / `isize` 是 UltraCPP 自身的定宽整数类型，**不是** Rust 污染。
+
+### 翻译工作流程（推荐）
+
+1. **构造中文版**：先 cp 前一版 spec，再应用本版本 delta
+2. **构造英文版**：从中文版 cp 后逐句翻译，应用对应英文 header 模板
+3. **行数对齐验证**：`wc -l` 双语，差应在 ±5 内
+4. **独立性审计**：
+   - `grep -nE '权威|authoritative|companion|配套|翻译滞后' <file>` 必须 0 命中
+   - `grep -nE '英文|English|en\.md' <zh-CN-file>` 必须仅命中 line 11
+   - `grep -nE '中文|Chinese|zh-CN' <en-file>` 必须仅命中 line 5 与 line 11
+5. **一次 commit 同时提交双语修改**（按"Git 操作约束"，不 push）
+
+## 后续工作 *(待办)*
+
+- ⚠️ `README.md` / `README-zh-CN.md` 当前含 `authoritative / companion` 措辞，需按本节规则清理（用户已确认方向但尚未执行）
+- ⚠️ `.dev/_archive/` 历史归档不含 spec 双语文件，仅含 README + 设计笔记；本节翻译规则不追溯历史
+
+---
+
 ## Language Design Core Decisions
 
 ### Memory Safety
@@ -99,7 +189,7 @@
 
 ## Current Phase
 
-> 最后更新：2026-08-12
+> 最后更新：2026-08-17
 
 - [x] **Language design documentation**：0.3.0 完成（两条权限独立 + `#modlaw` + 线程模型）
 - [x] **C port of the compiler**：Phase 1+1.1+2+3+4 完成，505 单元测试，5/5 byte-exact 端到端
@@ -137,4 +227,4 @@
 
 ---
 
-*Last updated: 2026-08-12*
+*Last updated: 2026-08-17*
