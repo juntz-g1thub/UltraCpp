@@ -1,20 +1,22 @@
-# UltraCPP 0.3.0 语言规范
+# UltraCPP 0.3.1 语言规范
 
-> **版本**：0.3.0
+> **版本**：0.3.1
 >
-> **上一版本**：0.2.0 — [`UltraCPP-v0.2.0-spec-zh-CN.md`](./UltraCPP-v0.2.0-spec-zh-CN.md)
+> **上一版本**：0.3.0 — [`UltraCPP-v0.3.0-spec-zh-CN.md`](./UltraCPP-v0.3.0-spec-zh-CN.md)
 >
 > **状态**：草稿 (draft)
 >
-> **日期**：2026-08-07
+> **日期**：2026-08-12
 >
-> 同版本英文译本：[English](./UltraCPP-v0.3.0-spec-en.md)
+> 同版本英文译本：[English](./UltraCPP-v0.3.1-spec-en.md)
 
 ---
 
 ## 修订摘要
 
 本版本在 0.2.0 的基础上，落实 **21+ 条语言设计决策**（决策编号沿用历史 D-1 .. D-8，本版本新增 Rule 1, 2A, 2B, Q1 .. Q6, Rule 22 .. 28）。**两条权限彻底拆分**（Rule 22）与 **#modlaw 指令**（Rule 23）是本次修订的核心概念改动。
+
+> **[0.3.1]** 本版本在 0.3.0 的基础上，**新增 §4.13「表达式分类：lvalue 与 rvalue」** 完整章节，并在 §4.1 优先级表新增 2.5 级一元运算符优先级行、§4.6 赋值运算符表 11 行统一补「LHS 必须是 lvalue」约束、§7.8 引用规则 1 改写并交叉引用 §4.13.2、§12.1 EBNF 增加 `lvalue` / `rvalue` 非终结符、§12.3 附录优先级表同步 §4.1 加 2.5 级。**不引入新语法、不修改现有语义**，仅补 lvalue 概念术语并修 m0_42 deref-assign bug。详见变更日志中 0.3.1 行。
 
 | 主题 | 决策编号 | 一句话摘要 |
 |------|---------|-----------|
@@ -60,6 +62,7 @@
 | **Rule 26** | §13.2 | `move_to_thread(p, tid)` / `spawn_thread_with(tid, p)`。 |
 | **Rule 27** | §13.5 | `__thread` 线程局部存储。 |
 | **Rule 28** | §13.4 | 多线程内存布局：栈（thread-local）/ 堆（shared）/ 全局（shared）/ TLS（thread-local）。 |
+| **S2 (0.3.1 修订)** | §4.1, §4.6, §4.13 (新增), §7.8, §12.1, §12.3 | **lvalue / rvalue 概念明确化**：新增 §4.13 完整章节（定义 + 分类表 + 赋值上下文约束 + codegen 实现约束 + 交叉引用）；§4.1 优先级表补 2.5 级一元 op（` * ` ` & ` ` + ` ` - ` ` ! ` ` ~ ` `mod` `unmod` 前缀 `++` `--`）；§4.6 表格 11 行统一加「LHS 必须是 lvalue (§4.13.2)」约束；§7.8 创建规则 1 引用 §4.13.2 + 加合法/非法示例；§12.1 EBNF 加 `lvalue` / `rvalue` 规则 + `assignment_expression` LHS 标注；§12.3 附录优先级表同步加 2.5 级。**修复 m0_42 deref-assign bug**（`*view = payload`）。无新语法、无语义变更、向后兼容。 |
 
 ---
 
@@ -474,18 +477,19 @@ T* const bad2 = h;              // ❌ 同样禁止
 
 ## 4. 表达式 *(0.3.0 新增 §4.9, §4.10)*
 
-### 4.1 运算符优先级和结合性
+### 4.1 运算符优先级和结合性 *(0.3.1 修订)*
 
 | 优先级 | 运算符 | 结合性 |
 |--------|--------|--------|
 | 1 | `::` | 左到右 |
-| 2 | `()` `[]` `.` `->` `++` `--` | 左到右 |
-| 3 | `*` `/` `%` | 左到右 |
-| 4 | `+` `-` | 左到右 |
-| 5 | `<<` `>>` | 左到右 |
+| 2 | `()` `[]` `.` `->` `++` `--` (后缀) | 左到右 |
+| 2.5 | **一元 `*` `&` `+` `-` `!` `~` `mod` `unmod` `++` `--` (前缀)** *(0.3.1 补)* | **右到左** |
+| 3 | `*` `/` `%` (二元) | 左到右 |
+| 4 | `+` `-` (二元) | 左到右 |
+| 5 | `<<` `>>` (二元) | 左到右 |
 | 6 | `<` `>` `<=` `>=` | 左到右 |
 | 7 | `==` `!=` | 左到右 |
-| 8 | `&` | 左到右 |
+| 8 | `&` (二元,按位与) | 左到右 |
 | 9 | `^` | 左到右 |
 | 10 | `\|` | 左到右 |
 | 11 | `&&` | 左到右 |
@@ -495,6 +499,7 @@ T* const bad2 = h;              // ❌ 同样禁止
 | 15 | `move` `clone` | - |
 
 > **[0.3.0]** 表中第 8 级的 `&` 指**二元中缀**按位与。一元前缀的 `&`（引用）、`mod` / `unmod`（修改权）属于一元运算符，详见 §4.9–§4.10。
+> **[0.3.1 补]** 一元 `*`（解引用）见 §4.13；二元 `*`（乘法）见 §4.2。
 
 ### 4.2 算术运算符
 
@@ -538,21 +543,30 @@ T* const bad2 = h;              // ❌ 同样禁止
 | `<<` | 左移 | `a << 2` |
 | `>>` | 右移 | `a >> 2` |
 
-### 4.6 赋值运算符
+### 4.6 赋值运算符 *(0.3.1 修订)*
+
+> **[0.3.1]** 赋值运算符的**左侧**必须为 lvalue（见 §4.13.2）。非 lvalue 作左侧
+> 是编译期错误（`AssignmentToRvalueError`）。
 
 | 运算符 | 描述 |
 |--------|------|
-| `=` | 简单赋值（`T*` 之间触发**隐式 `mod()`**，不转移所有权，见 §7.1） |
-| `+=` | 加法赋值 |
-| `-=` | 减法赋值 |
-| `*=` | 乘法赋值 |
-| `/=` | 除法赋值 |
-| `%=` | 取模赋值 |
-| `&=` | 按位与赋值 |
-| `\|=` | 按位或赋值 |
-| `^=` | 按位异或赋值 |
-| `<<=` | 左移赋值 |
-| `>>=` | 右移赋值 |
+| `=` | 简单赋值 — LHS 必须是 lvalue (§4.13.2);RHS 求值后赋给 LHS;`T*` 之间触发**隐式 `mod()`**，不转移所有权，见 §7.1 |
+| `+=` | 加法赋值 — LHS 必须是 lvalue;`LHS = LHS + RHS` |
+| `-=` | 减法赋值 — LHS 必须是 lvalue;`LHS = LHS - RHS` |
+| `*=` | 乘法赋值 — LHS 必须是 lvalue;`LHS = LHS * RHS` |
+| `/=` | 除法赋值 — LHS 必须是 lvalue;`LHS = LHS / RHS` |
+| `%=` | 取模赋值 — LHS 必须是 lvalue;`LHS = LHS % RHS` |
+| `&=` | 按位与赋值 — LHS 必须是 lvalue;`LHS = LHS & RHS` |
+| `\|=` | 按位或赋值 — LHS 必须是 lvalue;`LHS = LHS \| RHS` |
+| `^=` | 按位异或赋值 — LHS 必须是 lvalue;`LHS = LHS ^ RHS` |
+| `<<=` | 左移赋值 — LHS 必须是 lvalue;`LHS = LHS << RHS` |
+| `>>=` | 右移赋值 — LHS 必须是 lvalue;`LHS = LHS >> RHS` |
+
+**结合性**：赋值运算符是**右结合**（`a = b = c` 等价于 `a = (b = c)`，内层
+`(b = c)` 整体是 lvalue，可作外层 LHS — 见 §4.13.2 表）。
+
+**lvalue 上下文**：赋值 LHS 走 lvalue 路径（§4.13.4），RHS 走 rvalue 路径。`=` 的结果
+（整个赋值表达式）是 lvalue，值为赋值后的 LHS。
 
 ### 4.7 条件运算符
 
@@ -631,6 +645,113 @@ unmod(r);                // ✅ 想立即释放，缩短临界区（可省略）
 }
 *m2 = 200;               // 解锁，m2 可申请
 ```
+
+---
+
+### 4.13 表达式分类：lvalue 与 rvalue *(0.3.1 新增)*
+
+UltraCPP 中每个表达式属于以下两类之一：**lvalue**（左值）或 **rvalue**（右值）。这一分类是
+赋值、地址运算、`mod()` / `unmod()` 申请、引用绑定等核心语义的判定基础。
+
+#### 4.13.1 定义 *(0.3.1 新增)*
+
+**lvalue**（左值）— 标识一个对象，具有持久身份：
+
+- 有 identity（占据明确的存储位置）
+- 可作为赋值 `=` 的左侧
+- 可被取地址 `&` 运算
+- 在 codegen 层：走 **lvalue 路径** — emit 取地址指令（`getelementptr`、`alloca`
+  引用等），**不**自动 `load` 值
+
+**rvalue**（右值）— 表示一个临时值，无持久身份：
+
+- 没有 identity（临时计算结果）
+- **不**可作为赋值 `=` 的左侧
+- **不**可被取地址
+- 在 codegen 层：走 **rvalue 路径** — emit 求值指令（`load`、立即数、算术运算结果等）
+
+#### 4.13.2 哪些表达式是 lvalue *(0.3.1 新增)*
+
+| 表达式形式 | 类别 | 原因 |
+|-----------|------|------|
+| 变量名 `x` | lvalue | 标识声明对象 |
+| 解引用 `*p`（p 是 `T*` 指针类型） | lvalue | 标识 p 指向的对象 |
+| 字段访问 `s.field` | lvalue | 标识结构体中的成员 |
+| 索引 `a[i]` | lvalue | 标识数组中的元素 |
+| 引用 `T& r` 的使用 `r` | lvalue | 引用是对象的别名 |
+| 前缀自增 `++x` | lvalue | 修改后的对象 |
+| 前缀自减 `--x` | lvalue | 修改后的对象 |
+| 赋值表达式 `x = v` | lvalue | （整个赋值表达式的结果是 LHS） |
+| 函数调用 `f()` 的结果 | rvalue | 临时返回值 |
+| 字面量 `42`、`"hello"` | rvalue | 立即数 |
+| 算术运算 `a + b`、`a * b` | rvalue | 计算结果 |
+| 比较运算 `a < b`、`a == b` | rvalue | bool 值 |
+| 逻辑运算 `a && b`、`a \|\| b` | rvalue | bool 值 |
+| 后缀自增 `x++` | rvalue | 表达式的值是修改**前**的旧值 |
+| 后缀自减 `x--` | rvalue | 同上 |
+| 取地址 `&x` 的结果 | rvalue | 返回的是指针值（虽然操作 lvalue） |
+| 条件运算 `c ? a : b` | rvalue | 计算结果 |
+
+#### 4.13.3 赋值上下文约束 *(0.3.1 新增)*
+
+赋值运算符（`=` 及 `+=` / `-=` / `*=` 等复合赋值）的**左侧**必须为 lvalue。
+**非 lvalue 作左侧**是编译期错误（`AssignmentToRvalueError`）：
+
+```cpp
+42 = x;          // ❌ 字面量是 rvalue
+x + 1 = 2;       // ❌ 算术表达式是 rvalue
+f() = x;         // ❌ 函数调用结果是 rvalue
+x++ = 1;         // ❌ 后缀自增结果是 rvalue
+
+*x = v;          // ✅ 解引用是 lvalue（§4.13.2 表第 2 行）
+s.field = v;     // ✅ 字段访问是 lvalue
+a[i] = v;        // ✅ 索引是 lvalue
+++x = 1;         // ✅ 前缀自增是 lvalue
+x = y = z;       // ✅ 右结合，内层 `y = z` 整体是 lvalue 作为外层 LHS
+```
+
+复合赋值（`+=` / `-=` 等）的左侧同样必须为 lvalue，语义约束同 `=`。
+
+#### 4.13.4 codegen 实现约束 *(0.3.1 新增)*
+
+对 lvalue 表达式，调用 `gen_expr` 在不同上下文有不同行为。UltraCPP 编译器在 codegen
+阶段对每个表达式维护两个上下文信息：
+
+1. **value category**（lvalue / rvalue）— 由本节定义
+2. **concrete type** — 具体类型（如 `int`、`int*`、`Point`）
+
+| 调用上下文 | lvalue 表达式 codegen 行为 |
+|-----------|--------------------------|
+| 赋值 `=` 的 LHS（`UC_EXPR_ASSIGN.target`） | 走 lvalue 路径：emit 取地址（`getelementptr`、`alloca` 引用） |
+| 取地址 `&x` 的操作数 | 走 lvalue 路径：emit 栈 / 全局 / 字段地址 |
+| 表达式语句、函数实参、`=` 的 RHS、子表达式 | 走 rvalue 路径：emit `load` 或值复制 |
+
+例：
+
+```c
+int x = 42;
+int* p = &x;
+*p = v;           // LHS: lvalue 路径 → emit gep,store v
+y = *p;           // RHS: rvalue 路径 → emit load
+int z = *p + 1;   // RHS: rvalue 路径 → emit load + add
+&x;               // 取地址操作数: lvalue 路径 → emit 栈地址
+```
+
+**与 C/C++ 对比**：UltraCPP 的 lvalue / rvalue 二元分类与 C/C++ 一致（参见 K&R §A7.1、
+C++17 [basic.lval]）。但 UltraCPP **不**区分 C++11 引入的 xvalue（eXpiring value）、
+prvalue（pure rvalue）、glvalue（generalized lvalue）三分法——UltraCPP 只分两类，简单清晰。
+
+#### 4.13.5 与其他章节的交叉引用 *(0.3.1 新增)*
+
+| 章节 | 关系 |
+|------|------|
+| §4.1 优先级表 | 一元 `*` / `&` / `mod` / `unmod` / `++` / `--` 见 §4.1 第 2.5 级 |
+| §4.6 赋值运算符 | "LHS 必须是 lvalue" 引用 §4.13.2 分类表 |
+| §4.9 `mod()` | 操作数 lvalue 要求引用 §4.13.2 |
+| §4.10 `unmod()` | 操作数 lvalue 要求引用 §4.13.2 |
+| §7.1 所有权 + 隐式 mod | 隐式 `mod()` 目标是 lvalue，引用 §4.13.2 |
+| §7.8 引用 `&T` | "操作数必须是左值" 引用 §4.13.2 |
+| §12.1 EBNF | `lvalue` / `rvalue` 规则见 §12.1 *(0.3.1 新增)* |
 
 ---
 
@@ -1006,9 +1127,11 @@ int* p1 = alloc(int, 10);
 int* p2 = p1 + 5;   // 偏移指针
 ```
 
-### 7.8 引用 `&T`（重写 0.2.0 §7.8） *(0.3.0 改写：Rule 22, Rule 24, 删除 T&mut)*
+### 7.8 引用 `&T`（重写 0.2.0 §7.8） *(0.3.0 改写，0.3.1 修订)*
 
 > **[0.3.0 改写]** 0.3.0 删除 `T&mut` 类型。`T&` 是唯一的引用类型，是否可写由 `mod()` + `#modlaw` 决定。
+> **[0.3.1 修订]** 0.3.1 显式定义 lvalue / rvalue 概念（§4.13），本节“操作数必须是左值”
+> 的“左值”引用 §4.13.2 表达式分类表。
 
 **语法**（见 §12.1）：
 ```
@@ -1019,7 +1142,9 @@ int* p2 = p1 + 5;   // 偏移指针
 
 **创建规则：**
 
-1. 操作数必须是左值。
+1. 操作数必须是 lvalue（见 §4.13.2 表达式分类表 — 哪些表达式是 lvalue）。
+   - ✅ 合法：`&x`（变量）、`&*p`（解引用）、`&s.field`（字段访问）、`&a[i]`（索引）、`&++x`（前缀自增）
+   - ❌ 非法：`&42`（字面量）、`&x + 1`（算术结果）、`&f()`（函数调用结果）、`&x++`（后缀自增结果）
 2. owner 必须处于活跃且已初始化的状态。
 3. 引用不能超出 owner 的生命周期（违反时报 DanglingReference，见 §7.9）。
 4. `&` 不改变 owner 的所有权状态。
@@ -1806,10 +1931,34 @@ declaration_statement
 // === Expressions ===
 expression        ::= assignment_expression
 
+// [0.3.1] Assignment LHS must be an lvalue (see §4.13.2). The grammar permits
+// unary_expression on the LHS; the compiler enforces lvalue category in semantic
+// analysis (or codegen for legacy paths).
 assignment_expression
-                   ::= conditional_expression
-                    | unary_expression '=' assignment_expression
-                    | unary_expression compound_assignment assignment_expression
+                   ::= lvalue '=' assignment_expression             // [0.3.1] LHS constraint
+                    | lvalue compound_assignment assignment_expression
+
+// [0.3.1 Rule S2] lvalue / rvalue categorization — see §4.13 for full semantics.
+lvalue            ::= identifier                                     // variable
+                    | '*' cast_expression                            // unary deref
+                    | postfix_expression '[' expression ']'         // index
+                    | postfix_expression '.' identifier              // field access
+                    | '(' lvalue ')'                                 // parenthesized lvalue
+                    | lvalue '++'                                    // prefix increment (§4.13.2 row 6)
+                    | lvalue '--'                                    // prefix decrement
+                    | assignment_expression                          // result of `x = v` is lvalue
+
+rvalue            ::= literal                                        // integer / float / string / char / bool / null
+                    | postfix_expression '(' argument_list? ')'      // function call result
+                    | postfix_expression '++'                        // postfix increment
+                    | postfix_expression '--'                        // postfix decrement
+                    | '(' rvalue ')'                                 // parenthesized rvalue
+                    | '&' unary_expression                           // address-of result (pointer rvalue)
+                    | 'move' '(' expression ')'
+                    | 'clone' '(' expression ')'
+                    | 'mod' '(' expression ')'                       // [0.3.0 Rule 24]
+                    | 'unmod' '(' expression ')'                     // [0.3.0 Rule 24]
+                    | 'move_to_thread' '(' expression ',' expression ')'
 
 conditional_expression
                    ::= logical_or_expression ('?' expression ':' conditional_expression)?
@@ -1921,12 +2070,13 @@ mod        unmod      shared     __thread   move_to_thread
 
 > **[0.3.0 新增]** `mod`、`unmod`、`shared`、`__thread`、`move_to_thread`。**0.3.0 删除** `mut`（仅作为 `&mut` 记号的组成部分，删除 `T&mut` 后不再需要）。详见 §4.9、§4.10、§13。
 
-### 12.3 运算符优先级表 *(0.3.0 修订)*
+### 12.3 运算符优先级表 *(0.3.0 修订,0.3.1 补 2.5 级)*
 
 | 级别 | 运算符 | 描述 |
 |------|--------|------|
 | 1 | `::` | 作用域解析 |
 | 2 | `()` `[]` `.` `->` `++` `--` | 后缀 |
+| 2.5 | `*` `&` `+` `-` `!` `~` `mod` `unmod` `++` `--` (前缀) | 一元 *(0.3.1 补)* |
 | 3 | `*` `/` `%` | 乘法 |
 | 4 | `+` `-` | 加法 |
 | 5 | `<<` `>>` | 移位 |
@@ -2208,7 +2358,8 @@ __thread int local = 42;  // 每线程独立
 | 0.1.0 | 2026-04-18 | 0.1.0 定版 |
 | 0.2.0 | 2026-08-07 | 落实 8 条设计决策 D-1 .. D-8：`unique` 泛型化、`&` 不可变借用、`&mut` 入语言、`move` 内建 primitive、显式化赋值 move 规则、`alloc`/`free` 不强制配对、`DanglingReference` 触发条件、C 主机优先决策。*（注：0.3.0 反转 D-3，删除 `&mut`；D-2 关于 `&` 语义被 Q3 反转覆盖。）* |
 | **0.3.0** | **2026-08-07** | **本版本**：两条权限彻底拆分（Rule 22）；新增 `#modlaw` 指令（Rule 23）；新增 `mod()` / `unmod()` 表达式（Rule 24）；新增线程模型章节 §13（Rule 25–28）；改写 §3.3 引用类型为**单一 `T&`**（Q3 反转，**删除 `T&mut`**）；改写 §3.8 指针修饰符为「与 C++ 相反」的 Q6 自定义语义；改写 §7.1 赋值为「隐式 `mod()` + 不转所有权」（Q4=a）；重写 §3.2 区分 owning 与 non-owning 指针（Rule 2B）；§11.5.1 新增 `mutex<T>` / `atomic<T>` 标准库类型（修订 #5、#6）。状态：草稿。 |
+| **0.3.1** | **2026-08-12** | **本版本（lvalue / rvalue 概念明确化，S2）**：新增 §4.13 「表达式分类：lvalue 与 rvalue」完整章节（§4.13.1 定义 + §4.13.2 lvalue 分类表 + §4.13.3 赋值上下文约束 + §4.13.4 codegen 实现约束 + §4.13.5 交叉引用）；§4.1 优先级表补 2.5 级一元 op（`*` `&` `+` `-` `!` `~` `mod` `unmod` 前缀 `++` `--`，右到左）；§4.6 赋值运算符表 11 行统一加「LHS 必须是 lvalue (§4.13.2)」约束 + 头注 + 结合性 + lvalue 上下文说明；§7.8 引用创建规则 1 引用 §4.13.2 并加 5 合法 + 4 非法示例；§12.1 EBNF 加 `lvalue` / `rvalue` 非终结符并改 `assignment_expression` LHS 标注；§12.3 附录优先级表同步加 2.5 级。**修复 m0_42 deref-assign bug**（`*view = payload` 从 compile_failed → PASS）。不引入新语法、不修改现有语义、向后兼容。状态：草稿。 |
 
 ---
 
-*UltraCPP 0.3.0 语言规范（草稿）*
+*UltraCPP 0.3.1 语言规范（草稿）*
