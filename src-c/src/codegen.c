@@ -448,7 +448,7 @@ static char* mk_label(UCCodeGenerator* g, const char* prefix) {
 static void gen_toplevel(UCCodeGenerator* g, const UCTopLevel* decl);
 static void gen_func(UCCodeGenerator* g, const UCFuncDef* func, int exported);
 static void gen_stmt(UCCodeGenerator* g, const UCStmt* stmt);
-static char* gen_expr(UCCodeGenerator* g, const UCExpr* expr, UCError* err);
+static char* gen_expr(UCCodeGenerator* g, const UCExpr* expr, UCError* err, int in_lvalue_ctx);
 static void gen_syscall_call(UCCodeGenerator* g, const char* symbol,
                              const UCVec* args, const char* res, UCError* err);
 
@@ -708,7 +708,7 @@ static void gen_stmt(UCCodeGenerator* g, const UCStmt* stmt) {
         }
         case UC_STMT_IF: {
             UCError err; uc_error_init(&err);
-            char* cv = gen_expr(g, stmt->as.if_stmt.cond, &err);
+            char* cv = gen_expr(g, stmt->as.if_stmt.cond, &err, 0);
             if (!cv || err.kind != UC_ERR_NONE) { free(cv); return; }
             char* then_lbl = mk_label(g, "if_then");
             char* else_lbl = stmt->as.if_stmt.else_branch
@@ -741,7 +741,7 @@ static void gen_stmt(UCCodeGenerator* g, const UCStmt* stmt) {
             emit_fmt_writeln(g, "br label %s", c_lbl);
             emit_label(g, c_lbl);
             UCError err; uc_error_init(&err);
-            char* cv = gen_expr(g, stmt->as.while_stmt.cond, &err);
+            char* cv = gen_expr(g, stmt->as.while_stmt.cond, &err, 0);
             if (!cv || err.kind != UC_ERR_NONE) {
                 free(cv);
                 pop_loop_scope(g);  /* frees e_lbl + c_lbl */
@@ -763,7 +763,7 @@ static void gen_stmt(UCCodeGenerator* g, const UCStmt* stmt) {
         case UC_STMT_RETURN: {
             if (stmt->as.ret) {
                 UCError err; uc_error_init(&err);
-                char* v = gen_expr(g, stmt->as.ret, &err);
+                char* v = gen_expr(g, stmt->as.ret, &err, 0);
                 if (!v || err.kind != UC_ERR_NONE) { free(v); return; }
                 emit_fmt_writeln(g, "ret i32 %s", v);
                 free(v);
@@ -775,14 +775,14 @@ static void gen_stmt(UCCodeGenerator* g, const UCStmt* stmt) {
         case UC_STMT_EXPR: {
             if (stmt->as.expr) {
                 UCError err; uc_error_init(&err);
-                char* v = gen_expr(g, stmt->as.expr, &err);
+                char* v = gen_expr(g, stmt->as.expr, &err, 0);
                 free(v);
             }
             break;
         }
         case UC_STMT_FREE: {
             UCError err; uc_error_init(&err);
-            char* p = gen_expr(g, stmt->as.expr, &err);
+            char* p = gen_expr(g, stmt->as.expr, &err, 0);
             if (!p || err.kind != UC_ERR_NONE) { free(p); return; }
             emit_fmt_writeln(g, "call void @free(i8* %s)", p);
             free(p);
@@ -797,7 +797,7 @@ static void gen_stmt(UCCodeGenerator* g, const UCStmt* stmt) {
             emit_fmt_writeln(g, "%s = alloca %s", alloc, ll_type);
             if (d->init) {
                 UCError err; uc_error_init(&err);
-                char* v = gen_expr(g, d->init, &err);
+                char* v = gen_expr(g, d->init, &err, 0);
                 if (v && err.kind == UC_ERR_NONE) {
                     const char* expr_type = g->last_expr_type
                                             ? g->last_expr_type : "i32";
@@ -855,7 +855,7 @@ static void gen_stmt(UCCodeGenerator* g, const UCStmt* stmt) {
 
             emit_label(g, cond_lbl);
             if (stmt->as.for_stmt.cond) {
-                char* cv = gen_expr(g, stmt->as.for_stmt.cond, &err);
+                char* cv = gen_expr(g, stmt->as.for_stmt.cond, &err, 0);
                 if (!cv || err.kind != UC_ERR_NONE) {
                     free(cv);
                     pop_loop_scope(g);  /* frees end_lbl + step_lbl */
@@ -878,7 +878,7 @@ static void gen_stmt(UCCodeGenerator* g, const UCStmt* stmt) {
 
             emit_label(g, step_lbl);
             if (stmt->as.for_stmt.step) {
-                char* sv = gen_expr(g, stmt->as.for_stmt.step, &err);
+                char* sv = gen_expr(g, stmt->as.for_stmt.step, &err, 0);
                 if (err.kind != UC_ERR_NONE) {
                     free(sv);
                     pop_loop_scope(g);
@@ -930,7 +930,7 @@ static void gen_syscall_call(UCCodeGenerator* g, const char* symbol,
             return;
         }
         UCError e2; uc_error_init(&e2);
-        char* a0 = gen_expr(g, (const UCExpr*)uc_vec_at(args, 0), &e2);
+        char* a0 = gen_expr(g, (const UCExpr*)uc_vec_at(args, 0), &e2, 0);
         if (!a0) { free(a0); return; }
         emit_fmt_writeln(g, "%s = call i64 @strlen(i8* %s)", res, a0);
         free(a0);
@@ -943,9 +943,9 @@ static void gen_syscall_call(UCCodeGenerator* g, const char* symbol,
             return;
         }
         UCError e2; uc_error_init(&e2);
-        char* a0 = gen_expr(g, (const UCExpr*)uc_vec_at(args, 0), &e2);
-        char* a1 = gen_expr(g, (const UCExpr*)uc_vec_at(args, 1), &e2);
-        char* a2 = gen_expr(g, (const UCExpr*)uc_vec_at(args, 2), &e2);
+        char* a0 = gen_expr(g, (const UCExpr*)uc_vec_at(args, 0), &e2, 0);
+        char* a1 = gen_expr(g, (const UCExpr*)uc_vec_at(args, 1), &e2, 0);
+        char* a2 = gen_expr(g, (const UCExpr*)uc_vec_at(args, 2), &e2, 0);
         char* a2_final;
         if (g->last_expr_type && strcmp(g->last_expr_type, "i32") == 0) {
             char* ext = mk_temp(g);
@@ -966,9 +966,9 @@ static void gen_syscall_call(UCCodeGenerator* g, const char* symbol,
             return;
         }
         UCError e2; uc_error_init(&e2);
-        char* a0 = gen_expr(g, (const UCExpr*)uc_vec_at(args, 0), &e2);
-        char* a1 = gen_expr(g, (const UCExpr*)uc_vec_at(args, 1), &e2);
-        char* a2 = gen_expr(g, (const UCExpr*)uc_vec_at(args, 2), &e2);
+        char* a0 = gen_expr(g, (const UCExpr*)uc_vec_at(args, 0), &e2, 0);
+        char* a1 = gen_expr(g, (const UCExpr*)uc_vec_at(args, 1), &e2, 0);
+        char* a2 = gen_expr(g, (const UCExpr*)uc_vec_at(args, 2), &e2, 0);
         emit_fmt_writeln(g, "%s = call i64 @read(i32 %s, i8* %s, i64 %s)",
                          res, a0, a1, a2);
         free(a0); free(a1); free(a2);
@@ -984,12 +984,12 @@ static void gen_syscall_call(UCCodeGenerator* g, const char* symbol,
 /* Expressions                                                               */
 /* ------------------------------------------------------------------------- */
 
-static char* gen_expr(UCCodeGenerator* g, const UCExpr* expr, UCError* err) {
+static char* gen_expr(UCCodeGenerator* g, const UCExpr* expr, UCError* err, int in_lvalue_ctx) {
     switch (expr->kind) {
         case UC_EXPR_BINARY: {
-            char* lv = gen_expr(g, expr->as.binary.lhs, err);
+            char* lv = gen_expr(g, expr->as.binary.lhs, err, 0);
             if (!lv || err->kind != UC_ERR_NONE) return lv;
-            char* rv = gen_expr(g, expr->as.binary.rhs, err);
+            char* rv = gen_expr(g, expr->as.binary.rhs, err, 0);
             if (!rv || err->kind != UC_ERR_NONE) { free(lv); return rv; }
             char* res = mk_temp(g);
             const char* irop = NULL;
@@ -1035,7 +1035,7 @@ static char* gen_expr(UCCodeGenerator* g, const UCExpr* expr, UCError* err) {
             return res;
         }
         case UC_EXPR_UNARY: {
-            char* v = gen_expr(g, expr->as.unary.operand, err);
+            char* v = gen_expr(g, expr->as.unary.operand, err, 0);
             if (!v || err->kind != UC_ERR_NONE) return v;
             char* res = mk_temp(g);
             switch (expr->as.unary.op) {
@@ -1046,6 +1046,13 @@ static char* gen_expr(UCCodeGenerator* g, const UCExpr* expr, UCError* err) {
                     emit_fmt_writeln(g, "%s = xor i32 %s, 1", res, v);
                     break;
                 case UC_UN_DEREF:
+                    /* lvalue context: return the pointer (the operand of *),
+                     * don't actually load. This lets `int* p = &x; *p = ...;`
+                     * in a future milestone work without a value-type trap. */
+                    if (in_lvalue_ctx) {
+                        free(res);
+                        return v;
+                    }
                     emit_fmt_writeln(g, "%s = load i32, i32* %s", res, v);
                     break;
                 case UC_UN_ADDR_OF: {
@@ -1165,10 +1172,10 @@ static char* gen_expr(UCCodeGenerator* g, const UCExpr* expr, UCError* err) {
                 }
             }
             if (!target_addr) {
-                target_addr = gen_expr(g, expr->as.assign.target, err);
+                target_addr = gen_expr(g, expr->as.assign.target, err, 1);
                 if (!target_addr || err->kind != UC_ERR_NONE) return target_addr;
             }
-            char* value = gen_expr(g, expr->as.assign.value, err);
+            char* value = gen_expr(g, expr->as.assign.value, err, 0);
             if (!value || err->kind != UC_ERR_NONE) { free(target_addr); return value; }
             const char* ty = g->last_expr_type
                              ? g->last_expr_type : "i32";
@@ -1189,7 +1196,7 @@ static char* gen_expr(UCCodeGenerator* g, const UCExpr* expr, UCError* err) {
              * Single join label (tern_j) is fine: each predecessor has
              * exactly one successor (the join), so the merge is not on
              * a critical edge and the phi lives in the join block. */
-            char* cv = gen_expr(g, expr->as.ternary.cond, err);
+            char* cv = gen_expr(g, expr->as.ternary.cond, err, 0);
             if (!cv || err->kind != UC_ERR_NONE) { free(cv); return NULL; }
 
             char* then_lbl = mk_label(g, "tern_t");
@@ -1200,12 +1207,12 @@ static char* gen_expr(UCCodeGenerator* g, const UCExpr* expr, UCError* err) {
                              cv, then_lbl, else_lbl);
 
             emit_label(g, then_lbl);
-            char* tv = gen_expr(g, expr->as.ternary.then_e, err);
+            char* tv = gen_expr(g, expr->as.ternary.then_e, err, 0);
             if (!tv || err->kind != UC_ERR_NONE) { free(cv); free(tv); return NULL; }
             emit_fmt_writeln(g, "br label %s", join_lbl);
 
             emit_label(g, else_lbl);
-            char* ev = gen_expr(g, expr->as.ternary.else_e, err);
+            char* ev = gen_expr(g, expr->as.ternary.else_e, err, 0);
             if (!ev || err->kind != UC_ERR_NONE) { free(cv); free(tv); free(ev); return NULL; }
             emit_fmt_writeln(g, "br label %s", join_lbl);
 
@@ -1257,7 +1264,7 @@ static char* gen_expr(UCCodeGenerator* g, const UCExpr* expr, UCError* err) {
                 Buf argbuf; argbuf.data = NULL; argbuf.len = 0; argbuf.cap = 0;
                 for (size_t i = 0; i < uc_vec_len(expr->as.call.args); i++) {
                     UCExpr* a = (UCExpr*)uc_vec_at(expr->as.call.args, i);
-                    char* av = gen_expr(g, a, err);
+                    char* av = gen_expr(g, a, err, 0);
                     if (!av || err->kind != UC_ERR_NONE) {
                         free(symbol); buf_free(&argbuf);
                         return av;
@@ -1368,7 +1375,7 @@ static char* gen_expr(UCCodeGenerator* g, const UCExpr* expr, UCError* err) {
             return cgen_strdup("null");
         case UC_EXPR_MOVE:
             /* PARSE-ONLY: ownership transfer is M2. Pass through. */
-            return gen_expr(g, expr->as.move_expr, err);
+            return gen_expr(g, expr->as.move_expr, err, 0);
         case UC_EXPR_CAST: {
             /* C-style cast `(T)expr`: lower to LLVM `bitcast`. With LLVM
              * 18 opaque pointers both src and dst are typically `i8*`,
@@ -1376,7 +1383,7 @@ static char* gen_expr(UCCodeGenerator* g, const UCExpr* expr, UCError* err) {
              * required to convey the type change. We set last_expr_type
              * to the dst so subsequent UC_STMT_DECL/UC_EXPR_ASSIGN pick
              * up the new type. */
-            char* v = gen_expr(g, expr->as.cast.operand, err);
+            char* v = gen_expr(g, expr->as.cast.operand, err, 0);
             if (!v || err->kind != UC_ERR_NONE) return v;
             char* src = g->last_expr_type ? g->last_expr_type : "i32";
             char* dst = llvm_type_of(g, expr->as.cast.ty);
