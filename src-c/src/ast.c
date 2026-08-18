@@ -16,9 +16,40 @@
 #include <stdlib.h>
 #include <string.h>
 
-/* ------------------------------------------------------------------------- */
-/* Small allocation helpers                                                  */
-/* ------------------------------------------------------------------------- */
+/* Extern function signatures shared by parser and code generator. */
+static char* ast_strdup(const char* s) {
+    size_t n = strlen(s) + 1;
+    char* p = (char*)malloc(n);
+    if (!p) abort();
+    memcpy(p, s, n);
+    return p;
+}
+
+
+extern_func_sig_t* g_extern_funcs = NULL;
+int g_extern_func_count = 0;
+int g_extern_func_capacity = 0;
+
+void extern_func_table_add(const char* name, const char* ret_type, char** param_types, int param_count) {
+    if (g_extern_func_count >= g_extern_func_capacity) {
+        int cap = g_extern_func_capacity ? g_extern_func_capacity * 2 : 16;
+        g_extern_funcs = (extern_func_sig_t*)realloc(g_extern_funcs, cap * sizeof(*g_extern_funcs));
+        g_extern_func_capacity = cap;
+    }
+    extern_func_sig_t* s = &g_extern_funcs[g_extern_func_count++];
+    s->name = ast_strdup(name ? name : "");
+    s->ret_type = ast_strdup(ret_type ? ret_type : "i32");
+    s->param_types = param_types;
+    s->param_count = param_count;
+}
+
+const extern_func_sig_t* lookup_extern_func(const char* name) {
+    for (int i = 0; name && i < g_extern_func_count; i++)
+        if (strcmp(g_extern_funcs[i].name, name) == 0) return &g_extern_funcs[i];
+    return NULL;
+}
+
+
 
 static void* xmalloc(size_t n) {
     void* p = malloc(n);
@@ -782,6 +813,7 @@ static void expr_free(void* p) {
         case UC_EXPR_CALL:
             expr_free(e->as.call.callee);
             expr_vec_free(e->as.call.args);
+            free(e->as.call.return_type);
             break;
         case UC_EXPR_INDEX:
             expr_free(e->as.index.target);

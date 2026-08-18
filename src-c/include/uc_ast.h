@@ -67,8 +67,20 @@ typedef struct UCImport    UCImport;
 typedef struct UCType      UCType;
 typedef struct UCStmt      UCStmt;
 typedef struct UCExpr      UCExpr;
+typedef struct extern_func_sig {
+    char* name;
+    char* ret_type;
+    char** param_types;
+    int param_count;
+} extern_func_sig_t;
 
-/* ------------------------------------------------------------------------- */
+extern extern_func_sig_t* g_extern_funcs;
+extern int g_extern_func_count;
+extern int g_extern_func_capacity;
+void extern_func_table_add(const char* name, const char* ret_type, char** param_types, int param_count);
+const extern_func_sig_t* lookup_extern_func(const char* name);
+
+
 /* Type                                                                      */
 /* ------------------------------------------------------------------------- */
 
@@ -416,6 +428,7 @@ struct UCExpr {
         struct {
             UCExpr* callee;         /* owned */
             UCVec* args;            /* owned; each item is UCExpr* */
+            char* return_type;      /* codegen-resolved LLVM IR type */
         } call;
         struct {
             UCExpr* target;         /* owned */

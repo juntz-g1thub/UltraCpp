@@ -13,9 +13,25 @@
 #include <stdlib.h>
 #include <string.h>
 
-/* ------------------------------------------------------------------------- */
-/* Growable string buffer                                                    */
-/* ------------------------------------------------------------------------- */
+typedef struct {
+    const char* name;
+    const char* llvm_ret;
+} builtin_sig_t;
+static const builtin_sig_t builtin_sigs[] = {
+    {"print", "void"}, {"print_num", "void"}, {"print_float", "void"},
+    {"strlen", "i32"}, {"strcpy", "i8*"}, {"strcmp", "i32"},
+    {"memcpy", "i8*"}, {"memmove", "i8*"}, {"memset", "i8*"},
+    {"sizeof_impl", "i32"}, {"alignof_impl", "i32"}, {"is_null", "i1"},
+    {"clone_impl", "i32*"}, {"abs_int", "i32"}, {NULL, NULL}
+};
+static const char* lookup_builtin_ret(const char* name) {
+    if (!name) return NULL;
+    for (int i = 0; builtin_sigs[i].name; i++)
+        if (strcmp(builtin_sigs[i].name, name) == 0) return builtin_sigs[i].llvm_ret;
+    return NULL;
+}
+
+
 
 typedef struct Buf {
     char* data;
@@ -1278,8 +1294,29 @@ static char* gen_expr(UCCodeGenerator* g, const UCExpr* expr, UCError* err, int 
                     free(av);
                 }
                 if (argbuf.data == NULL) buf_appends(&argbuf, "");
-                emit_fmt_writeln(g, "%s = call i32 %s(%s)",
-                                 res, symbol, argbuf.data);
+                const char* ret = NULL;
+                const char* fn_name = (callee->kind == UC_EXPR_IDENT)
+                    ? callee->as.ident.data : NULL;
+                ret = lookup_builtin_ret(fn_name);
+                if (!ret) {
+                    const extern_func_sig_t* es = lookup_extern_func(fn_name);
+                    if (es) ret = es->ret_type;
+                }
+                if (!ret) ret = "i32";
+                free(expr->as.call.return_type);
+                ((UCExpr*)expr)->as.call.return_type = cgen_strdup(ret);
+                if (strcmp(ret, "void") == 0) {
+                    emit_fmt_writeln(g, "call void %s(%s)", symbol, argbuf.data);
+                    free(g->last_expr_type);
+                    g->last_expr_type = cgen_strdup("void");
+                    free(res);
+                    res = mk_temp(g);
+                } else {
+                    emit_fmt_writeln(g, "%s = call %s %s(%s)",
+                                     res, ret, symbol, argbuf.data);
+                    free(g->last_expr_type);
+                    g->last_expr_type = cgen_strdup(ret);
+                }
                 buf_free(&argbuf);
             }
             free(symbol);
@@ -1388,11 +1425,24 @@ static char* gen_expr(UCCodeGenerator* g, const UCExpr* expr, UCError* err, int 
             char* src = g->last_expr_type ? g->last_expr_type : "i32";
             char* dst = llvm_type_of(g, expr->as.cast.ty);
             char* res = mk_temp(g);
-            emit_fmt_writeln(g, "%s = bitcast %s %s to %s",
-                             res, src, v, dst);
+            if (strcmp(src, dst) == 0 || (strcmp(dst, "i8*") == 0 && strcmp(src, "i8*") == 0)) {
+                free(res); res = v;
+            } else if (strcmp(src, "i8*") == 0 && strncmp(dst, "i", 1) == 0) {
+                emit_fmt_writeln(g, "%s = ptrtoint i8* %s to %s", res, v, dst);
+            } else if (strncmp(src, "i", 1) == 0 && strcmp(dst, "i8*") == 0) {
+                emit_fmt_writeln(g, "%s = inttoptr %s %s to i8*", res, src, v);
+            } else if (strcmp(src, "i32") == 0 && strcmp(dst, "i64") == 0) {
+                emit_fmt_writeln(g, "%s = sext i32 %s to i64", res, v);
+            } else if (strcmp(src, "i64") == 0 && strcmp(dst, "i32") == 0) {
+                emit_fmt_writeln(g, "%s = trunc i64 %s to i32", res, v);
+            } else if ((strcmp(dst, "float") == 0 || strcmp(dst, "double") == 0) && strncmp(src, "i", 1) == 0) {
+                emit_fmt_writeln(g, "%s = sitofp %s %s to %s", res, src, v, dst);
+            } else {
+                emit_fmt_writeln(g, "%s = bitcast %s %s to %s", res, src, v, dst);
+            }
             free(g->last_expr_type);
-            g->last_expr_type = dst;
-            free(v);
+            g->last_expr_type = cgen_strdup(dst);
+            if (res != v) free(v);
             return res;
         }
         case UC_EXPR_ALLOC: {
