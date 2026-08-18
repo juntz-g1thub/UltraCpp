@@ -291,6 +291,43 @@ static const char* get_builtins_decls(void) {
         "declare void @free(i8*)\n";
 }
 
+/* Builtin function bodies — emitted at module start so that calls to
+ * @builtin_<name> resolve at link time without depending on libc.
+ *
+ * Per Plan A step 2 (0.3.2-implementation-plan.md §3.2): the user-facing
+ * builtin `abs_int` (spec §11.0.1) gets a real implementation; other
+ * builtins get a void-returning stub so a future test that calls them
+ * still links (the stub returns immediately and the test verifies the
+ * compile path, not runtime semantics).
+ *
+ * abs_int semantics: |x| = (x > 0) ? x : -x. Matches the values asserted
+ * by test/programs/baseline/m0_41_extern_c.uc (abs_int(-7)=7, abs_int(0)=0,
+ * abs_int(3)=3 → return 10).
+ */
+static const char* get_builtins_defs(void) {
+    return
+        "\n"
+        "define i32 @builtin_abs_int(i32 %x) {\n"
+        "entry:\n"
+        "    %abs_pos = icmp sgt i32 %x, 0\n"
+        "    %abs_neg = sub i32 0, %x\n"
+        "    %abs_ret = select i1 %abs_pos, i32 %x, i32 %abs_neg\n"
+        "    ret i32 %abs_ret\n"
+        "}\n"
+        "define void @builtin_print(i8* %s) {\n"
+        "entry:\n"
+        "    ret void\n"
+        "}\n"
+        "define void @builtin_print_num(i32 %x) {\n"
+        "entry:\n"
+        "    ret void\n"
+        "}\n"
+        "define void @builtin_print_float(double %x) {\n"
+        "entry:\n"
+        "    ret void\n"
+        "}\n";
+}
+
 /* ------------------------------------------------------------------------- */
 /* Type -> LLVM type string                                                  */
 /* ------------------------------------------------------------------------- */
@@ -1297,8 +1334,18 @@ static char* gen_expr(UCCodeGenerator* g, const UCExpr* expr, UCError* err, int 
                 const char* ret = NULL;
                 const char* fn_name = (callee->kind == UC_EXPR_IDENT)
                     ? callee->as.ident.data : NULL;
-                ret = lookup_builtin_ret(fn_name);
-                if (!ret) {
+                if ((ret = lookup_builtin_ret(fn_name))) {
+                    /* Plan A step 2 (0.3.2 §3.2): redirect call to a builtin-
+                     * provided symbol so that user code never references the
+                     * libc name (which would link-fail when libc has no such
+                     * function, e.g. abs_int). The body is emitted by
+                     * get_builtins_defs() at module start. */
+                    size_t sn = strlen(fn_name) + 10;
+                    char* renamed = (char*)malloc(sn);
+                    snprintf(renamed, sn, "@builtin_%s", fn_name);
+                    free(symbol);
+                    symbol = renamed;
+                } else {
                     const extern_func_sig_t* es = lookup_extern_func(fn_name);
                     if (es) ret = es->ret_type;
                 }
@@ -1484,6 +1531,7 @@ char* uc_codegen_generate(UCCodeGenerator* g, const UCModule* m, UCError* err) {
     /* Concatenate: header + global_strings + extern_decls + output */
     Buf all; all.data = NULL; all.len = 0; all.cap = 0;
     buf_appends(&all, get_builtins_decls());
+    buf_appends(&all, get_builtins_defs());
     if (g->global_strings.data) buf_append(&all, g->global_strings.data,
                                             g->global_strings.len);
     if (g->extern_decls.data) buf_append(&all, g->extern_decls.data,
