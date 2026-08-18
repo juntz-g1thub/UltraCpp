@@ -34,26 +34,35 @@
 
 ---
 
-## Git 操作约束 *(新增, 2026-08-17)*
+## Git 操作约束 *(修订, 2026-08-17)*
 
-代理（agent）在 git 操作上有严格的权限边界：
+代理（agent）的 git 操作权限按以下矩阵分配：
 
-| 级别 | 操作 | 是否允许 |
+| 类别 | 操作 | 权限 |
 |---|---|---|
-| 本地写 | `git add` / `git commit` / `git commit --amend` | ✅ 允许 |
-| 本地只读 | `git status` / `git log` / `git diff` / `git show` / `git blame` | ✅ 允许 |
-| 本地重构 | `git rebase` / `git reset --soft/mixed`（在已 push 提交上）| ⚠️ 需用户确认 |
-| 远程写 | `git push` / `git fetch`（写入远程） / `git pull --rebase/merge` | ❌ 严禁 |
-| 远程管理 | `git remote add/remove` / `git branch -u` | ❌ 严禁 |
+| 本地只读 | `git status` / `git log` / `git diff` / `git show` / `git blame` | ✅ 自由执行 |
+| 本地 commit | `git add` / `git commit` / `git commit --amend` | ✅ 默认自由 |
+| 本地重构 | `git rebase` / `git reset` / `git cherry-pick` / `git stash` / `git revert`（破坏历史） | ❌ **直接禁止** |
+| 远程写 | `git push` / `git fetch --write` / `git pull --rebase/merge` | ❌ **直接禁止** |
+| 远程管理 | `git remote add/remove` / `git branch -u` / `git tag --push` | ❌ **直接禁止** |
 
-**铁律**：任何涉及远程仓库的写操作（`git push` 及同类）必须**提示用户手动执行**，代理不得自行调用。即使是 push 到本地 fork、push 到自己的分支、push draft branch 等"无害"场景也不例外。
+### 原则
 
-**理由**：
-1. 远程操作不可逆（一旦 push 到共享分支，rebase/force-push 会破坏他人工作）
-2. 用户的 GitHub 凭据、SSH key、推送策略不在代理的决策范围内
-3. CI / pre-push hooks 行为可能与代理预期不符
+1. **commit 默认自由**：agent 可自行 `git add` + `git commit`，无需逐次确认。前提是改动计划**单一明确**（如"翻译 README 并 commit"）。
+2. **多方案时停下询问**：当改动存在多种合理 commit 切分方式（按文件 / 按主题 / 拆分 / 合并 / squash / 原子化等），agent **不得自作主张**，必须列出候选方案让用户拍板。例：
+   > 本次涉及 4 个文件：①全部合并为 1 commit；②按文件拆 4 commit；③按主题拆（spec 修复 vs README 改动）。请选择方案。
+3. **本地重构完全交给用户**：`git rebase` / `git reset` / `git cherry-pick` / `git stash` 等可能改写历史的操作 agent **不得调用**。理由：
+   - 这些操作一旦失误，恢复成本高（reflog 虽能救但非万无一失）
+   - 常需结合 push 协作（force-push），与远程禁令冲突
+   - 与"commit 默认自由"不同：commit 是追加，重构是改写，前者不可逆程度远低于后者
+4. **远程操作完全禁止**：`git push` 及任何写入远程仓库的操作 agent **不得自行调用**，必须由用户手动执行。理由：
+   - 远程操作不可逆（push 到共享分支后 force-push 会破坏他人工作）
+   - 用户的 GitHub 凭据、SSH key、推送策略不在代理决策范围内
+   - CI / pre-push hooks 行为可能与代理预期不符
 
-**例外**：仅当用户在同一次对话中明确说"push 吧"或类似授权时，代理才可执行一次 `git push`，并在输出中说明本次 push 的目标分支与提交摘要。
+### 例外
+
+仅当用户在同一次对话中**明确授权**（如"push 吧" / "做 rebase"）时，agent 才可执行对应操作**一次**，并在输出中说明本次操作的目标与影响范围。授权不延续到后续操作。
 
 ---
 
@@ -165,8 +174,9 @@
 
 ## 后续工作 *(待办)*
 
-- ⚠️ `README.md` / `README-zh-CN.md` 当前含 `authoritative / companion` 措辞，需按本节规则清理（用户已确认方向但尚未执行）
+- ✅ `README.md` / `README-zh-CN.md` 已按本节规则清理（commit `b7ca430`，header 重写 + banned-word 移除 + 0.3.1 spec 引用更新）
 - ⚠️ `.dev/_archive/` 历史归档不含 spec 双语文件，仅含 README + 设计笔记；本节翻译规则不追溯历史
+- ⚠️ HANDOFF.md 当前仍含 `current authoritative` 措辞（line 96），是否同步清理待用户决定（不在本节强制范围）
 
 ---
 
