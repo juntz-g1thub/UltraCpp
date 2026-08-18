@@ -18,5 +18,5 @@ int main() {
     unsafe {
         free(mem);
     }
-    return payload;
+    return payload; // 42
 }
