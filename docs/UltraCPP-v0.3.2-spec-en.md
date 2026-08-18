@@ -12,136 +12,136 @@
 
 ---
 
-## 修订摘要
+## Revision Summary
 
-本版本在 0.2.0 的基础上，落实 **21+ 条语言设计决策**（决策编号沿用历史 D-1 .. D-8，本版本新增 Rule 1, 2A, 2B, Q1 .. Q6, Rule 22 .. 28）。**两条权限彻底拆分**（Rule 22）与 **#modlaw 指令**（Rule 23）是本次修订的核心概念改动。
+This version, building on 0.2.0, implements **21+ language design decisions** (decision numbering continues the historical D-1 .. D-8; this version newly adds Rule 1, 2A, 2B, Q1 .. Q6, Rule 22 .. 28). **The complete split of two permissions** (Rule 22) and the **`#modlaw` directive** (Rule 23) are the core conceptual changes of this revision.
 
-> **[0.3.1]** 本版本在 0.3.0 的基础上，**新增 §4.13「表达式分类：lvalue 与 rvalue」** 完整章节，并在 §4.1 优先级表新增 2.5 级一元运算符优先级行、§4.6 赋值运算符表 11 行统一补「LHS 必须是 lvalue」约束、§7.8 引用规则 1 改写并交叉引用 §4.13.2、§12.1 EBNF 增加 `lvalue` / `rvalue` 非终结符、§12.3 附录优先级表同步 §4.1 加 2.5 级。**不引入新语法、不修改现有语义**，仅补 lvalue 概念术语并修 m0_42 deref-assign bug。详见变更日志中 0.3.1 行。
+> **[0.3.1]** This version, building on 0.3.0, **adds the complete §4.13 "Expression Classification: lvalue and rvalue"** chapter, and adds a new level-2.5 row for unary operator precedence in the §4.1 precedence table, unifies the 11 rows of the §4.6 assignment operator table with the "LHS must be an lvalue" constraint, rewrites rule 1 of §7.8 with a cross-reference to §4.13.2, adds `lvalue` / `rvalue` non-terminals to the §12.1 EBNF, and synchronizes the §12.3 appendix precedence table with §4.1 by adding level 2.5. **No new syntax is introduced, no existing semantics are modified**; only the lvalue concept and terminology are filled in, and the m0_42 deref-assign bug is fixed. See the 0.3.1 row of the changelog for details.
 
-| 主题 | 决策编号 | 一句话摘要 |
+| Topic | Decision | One-line summary |
 |------|---------|-----------|
-| 基础 | Rule 1 | Owning 类型不限堆/栈；活跃期内不变；超出后随意；由初始化表达式推断存储位置。 |
-| 引用 | Rule 2A | `&` 引用禁止 owning；编译期报 null ref；每线程作用域隔离。 |
-| 指针 | Rule 2B | `T*` 由初始化表达式区分 owning 与 non-owning；赋值 `p1 = p2` **不复制所有权**，**给 p1 修改权**（隐式 `mod(p1)`）。 |
-| 指针 | Q1 | `unique T` ≡ `T*`，可省略。 |
-| 声明 | Q2 | 引用 `T& a = b`（右侧是左值）；指针 `T* a = &b`（右侧是取地址）。 |
-| 引用 | Q3 | 单一引用类型 `T&`；独占性由 `#modlaw exclusive` + `mod()` 申请控制，不在类型层区分。 |
-| 指针 | Q4 | `p1 = p2` 不 move，p1 得修改权（隐式 `mod(p1)`）。 |
-| 指针 | Q5 | `move(p)` 仍然必要，显式移交所有权。 |
-| 指针 | Q6 | `const T*` / `T* const` 自定义语义（与 C++ 相反）；owning heap 变量**不能**创建只读指针。 |
-| 权限 | **Rule 22** | **两条权限彻底拆分**：所有权（决定谁 delete/free）和修改权（决定谁能改值）独立。 |
-| 指令 | **Rule 23** | 新增 `#modlaw` 指令，6 种合法组合。 |
-| 表达式 | **Rule 24** | 新增 `mod(ref_expr)` 申请修改权；`unmod(ref_expr)` 释放（一般省略）。 |
-| 线程 | **Rule 25** | 跨线程访问必须 `shared` 标注（编译期强制）；编译器自动生成 mutex。 |
-| 线程 | **Rule 26** | 显式 `move_to_thread(p, tid)` 或 `spawn_thread_with(tid, p)` 跨线程移交所有权。 |
-| 线程 | **Rule 27** | `__thread int x;`（GCC 风格）线程局部存储。 |
-| 线程 | **Rule 28** | 多线程内存布局：栈 / 堆 / 全局 / TLS 各自的生命域。 |
+| Basics | Rule 1 | Owning types are unrestricted between heap/stack; immutable during their live interval; freely accessible after expiry; storage location is inferred from the initialization expression. |
+| References | Rule 2A | `&` references forbid owning; compile-time null-ref reports; per-thread scope isolation. |
+| Pointers | Rule 2B | `T*` distinguishes owning from non-owning by the initialization expression; assignment `p1 = p2` **does not copy ownership** and **grants modification right to p1** (implicit `mod(p1)`). |
+| Pointers | Q1 | `unique T` ≡ `T*`, the `unique` keyword may be omitted. |
+| Declarations | Q2 | Reference declaration `T& a = b` (right side is an lvalue); pointer declaration `T* a = &b` (right side is address-of). |
+| References | Q3 | A single reference type `T&`; exclusivity is controlled by `#modlaw exclusive` + `mod()` requests, not distinguished at the type level. |
+| Pointers | Q4 | `p1 = p2` does not move; p1 obtains the modification right (implicit `mod(p1)`). |
+| Pointers | Q5 | `move(p)` remains necessary to explicitly transfer ownership. |
+| Pointers | Q6 | `const T*` / `T* const` have custom semantics (opposite of C++); **creating** a read-only pointer from an owning heap variable **is forbidden**. |
+| Permissions | **Rule 22** | **Complete split of two permissions**: ownership (decides who deletes/frees) and modification right (decides who may modify the value) are independent. |
+| Directives | **Rule 23** | New `#modlaw` directive, with 6 legal combinations. |
+| Expressions | **Rule 24** | New `mod(ref_expr)` to request the modification right; `unmod(ref_expr)` to release it (usually omitted). |
+| Threads | **Rule 25** | Cross-thread access must be marked `shared` (compile-time enforced); the compiler auto-generates mutexes. |
+| Threads | **Rule 26** | Explicit `move_to_thread(p, tid)` or `spawn_thread_with(tid, p)` for cross-thread ownership transfer. |
+| Threads | **Rule 27** | `__thread int x;` (GCC style) thread-local storage. |
+| Threads | **Rule 28** | Multi-threaded memory layout: stack / heap / global / TLS each have their own lifetime domain. |
 
-> **关于 0.2.0 vs 0.3.0 文本差异**：本版本对 0.2.0 §7.1 的赋值 move 规则**改写**为「赋值 = 隐式 `mod()` + 不转移所有权」（Q4=a），对 §3.3 的引用声明语法**改写**为「`T& a = b`（右侧是左值）」（Q2），并**删除 `T&mut` 类型**（Q3 反转）——引用统一为 `T&`，独占性改由 `#modlaw exclusive` + `mod()` 申请控制。其余章节保持 0.2.0 的设计，新增章节 §4.9–4.10、§9.9、§13。
+> **On the text differences between 0.2.0 and 0.3.0**: This version **rewrites** the assignment-move rule of 0.2.0 §7.1 to "assignment = implicit `mod()` + does not transfer ownership" (Q4=a), **rewrites** the reference declaration syntax in §3.3 to "`T& a = b` (right side is an lvalue)" (Q2), and **removes the `T&mut` type** (Q3 inverted) — references are unified as `T&`, and exclusivity is controlled by `#modlaw exclusive` + `mod()` requests. The remaining chapters keep the 0.2.0 design, with newly added chapters §4.9–4.10, §9.9, and §13.
 
 ---
 
-## 变更日志（Changelog）
+## Changelog
 
-| 决策 | 章节 | 描述 |
+| Decision | Section | Description |
 |------|------|------|
-| **S4 (0.3.2 新增)** | §4.1, §4.8 (修订), §4.8.1 (新增), §12.1, §12.3 | **C-style 显式类型转换 `(T)expr`**：新增 §4.8.1 完整子节（5 小节：语义 8 行类型转换表；与函数式 `T(expr)` 完全等价；4 类示例：整数↔指针 / 宽度 / FFI / 类型断言；编译期检查；交叉引用）。§4.8 加注提示 `(T)` 中 T 是类型名时为 cast；§4.1 主表 + §12.3 附录表第 2.5 级同步加 C-style cast 行；§12.1 EBNF 新增 `cast_expression` 产生式并把 `'cast' '(' type ',' expression ')'` 加入 `unary_expression`。**修复 m0_42 deref-assign** 中 `*((int*)malloc(8))` 编译失败，向后兼容。 |
-| **S5 (0.3.2 新增)** | §6.1 (修订), §6.2 (修订), §6.2.1 (新增) | **函数返回类型 infer 规则**：新增 §6.2.1 完整子节（5 小节：3 级优先级 builtin > 用户 > extern；7 上下文传播表；void 函数约束；codegen 集成伪代码；交叉引用）。§6.1 加返回类型编译期检查（3 条）；§6.2 加 §6.2.1 引用 + §11.0 引用。**修复 m0_41 abs_int 链接**：extern 符号表由 parser 解析 `extern "C"` 块时填充（commit b45f851），codegen 通过 `lookup_extern_func` 查得返回类型，规避硬编码 i32 错位。 |
-| **§11.0 (0.3.2 新增)** | §11 (修订), §11.0 (新增), §11.1-§11.6 (跨引用) | **builtin 签名总表**：新增 §11.0（4 小节：16 行 builtin 表覆盖 I/O / 字符串 / 内存 / 工具 / 数学；LLVM IR 类型映射 12 行；codegen 集成 `builtin_sigs[]` 数组伪代码；添加新 builtin 流程；交叉引用）。§11 标题加 0.3.2 修订注 + §11.0 总览引用；§11.1-§11.6 各子节加 §11.0 双向引用注。`move` / `alloc` 标记为类型参数化 builtin。 |
-| Rule 1 | §3.2 | Owning 类型不限堆/栈；由 init 推断存储位置。 |
-| Rule 2A | §3.3 | 引用 `&` 禁止 owning；编译期报 null ref。 |
-| Rule 2B | §3.2 | `T*` 由 init 决定 owning 或 non-owning；赋值不转所有权，给修改权。 |
-| Q1 | §3.7 | `unique T` ≡ `T*`，可省略 `unique`。 |
-| Q2 | §3.3, §12.1 | 引用声明右侧是左值；指针声明右侧是取地址。 |
-| Q3 | §3.3 | **单一引用类型** `T&`：所有引用统一为 `T&`；独占性由 `#modlaw exclusive` + `mod()` 申请控制，不在类型层区分。 |
-| Q4 | §3.2, §7.1 | 赋值 `p1 = p2` **不复制所有权**，**给 p1 修改权**（隐式 `mod(p1)`）。 |
-| Q5 | §7.4 | `move(p)` 仍然必要，显式移交所有权。 |
-| Q6 | §3.8, §7.10 | `const T*` / `T* const` 自定义语义（与 C++ 相反）；owning heap 禁止。 |
-| **Rule 22** | §1.2, §3, §7 | 所有权与修改权彻底拆分。 |
-| **Q3 反转** *(0.3.0 修订)* | §3.3, §7.8, §7.9 (删除), §12.1, §12.2, §2.3, §2.6 | **删除 `T&mut` 类型**：引用统一为 `T&`；独占性改由 `#modlaw exclusive` + `mod()` 申请控制，不再是类型层面区分。 |
-| **Rule 23** | §9.9 | 新增 `#modlaw <perm> <scope>` 指令（6 种合法组合）。 |
-| **Rule 24** | §4.9, §4.10 | 新增 `mod(ref_expr)` 和 `unmod(ref_expr)` 表达式。 |
-| **Rule 25** | §13.1, §13.3 | 跨线程访问必须 `shared` 标注；mutex 编译器自动 + 程序员显式。 |
-| **Rule 26** | §13.2 | `move_to_thread(p, tid)` / `spawn_thread_with(tid, p)`。 |
-| **Rule 27** | §13.5 | `__thread` 线程局部存储。 |
-| **Rule 28** | §13.4 | 多线程内存布局：栈（thread-local）/ 堆（shared）/ 全局（shared）/ TLS（thread-local）。 |
-| **S2 (0.3.1 修订)** | §4.1, §4.6, §4.13 (新增), §7.8, §12.1, §12.3 | **lvalue / rvalue 概念明确化**：新增 §4.13 完整章节（定义 + 分类表 + 赋值上下文约束 + codegen 实现约束 + 交叉引用）；§4.1 优先级表补 2.5 级一元 op（` * ` ` & ` ` + ` ` - ` ` ! ` ` ~ ` `mod` `unmod` 前缀 `++` `--`）；§4.6 表格 11 行统一加「LHS 必须是 lvalue (§4.13.2)」约束；§7.8 创建规则 1 引用 §4.13.2 + 加合法/非法示例；§12.1 EBNF 加 `lvalue` / `rvalue` 规则 + `assignment_expression` LHS 标注；§12.3 附录优先级表同步加 2.5 级。**修复 m0_42 deref-assign bug**（`*view = payload`）。无新语法、无语义变更、向后兼容。 |
+| **S4 (new in 0.3.2)** | §4.1, §4.8 (revised), §4.8.1 (new), §12.1, §12.3 | **C-style explicit type cast `(T)expr`**: add the complete §4.8.1 subsection (5 sub-sections: 8-row semantic type-conversion table; fully equivalent to functional `T(expr)`; 4 example categories: integer↔pointer / width / FFI / type assertion; compile-time checks; cross-references). §4.8 adds a note that `(T)` is a cast when T is a type name; §4.1 main table + §12.3 appendix table synchronously add a C-style cast row at level 2.5; §12.1 EBNF adds the `cast_expression` production and adds `'cast' '(' type ',' expression ')'` to `unary_expression`. **Fixes m0_42 deref-assign** by making `*((int*)malloc(8))` compile, backward compatible. |
+| **S5 (new in 0.3.2)** | §6.1 (revised), §6.2 (revised), §6.2.1 (new) | **Function return-type inference rules**: add the complete §6.2.1 subsection (5 sub-sections: 3-level priority builtin > user > extern; 7-row context-propagation table; void-function constraints; codegen-integration pseudocode; cross-references). §6.1 adds 3 return-type compile-time checks; §6.2 adds cross-references to §6.2.1 and §11.0. **Fixes m0_41 abs_int link**: the extern symbol table is populated by the parser when parsing `extern "C"` blocks (commit b45f851); codegen uses `lookup_extern_func` to obtain the return type, avoiding the hard-coded `i32` mismatch. |
+| **§11.0 (new in 0.3.2)** | §11 (revised), §11.0 (new), §11.1–§11.6 (cross-references) | **Builtin signature master table**: add §11.0 (4 sub-sections: 16-row builtin table covering I/O / string / memory / utility / math; 12-row LLVM IR type-mapping table; codegen integration `builtin_sigs[]` array pseudocode; flow for adding new builtins; cross-references). §11 heading gains the 0.3.2 revised note + §11.0 overview reference; §11.1–§11.6 each gain a two-way cross-reference note to §11.0. `move` / `alloc` are marked as type-parameterized builtins. |
+| Rule 1 | §3.2 | Owning types are unrestricted between heap/stack; storage location is inferred from init. |
+| Rule 2A | §3.3 | References `&` forbid owning; compile-time null-ref reports. |
+| Rule 2B | §3.2 | `T*` decides owning vs non-owning by init; assignment does not transfer ownership, grants the modification right. |
+| Q1 | §3.7 | `unique T` ≡ `T*`; `unique` may be omitted. |
+| Q2 | §3.3, §12.1 | Right side of reference declaration is an lvalue; right side of pointer declaration is address-of. |
+| Q3 | §3.3 | **Single reference type** `T&`: all references are unified as `T&`; exclusivity is controlled by `#modlaw exclusive` + `mod()` requests, not distinguished at the type level. |
+| Q4 | §3.2, §7.1 | Assignment `p1 = p2` **does not copy ownership** and **grants modification right to p1** (implicit `mod(p1)`). |
+| Q5 | §7.4 | `move(p)` remains necessary to explicitly transfer ownership. |
+| Q6 | §3.8, §7.10 | `const T*` / `T* const` have custom semantics (opposite of C++); owning heap is forbidden. |
+| **Rule 22** | §1.2, §3, §7 | Ownership and modification right are completely split. |
+| **Q3 inverted** *(revised in 0.3.0)* | §3.3, §7.8, §7.9 (removed), §12.1, §12.2, §2.3, §2.6 | **Remove the `T&mut` type**: references are unified as `T&`; exclusivity is now controlled by `#modlaw exclusive` + `mod()` requests, no longer a type-level distinction. |
+| **Rule 23** | §9.9 | New `#modlaw <perm> <scope>` directive (6 legal combinations). |
+| **Rule 24** | §4.9, §4.10 | New `mod(ref_expr)` and `unmod(ref_expr)` expressions. |
+| **Rule 25** | §13.1, §13.3 | Cross-thread access must be marked `shared`; mutexes are auto-generated by the compiler and may be explicit from the programmer. |
+| **Rule 26** | §13.2 | `move_to_thread(p, tid)` / `spawn_thread_with(tid, p)`. |
+| **Rule 27** | §13.5 | `__thread` thread-local storage. |
+| **Rule 28** | §13.4 | Multi-threaded memory layout: stack (thread-local) / heap (shared) / global (shared) / TLS (thread-local). |
+| **S2 (revised in 0.3.1)** | §4.1, §4.6, §4.13 (new), §7.8, §12.1, §12.3 | **lvalue / rvalue concepts made explicit**: add the complete §4.13 chapter (definitions + classification table + assignment-context constraint + codegen implementation constraint + cross-references); §4.1 precedence table adds level 2.5 unary ops (` * ` ` & ` ` + ` ` - ` ` ! ` ` ~ ` `mod` `unmod` prefix `++` `--`); all 11 rows of the §4.6 table uniformly add the "LHS must be an lvalue (§4.13.2)" constraint; §7.8 creation rule 1 references §4.13.2 + adds legal/illegal examples; §12.1 EBNF adds `lvalue` / `rvalue` rules + `assignment_expression` LHS annotation; §12.3 appendix precedence table synchronously adds level 2.5. **Fixes m0_42 deref-assign bug** (`*view = payload`). No new syntax, no semantic change, backward compatible. |
 
 ---
 
-## 1. 概述
+## 1. Overview
 
-### 1.1 语言目标
+### 1.1 Language Goals
 
-UltraCPP 是一种系统级编程语言，将 **C++ 语法的熟悉度** 与 **Rust 风格的内存安全保证** 相结合，无需垃圾回收器。
+UltraCPP is a systems programming language that combines the **familiarity of C++ syntax** with **Rust-style memory-safety guarantees**, without needing a garbage collector.
 
-**核心目标：**
-- 零成本抽象
-- 编译时内存安全
-- C++ 兼容性，便于迁移
-- 无垃圾回收器
+**Core goals:**
+- Zero-cost abstractions
+- Compile-time memory safety
+- C++ compatibility for easy migration
+- No garbage collector
 
-### 1.2 设计原则（重点：两条权限独立）
+### 1.2 Design Principles (focus: two independent permissions)
 
-1. **默认安全**：在可能的情况下，编译时强制内存安全
-2. **显式优于隐式**：所有权、可变性和安全语义在语法中可见
-3. **务实兼容**：利用 C++ 开发者的熟悉度
-4. **最小运行时**：无重运行时，适用于系统编程
-5. **两条权限独立** *(0.3.0 新增：Rule 22)*：
-   - **所有权（ownership）**：决定谁负责 `delete` / `free`；**唯一所有者**；可转移（`move(p)`）；不可复制。
-   - **修改权（modification right / `mod`）**：决定谁能通过引用**改值**；可多可少可独占；由程序员按需申请。
+1. **Safe by default**: enforce memory safety at compile time wherever possible
+2. **Explicit over implicit**: ownership, mutability, and safety semantics are visible in the syntax
+3. **Pragmatic compatibility**: leverage C++ developer familiarity
+4. **Minimal runtime**: no heavy runtime, suitable for systems programming
+5. **Two independent permissions** *(new in 0.3.0: Rule 22)*:
+   - **Ownership**: decides who is responsible for `delete` / `free`; **a single owner**; transferable (`move(p)`); non-copyable.
+   - **Modification right (`mod`)**: decides who can modify the value through a reference; may be many, few, or exclusive; requested on demand by the programmer.
 
-> **[0.3.0 · Rule 22]** 这是 0.3.0 最重要的概念变更。0.2.0 的「所有权」概念实际上混入了修改权，0.3.0 把两者拆开。举例：`int& r = x;`（共享引用）默认**有**所有权借阅权（C++ 风格的引用），但要改 `x`，需要**额外**调用 `mod(r)` 申请修改权（潜在可写引用语义见 §3.3、§4.9）。
+> **[0.3.0 · Rule 22]** This is the most important conceptual change of 0.3.0. The 0.2.0 notion of "ownership" actually conflated the modification right; 0.3.0 splits the two. Example: `int& r = x;` (a shared reference) **has** ownership borrow rights by default (C++-style reference), but to modify `x`, the programmer must **additionally** call `mod(r)` to request the modification right (see §3.3, §4.9 for the latently-writable reference semantics).
 
-### 1.3 符号约定
+### 1.3 Symbol Conventions
 
-| 符号 | 含义 |
+| Symbol | Meaning |
 |------|------|
-| `T` | owned 值（栈 / 全局 / TLS） |
-| `unique T` ≡ `T*` | owning 指针（泛型形式，见 §3.7） |
-| `T*` | 指针：右侧是 `&b` → 非 owning 栈/全局指针；右侧是 `alloc(T)` → owning 指针 |
-| `T&` | **唯一引用类型**：必须初始化、不为 null、不 owns；可写（需 `mod()`）；多个可并存；线程可共享 |
-| `T* p = &x` | p 是 non-owning 栈/全局指针（与引用规则类似） |
-| `T* p = alloc(T)` | p 是 owning 指针 |
-| `&expr` | 创建对 `expr` 的 `T&` 引用 |
-| `mod(ref_expr)` | 申请修改权（按 `#modlaw` 策略） |
-| `unmod(ref_expr)` | 释放修改权（一般省略，靠作用域） |
-| `move(p)` | 移交所有权（p 失效） |
-| `move_to_thread(p, tid)` | 跨线程移交所有权 |
-| `shared` | 跨线程可见标注（编译期强制） |
-| `__thread T x` | 线程局部存储（每线程独立） |
-| `#modlaw <perm> <scope>` | 策略指令（6 种合法组合） |
-| `const T*` | **指针锁定**（不能 rebind）+ 生命周期安全 + 通过它不能写（自定义，**与 C++ 相反**） |
-| `T* const` | **数据只读视图**（可 rebind，但通过它不能写） |
-| `alloc(T)` | 为类型 T 分配堆内存 |
-| `free(ptr)` | 释放堆内存 |
-| `clone(ptr)` | 克隆指针（复制一份，独立所有权） |
+| `T` | owned value (stack / global / TLS) |
+| `unique T` ≡ `T*` | owning pointer (generic form, see §3.7) |
+| `T*` | Pointer: right side is `&b` → non-owning stack/global pointer; right side is `alloc(T)` → owning pointer |
+| `T&` | **The sole reference type**: must be initialized, non-null, non-owning; potentially writable (requires `mod()`); multiple may coexist; thread-shareable |
+| `T* p = &x` | p is a non-owning stack/global pointer (similar to the reference rule) |
+| `T* p = alloc(T)` | p is an owning pointer |
+| `&expr` | Create a `T&` reference to `expr` |
+| `mod(ref_expr)` | Request the modification right (per `#modlaw` policy) |
+| `unmod(ref_expr)` | Release the modification right (usually omitted; relies on scope) |
+| `move(p)` | Transfer ownership (p becomes invalid) |
+| `move_to_thread(p, tid)` | Cross-thread ownership transfer |
+| `shared` | Cross-thread visibility annotation (compile-time enforced) |
+| `__thread T x` | Thread-local storage (per-thread independent) |
+| `#modlaw <perm> <scope>` | Policy directive (6 legal combinations) |
+| `const T*` | **Pointer-lock** (cannot rebind) + lifetime-safe + cannot write through it (custom semantics, **opposite of C++**) |
+| `T* const` | **Data read-only view** (can rebind, but cannot write through it) |
+| `alloc(T)` | Allocate heap memory for type T |
+| `free(ptr)` | Release heap memory |
+| `clone(ptr)` | Clone the pointer (an independent copy with its own ownership) |
 
 ---
 
-## 2. 词法结构
+## 2. Lexical Structure
 
-### 2.1 源文件约定
+### 2.1 Source File Conventions
 
 ```
-*.uc   — UltraCPP 源文件（推荐）
-*.upp  — UltraCPP 源文件（兼容）
+*.uc   — UltraCPP source files (recommended)
+*.upp  — UltraCPP source files (compatible)
 ```
 
-### 2.2 记号类型
+### 2.2 Token Types
 
-| 类别 | 示例 |
+| Category | Examples |
 |------|------|
-| **关键字** | `if`, `else`, `while`, `for`, `return`, `struct`, `export`, `import`, `const`, `unique`, `move`, `free`, `alloc`, `null`, `true`, `false`, `void`, `extern`, `unsafe`, `typedef`, `clone`, `mod`, `unmod`, `shared`, `__thread`, `move_to_thread` |
-| **标识符** | `foo`, `myVariable`, `_private`, `CamelCase` |
-| **字面量** | `42`, `3.14`, `'x'`, `"hello"`, `true`, `false` |
-| **运算符** | `+`, `-`, `*`, `/`, `%`, `=`, `==`, `!=`, `<`, `>`, `<=`, `>=`, `&&`, `||`, `!`, `&`, `|`, `^`, `~`, `<<`, `>>`, `++`, `--`, `+=`, `-=`, `*=`, `/=`, `%=`, `&=`, `|=`, `^=`, `<<=`, `>>=` |
-| **分隔符** | `(`, `)`, `{`, `}`, `[`, `]`, `,`, `;`, `:`, `.`, `::` |
-| **预处理器** | `#import`, `#include`, `#ifdef`, `#ifndef`, `#endif`, `#define`, `#modlaw` *(0.3.0 新增)* |
+| **Keywords** | `if`, `else`, `while`, `for`, `return`, `struct`, `export`, `import`, `const`, `unique`, `move`, `free`, `alloc`, `null`, `true`, `false`, `void`, `extern`, `unsafe`, `typedef`, `clone`, `mod`, `unmod`, `shared`, `__thread`, `move_to_thread` |
+| **Identifiers** | `foo`, `myVariable`, `_private`, `CamelCase` |
+| **Literals** | `42`, `3.14`, `'x'`, `"hello"`, `true`, `false` |
+| **Operators** | `+`, `-`, `*`, `/`, `%`, `=`, `==`, `!=`, `<`, `>`, `<=`, `>=`, `&&`, `||`, `!`, `&`, `|`, `^`, `~`, `<<`, `>>`, `++`, `--`, `+=`, `-=`, `*=`, `/=`, `%=`, `&=`, `|=`, `^=`, `<<=`, `>>=` |
+| **Separators** | `(`, `)`, `{`, `}`, `[`, `]`, `,`, `;`, `:`, `.`, `::` |
+| **Preprocessor** | `#import`, `#include`, `#ifdef`, `#ifndef`, `#endif`, `#define`, `#modlaw` *(new in 0.3.0)* |
 
-> **[0.3.0 · Rule 23, 24, 26, 27]** 新增关键字：`mod`、`unmod`、`shared`、`__thread`、`move_to_thread`。新增预处理器指令：`#modlaw`。
+> **[0.3.0 · Rule 23, 24, 26, 27]** New keywords: `mod`, `unmod`, `shared`, `__thread`, `move_to_thread`. New preprocessor directive: `#modlaw`.
 
-### 2.3 关键字（保留字）
+### 2.3 Keywords (Reserved Words)
 
 ```
 if          else        while       for         return
@@ -152,9 +152,9 @@ as          static      clone
 mod         unmod       shared      __thread    move_to_thread
 ```
 
-> **[0.3.0 新增]** `mod`、`unmod`、`shared`、`__thread`、`move_to_thread`。详见 §4.9、§4.10、§13。
+> **[New in 0.3.0]** `mod`, `unmod`, `shared`, `__thread`, `move_to_thread`. See §4.9, §4.10, §13.
 
-### 2.4 标识符规则
+### 2.4 Identifier Rules
 
 ```
 identifier ::= letter (letter | digit)*
@@ -162,13 +162,13 @@ letter     ::= 'a'..'z' | 'A'..'Z' | '_'
 digit      ::= '0'..'9'
 ```
 
-- 标识符大小写敏感
-- 无长度限制（由实现定义）
-- 不得与关键字冲突
+- Identifiers are case-sensitive
+- No length limit (implementation-defined)
+- Must not conflict with keywords
 
-### 2.5 字面量
+### 2.5 Literals
 
-#### 整数字面量
+#### Integer Literals
 ```
 int-literal ::= decimal | hex | octal | binary
 decimal     ::= [1-9][0-9]*
@@ -177,201 +177,201 @@ octal       ::= '0'[0-7]+
 binary      ::= '0b'[01]+
 ```
 
-#### 浮点字面量
+#### Float Literals
 ```
 float-literal ::= [0-9]+'.'[0-9]+ | '.'[0-9]+ | [0-9]+'.'
 ```
 
-#### 字符字面量
+#### Character Literals
 ```
 char-literal ::= "'" character "'"
 ```
 
-#### 字符串字面量
+#### String Literals
 ```
 string-literal ::= '"' (character | escape)* '"'
 escape         ::= '\n' | '\t' | '\r' | '\\' | '\'' | '\"' | '\x'[0-9a-fA-F]{2}
 ```
 
-#### 布尔字面量
+#### Boolean Literals
 ```
-true  // 布尔真
-false // 布尔假
+true  // boolean true
+false // boolean false
 ```
 
-### 2.6 运算符和分隔符
+### 2.6 Operators and Separators
 
-| 运算符 | 描述 |
+| Operator | Description |
 |--------|------|
-| `+` | 加法 |
-| `-` | 减法/取负 |
-| `*` | 乘法/解引用 |
-| `/` | 除法 |
-| `%` | 取模 |
-| `=` | 赋值（`T*` 之间触发**修改权转让**而非所有权 transfer，见 §7.1） |
-| `==` | 相等 |
-| `!=` | 不等 |
-| `<` | 小于 |
-| `>` | 大于 |
-| `<=` | 小于等于 |
-| `>=` | 大于等于 |
-| `&&` | 逻辑与 |
-| `\|\|` | 逻辑或 |
-| `!` | 逻辑非 |
-| `&` | 一元前缀：创建 `T&` 引用（见 §3.3）；二元中缀：按位与 |
-| `\|` | 按位或 |
-| `^` | 按位异或 |
-| `~` | 按位非 |
-| `<<` | 左移 |
-| `>>` | 右移 |
-| `++` | 递增 |
-| `--` | 递减 |
-| `->` | 箭头（指针成员访问） |
-| `.` | 点号（成员访问） |
-| `::` | 作用域解析 |
+| `+` | Addition |
+| `-` | Subtraction / negation |
+| `*` | Multiplication / dereference |
+| `/` | Division |
+| `%` | Modulo |
+| `=` | Assignment (between `T*` triggers **modification-right transfer** rather than ownership transfer, see §7.1) |
+| `==` | Equality |
+| `!=` | Inequality |
+| `<` | Less than |
+| `>` | Greater than |
+| `<=` | Less than or equal |
+| `>=` | Greater than or equal |
+| `&&` | Logical AND |
+| `\|\|` | Logical OR |
+| `!` | Logical NOT |
+| `&` | Unary prefix: create a `T&` reference (see §3.3); binary infix: bitwise AND |
+| `\|` | Bitwise OR |
+| `^` | Bitwise XOR |
+| `~` | Bitwise NOT |
+| `<<` | Left shift |
+| `>>` | Right shift |
+| `++` | Increment |
+| `--` | Decrement |
+| `->` | Arrow (pointer member access) |
+| `.` | Dot (member access) |
+| `::` | Scope resolution |
 
-> **[0.3.0 修订]** 一元前缀 `&` 创建唯一引用类型 `T&`。是否实际可写由 `mod()` / `#modlaw` 决定（见 Rule 24）。0.3.0 不再区分「共享可写」与「独占可写」引用——`T&mut` 已删除。
+> **[Revised in 0.3.0]** The unary prefix `&` creates the sole reference type `T&`. Whether writing is actually allowed is decided by `mod()` / `#modlaw` (see Rule 24). 0.3.0 no longer distinguishes "shared-writable" from "exclusive-writable" references — `T&mut` has been removed.
 
-### 2.7 注释
+### 2.7 Comments
 
 ```cpp
-// 单行注释
+// Single-line comment
 
 /*
- * 多行注释
+ * Multi-line comment
  */
 ```
 
-### 2.8 空白符
+### 2.8 Whitespace
 
-空格、制表符和换行符在分隔记号时被忽略。行尾保留用于错误报告。
+Spaces, tabs, and newlines are ignored when separating tokens. Line endings are retained for error reporting.
 
 ---
 
-## 3. 类型系统 *(0.3.0 重写)*
+## 3. Type System *(rewritten in 0.3.0)*
 
-### 3.1 基本类型
+### 3.1 Basic Types
 
-| 类型 | 描述 | 大小 |
+| Type | Description | Size |
 |------|------|------|
-| `void` | 无值 | - |
-| `bool` | 布尔 | 1 字节 |
-| `char` | 字符 | 1 字节 |
-| `int` | 有符号整数 | 4 字节 |
-| `i8` | 8 位有符号 | 1 字节 |
-| `i16` | 16 位有符号 | 2 字节 |
-| `i32` | 32 位有符号 | 4 字节 |
-| `i64` | 64 位有符号 | 8 字节 |
-| `uint` | 无符号整数 | 4 字节 |
-| `u8` | 8 位无符号 | 1 字节 |
-| `u16` | 16 位无符号 | 2 字节 |
-| `u32` | 32 位无符号 | 4 字节 |
-| `u64` | 64 位无符号 | 8 字节 |
-| `f32` | 32 位浮点 | 4 字节 |
-| `f64` | 64 位双精度 | 8 字节 |
-| `usize` | 无符号大小 | 平台相关 |
-| `isize` | 有符号大小 | 平台相关 |
+| `void` | No value | - |
+| `bool` | Boolean | 1 byte |
+| `char` | Character | 1 byte |
+| `int` | Signed integer | 4 bytes |
+| `i8` | 8-bit signed | 1 byte |
+| `i16` | 16-bit signed | 2 bytes |
+| `i32` | 32-bit signed | 4 bytes |
+| `i64` | 64-bit signed | 8 bytes |
+| `uint` | Unsigned integer | 4 bytes |
+| `u8` | 8-bit unsigned | 1 byte |
+| `u16` | 16-bit unsigned | 2 bytes |
+| `u32` | 32-bit unsigned | 4 bytes |
+| `u64` | 64-bit unsigned | 8 bytes |
+| `f32` | 32-bit float | 4 bytes |
+| `f64` | 64-bit double | 8 bytes |
+| `usize` | Unsigned size | platform-dependent |
+| `isize` | Signed size | platform-dependent |
 
-### 3.2 指针类型 *(0.3.0 改写：Rule 2B, Q4)*
+### 3.2 Pointer Types *(rewritten in 0.3.0: Rule 2B, Q4)*
 
-**`T*` 由初始化表达式区分 owning 与 non-owning**（Rule 2B）。这是 0.3.0 与 0.2.0 在指针语义上的核心差异。
+**`T*` distinguishes owning from non-owning by its initialization expression** (Rule 2B). This is the core difference in pointer semantics between 0.3.0 and 0.2.0.
 
 ```cpp
-T*              // 指针：右侧 &x → 非 owning 栈/全局指针；右侧 alloc(T) → owning 堆指针
-T*              // 任何时刻唯一 owner；赋值 p1 = p2 不复制所有权，给 p1 修改权（隐式 mod(p1)）
+T*              // Pointer: right side &x → non-owning stack/global pointer; right side alloc(T) → owning heap pointer
+T*              // At any time, exactly one owner; assignment p1 = p2 does not copy ownership, grants p1 the modification right (implicit mod(p1))
 ```
 
-**示例（必须区分两种形式）：**
+**Examples (must distinguish two forms):**
 
 ```cpp
 int x = 42;
 
-// === Non-owning 栈指针：右侧是取地址 ===
-int* p = &x;        // p 指向 x，p 本身不 owns x
-*p;                 // ✅ 读
-// *p = 100;        // ❌ 编译错：p 默认无 mod 权（需 mod(p) 申请，见 §4.9）
-int* p2 = &x;       // ✅ 多 non-owning 指针可并存
+// === Non-owning stack pointer: right side is address-of ===
+int* p = &x;        // p points to x, p itself does not own x
+*p;                 // ✅ read
+// *p = 100;        // ❌ compile error: p has no mod right by default (requires mod(p), see §4.9)
+int* p2 = &x;       // ✅ multiple non-owning pointers may coexist
 
-// === Owning 堆指针：右侧是 alloc ===
+// === Owning heap pointer: right side is alloc ===
 int* h = alloc(int);   // h owns
-*h = 100;              // ✅ h 默认拥有修改权（owning 指针 "mod-by-default"）
+*h = 100;              // ✅ h has the modification right by default (owning pointer is "mod-by-default")
 int* h2 = alloc(int);
-int* h3 = h2;          // ⚠️ 隐式 mod(h3)：h3 获得修改权，h2 仍 owns
-                      //    所有权并未 transfer；h3 不 own，所以不能 free(h3)
-free(h2);              // ✅ h2 是 owner
+int* h3 = h2;          // ⚠️ implicit mod(h3): h3 gets the modification right, h2 still owns
+                      //    ownership is not transferred; h3 does not own, so it cannot free(h3)
+free(h2);              // ✅ h2 is the owner
 ```
 
-**示例 A（规范声明语法，Q2）：**
+**Example A (canonical declaration syntax, Q2):**
 
 ```cpp
 int x = 42;
 
-// ✓ 引用声明：右侧是左值
-int& r = x;       // r 是 x 的引用（潜在可写，C++ 风格）
+// ✓ Reference declaration: right side is an lvalue
+int& r = x;       // r is a reference to x (potentially writable, C++ style)
 
-// ✓ 指针声明：右侧是取地址
-int* p = &x;      // p 是 x 的地址（非 owning）
+// ✓ Pointer declaration: right side is address-of
+int* p = &x;      // p is x's address (non-owning)
 
-// ✗ 类型不兼容（必须作为反例出现）
-// int& r2 = &x;   // 错：T& 不能接 T*
-// int* p2 = x;    // 错：T* 不能接 T
+// ✗ Type mismatch (must appear as a counter-example)
+// int& r2 = &x;   // error: T& cannot accept T*
+// int* p2 = x;    // error: T* cannot accept T
 ```
 
-**关键规则（Rule 2B）：**
+**Key rules (Rule 2B):**
 
-1. **由初始化表达式决定**：`T* p = &x` → p 不 own x；`T* p = alloc(T)` → p owns。
-2. **任何时刻唯一 owner**：一个 allocated 对象最多有一个 owning 指针（`unique T` 等价于 `T*`）。
-3. **赋值 `p1 = p2` 不复制所有权**，**给 p1 修改权**（路线 2：隐式 `mod(p1)`），owner 不变（Q4）。
-4. **`move(p)` 显式**移交所有权（Q5）。
-5. **`readonly` / `const T*` / `T* const` 控制只读权限**，见 §3.8 与 §7.10（**与 C++ 相反的语义**）。
+1. **Decided by the initialization expression**: `T* p = &x` → p does not own x; `T* p = alloc(T)` → p owns.
+2. **Exactly one owner at any time**: an allocated object has at most one owning pointer (`unique T` is equivalent to `T*`).
+3. **Assignment `p1 = p2` does not copy ownership** and **grants p1 the modification right** (route 2: implicit `mod(p1)`); the owner is unchanged (Q4).
+4. **`move(p)`** explicitly transfers ownership (Q5).
+5. **`readonly` / `const T*` / `T* const`** control read-only permissions, see §3.8 and §7.10 (**semantics opposite to C++**).
 
-### 3.3 引用类型 *(0.3.0 重写：删除 T&mut，Q2, Rule 22)*
+### 3.3 Reference Types *(rewritten in 0.3.0: remove T&mut, Q2, Rule 22)*
 
-UltraCPP 只有一个引用类型 `T&`——**必须初始化**、**不能为 null**、**不拥有**被指向的值，所有权始终留在 owner 处。
+UltraCPP has only one reference type `T&` — **must be initialized**, **cannot be null**, **does not own** the referent; ownership always remains with the owner.
 
-> **[0.3.0 · Rule 22 + Q3 反转]** 0.2.0 把引用分为 `T&`（不可变）和 `T&mut`（独占可变）两种。0.3.0 **删除 `T&mut`**，统一为单一引用类型 `T&`。**独占性**不再由类型区分，而由 `#modlaw exclusive` 策略 + `mod()` 申请控制。是否实际可写也由 `mod()` 与 `#modlaw` 决定。
+> **[0.3.0 · Rule 22 + Q3 inverted]** 0.2.0 divided references into `T&` (immutable) and `T&mut` (exclusive mutable). 0.3.0 **removes `T&mut`** and unifies them into the single reference type `T&`. **Exclusivity** is no longer a type-level distinction; it is controlled by the `#modlaw exclusive` policy + `mod()` requests. Whether writing is actually allowed is also decided by `mod()` and `#modlaw`.
 
 ```cpp
-T&     // 潜在可写引用（latently-writable reference）：默认无 mod，需 mod() 才能写
+T&     // latently-writable reference: no mod by default, requires mod() to write
 ```
 
-**声明语法（Q2）：**
-
-```cpp
-int x = 42;
-int& r = x;          // 引用声明：右侧是左值（不写 &）
-int& r2 = x;         // ✅ 多个 T& 可并存
-// int& r3 = &x;      // ❌ 错：T& 不能接 T*
-// int& r4 = 42;      // ❌ 错：T& 右侧必须是左值
-```
-
-**可写性（Rule 24）：**
+**Declaration syntax (Q2):**
 
 ```cpp
 int x = 42;
-int& r = x;          // r 是 x 的引用，默认无 mod
-int v = r;           // ✅ 读
-// r = 100;          // ❌ 编译错：未申请 mod 权
-mod(r);              // ✅ 申请修改权（按 #modlaw 决定行为）
-*r = 100;            // ✅ 写入
+int& r = x;          // Reference declaration: right side is an lvalue (no &)
+int& r2 = x;         // ✅ multiple T& may coexist
+// int& r3 = &x;      // ❌ error: T& cannot accept T*
+// int& r4 = 42;      // ❌ error: T& right side must be an lvalue
 ```
 
-**对比表（0.1.0 / 0.2.0 / 0.3.0）：**
+**Writability (Rule 24):**
 
-| 版本 | 引用类型 | 独占机制 | 写权限 |
+```cpp
+int x = 42;
+int& r = x;          // r is a reference to x, no mod by default
+int v = r;           // ✅ read
+// r = 100;          // ❌ compile error: no mod requested
+mod(r);              // ✅ request modification right (per #modlaw)
+*r = 100;            // ✅ write
+```
+
+**Comparison table (0.1.0 / 0.2.0 / 0.3.0):**
+
+| Version | Reference Types | Exclusivity Mechanism | Write Permission |
 |---|---|---|---|
-| 0.1.0 | T& (C++ 风格可变引用) | 无 | 直接写 |
-| 0.2.0 | T& (不可变) + T&mut (独占可变) | 类型层面 | T& 只读；T&mut 独占写 |
-| 0.3.0 | **T& 唯一** | `#modlaw exclusive` + `mod()` | 需 mod()，按 #modlaw 决定行为 |
+| 0.1.0 | T& (C++-style mutable reference) | None | Direct write |
+| 0.2.0 | T& (immutable) + T&mut (exclusive mutable) | Type-level | T& read-only; T&mut exclusive write |
+| 0.3.0 | **T& sole** | `#modlaw exclusive` + `mod()` | Requires mod(), behavior per #modlaw |
 
-### 3.4 函数指针类型
+### 3.4 Function Pointer Types
 
 ```cpp
-int (*)(int, int)       // 函数类型：接受两个 int，返回 int（C++ 风格）
-void (*)(const char*)   // 返回 void 的函数指针
+int (*)(int, int)       // Function type: takes two ints, returns int (C++ style)
+void (*)(const char*)   // Function pointer returning void
 ```
 
-**示例：**
+**Examples:**
 ```cpp
 typedef int (*Comparator)(int, int);
 typedef void (*Callback)(const char*);
@@ -380,20 +380,20 @@ Comparator cmp;
 Callback cb;
 ```
 
-### 3.5 数组类型
+### 3.5 Array Types
 
 ```cpp
-T[n]  // 包含 n 个 T 类型元素的定长数组
+T[n]  // Fixed-length array containing n elements of type T
 ```
 
-**示例：**
+**Examples:**
 ```cpp
-int[10] arr;           // 10 个 int 的数组
-char[256] buffer;      // 256 字节的缓冲区
-int[3] nums = [1, 2, 3];  // 初始化数组
+int[10] arr;           // array of 10 ints
+char[256] buffer;      // 256-byte buffer
+int[3] nums = [1, 2, 3];  // initialized array
 ```
 
-### 3.6 结构体类型
+### 3.6 Struct Types
 
 ```cpp
 struct Point {
@@ -408,457 +408,457 @@ struct Rectangle {
 }
 ```
 
-### 3.7 类型修饰符（unique T ≡ T*） *(Q1, 沿用 0.2.0)*
+### 3.7 Type Modifiers (`unique T` ≡ `T*`) *(Q1, carried over from 0.2.0)*
 
-| 修饰符 | 含义 |
+| Modifier | Meaning |
 |--------|------|
-| `const` | 值不可修改（与 `#modlaw` 配合，自定义语义见 §3.8） |
-| `unique` | **泛型类型构造器**：`unique T` ≡ `T*`（Q1，可省略） |
-| `static` | 内部链接 |
-| `shared` | 跨线程可见标注（编译期强制，否则编译错，见 §13.1） |
+| `const` | Value cannot be modified (custom semantics with `#modlaw`, see §3.8) |
+| `unique` | **Generic type constructor**: `unique T` ≡ `T*` (Q1, may be omitted) |
+| `static` | Internal linkage |
+| `shared` | Cross-thread visibility annotation (compile-time enforced, otherwise compile error, see §13.1) |
 
 ```cpp
 unique int      x1;   // ≡ int*
 unique char     x2;   // ≡ char*
-unique Point    x3;   // 用户定义 struct 同样合法
-unique int*     x4;   // T 本身是指针类型时也合法
-unique int[10]  x5;   // T 为数组类型
+unique Point    x3;   // user-defined struct is also valid
+unique int*     x4;   // valid when T itself is a pointer type
+unique int[10]  x5;   // T is an array type
 ```
 
-**规则（沿用 0.2.0 + Q1）：**
+**Rules (carried over from 0.2.0 + Q1):**
 
-1. `unique T` 中的 `T` 可以是 §3.1–§3.6 的**任意类型**。
-2. `unique T` 与 `T*` 在类型系统中**等价**；`unique` 可省略。
-3. `unique` 不能作用于借用类型：`unique T&` 是**非法**的——借用不拥有值。
-4. `unique` **不能写成** `shared unique T*`——`shared` 是运行时存储类（与 `__thread` 同级），不是类型构造器。
+1. The `T` in `unique T` can be **any type** from §3.1–§3.6.
+2. `unique T` and `T*` are **equivalent** in the type system; `unique` may be omitted.
+3. `unique` cannot apply to borrowed types: `unique T&` is **illegal** — borrows do not own values.
+4. `unique` **cannot be written as** `shared unique T*` — `shared` is a runtime storage class (at the same level as `__thread`), not a type constructor.
 
-### 3.8 指针修饰符与所有权边界（Q6 自定义 const T* / T* const） *(0.3.0 新增)*
+### 3.8 Pointer Modifiers and Ownership Boundaries (Q6 custom const T* / T* const) *(new in 0.3.0)*
 
-> **[0.3.0 · Q6 自定义语义，与 C++ 相反]** 本节是 0.3.0 新增的指针修饰符规则。0.2.0 沿用了 C++ 的 `const T*` / `T* const` 含义，0.3.0 **改写**为自定义语义。
+> **[0.3.0 · Q6 custom semantics, opposite of C++]** This section contains the pointer modifier rules newly added in 0.3.0. 0.2.0 followed the C++ meaning of `const T*` / `T* const`; 0.3.0 **rewrites** them with custom semantics.
 
-| 声明 | 含义 | 可 rebind | 通过它写 | owning heap 允许 |
+| Declaration | Meaning | Rebindable | Writable through it | Owning heap allowed |
 |------|------|-----------|----------|------------------|
-| `const T*` | **指针锁定**：指针本身**不能 rebind** + 生命周期安全 + 通过它不能写 | ❌ | ❌ | ❌（owning heap 禁止） |
-| `T* const` | **数据只读视图**：指针**可以 rebind**，通过它不能写 | ✅ | ❌ | ❌（owning heap 禁止） |
-| `const T* const` | 双重锁定（既不能 rebind，也不能写） | ❌ | ❌ | ❌ |
+| `const T*` | **Pointer-lock**: the pointer itself **cannot rebind** + lifetime-safe + cannot write through it | ❌ | ❌ | ❌ (owning heap forbidden) |
+| `T* const` | **Data read-only view**: the pointer **can rebind**, but cannot write through it | ✅ | ❌ | ❌ (owning heap forbidden) |
+| `const T* const` | Double lock (neither rebindable nor writable) | ❌ | ❌ | ❌ |
 
-> **与 C++ 相反**：
+> **Opposite of C++**:
 >
-> | 类型 | C++ 含义 | UltraCPP 含义 |
+> | Type | C++ Meaning | UltraCPP Meaning |
 > |------|----------|---------------|
-> | `const T*` | 数据不能改（指针可改） | **指针不能改**（数据也不能写） |
-> | `T* const` | 指针不能改（数据可改） | **数据不能写**（指针可改） |
+> | `const T*` | Data cannot be modified (pointer can) | **Pointer cannot be modified** (and data cannot be written) |
+> | `T* const` | Pointer cannot be modified (data can) | **Data cannot be written** (pointer can) |
 
-**示例 D（Q6 自定义语义）：**
+**Example D (Q6 custom semantics):**
 
 ```cpp
 int x = 42;
 
-// === const T*：指针锁定 + 生命期 + 不可写 ===
+// === const T*: pointer-lock + lifetime + read-only ===
 const int* p = &x;
-*p;                             // ✅ 读
-// *p = 100;                    // ❌ 不可写
-// p = &y;                      // ❌ 指针锁定，不可 rebind
+*p;                             // ✅ read
+// *p = 100;                    // ❌ not writable
+// p = &y;                      // ❌ pointer-lock, cannot rebind
 
-// === T* const：数据只读视图 ===
+// === T* const: data read-only view ===
 T* const r = &x;
-*r;                             // ✅ 读
-// *r = 100;                    // ❌ 数据只读
-r = &y;                         // ✅ 可以 rebind
+*r;                             // ✅ read
+// *r = 100;                    // ❌ data is read-only
+r = &y;                         // ✅ can rebind
 
-// === owning heap 禁止 ===
+// === owning heap forbidden ===
 unique int* h = alloc(int);
-const int* bad = h;             // ❌ 错误：owning heap 不可造只读指针
-T* const bad2 = h;              // ❌ 同样禁止
+const int* bad = h;             // ❌ error: cannot form a read-only pointer from owning heap
+T* const bad2 = h;              // ❌ same prohibition
 ```
 
-**为什么 owning heap 禁止？** 一个 owning 指针可能在未来被 `move()`、`free()` 走；那时所有 `const T*` / `T* const` 视图都会**悬垂**。owning 指针的释放时机由程序员控制，因此指向 owning heap 的「只读视图」无法在编译期保证安全。
+**Why is owning heap forbidden?** An owning pointer may later be `move()`-ed or `free()`-d; at that point all `const T*` / `T* const` views would **dangle**. The release timing of an owning pointer is controlled by the programmer, so a "read-only view" of owning heap cannot be guaranteed safe at compile time.
 
-进一步细节（违反时的诊断、解引用语义）见 §7.10。
+For further details (diagnostics when violated, dereference semantics) see §7.10.
 
 ---
 
-## 4. 表达式 *(0.3.0 新增 §4.9, §4.10)*
+## 4. Expressions *(new in 0.3.0 §4.9, §4.10)*
 
-### 4.1 运算符优先级和结合性 *(0.3.1 修订)*
+### 4.1 Operator Precedence and Associativity *(revised in 0.3.1)*
 
-| 优先级 | 运算符 | 结合性 |
+| Level | Operator | Associativity |
 |--------|--------|--------|
-| 1 | `::` | 左到右 |
-| 2 | `()` `[]` `.` `->` `++` `--` (后缀) | 左到右 |
-| 2.5 | **一元 `*` `&` `+` `-` `!` `~` `mod` `unmod` `++` `--` (前缀)** *(0.3.1 补)* | **右到左** |
-| 2.5 | `(`*type*`)` | **C 风格强制类型转换** *(0.3.2 补)* |
-| 3 | `*` `/` `%` (二元) | 左到右 |
-| 4 | `+` `-` (二元) | 左到右 |
-| 5 | `<<` `>>` (二元) | 左到右 |
-| 6 | `<` `>` `<=` `>=` | 左到右 |
-| 7 | `==` `!=` | 左到右 |
-| 8 | `&` (二元,按位与) | 左到右 |
-| 9 | `^` | 左到右 |
-| 10 | `\|` | 左到右 |
-| 11 | `&&` | 左到右 |
-| 12 | `\|\|` | 左到右 |
-| 13 | `=` `+=` `-=` `*=` `/=` `%=` `&=` `\|=` `^=` `<<=` `>>=` | 右到左 |
-| 14 | `?:` （三元条件） | 右到左 |
+| 1 | `::` | left-to-right |
+| 2 | `()` `[]` `.` `->` `++` `--` (postfix) | left-to-right |
+| 2.5 | **unary `*` `&` `+` `-` `!` `~` `mod` `unmod` `++` `--` (prefix)** *(added in 0.3.1)* | **right-to-left** |
+| 2.5 | `(`*type*`)` | **C-style cast** *(added in 0.3.2)* |
+| 3 | `*` `/` `%` (binary) | left-to-right |
+| 4 | `+` `-` (binary) | left-to-right |
+| 5 | `<<` `>>` (binary) | left-to-right |
+| 6 | `<` `>` `<=` `>=` | left-to-right |
+| 7 | `==` `!=` | left-to-right |
+| 8 | `&` (binary, bitwise AND) | left-to-right |
+| 9 | `^` | left-to-right |
+| 10 | `\|` | left-to-right |
+| 11 | `&&` | left-to-right |
+| 12 | `\|\|` | left-to-right |
+| 13 | `=` `+=` `-=` `*=` `/=` `%=` `&=` `\|=` `^=` `<<=` `>>=` | right-to-left |
+| 14 | `?:` (ternary conditional) | right-to-left |
 | 15 | `move` `clone` | - |
 
-> **[0.3.0]** 表中第 8 级的 `&` 指**二元中缀**按位与。一元前缀的 `&`（引用）、`mod` / `unmod`（修改权）属于一元运算符，详见 §4.9–§4.10。
-> **[0.3.1 补]** 一元 `*`（解引用）见 §4.13；二元 `*`（乘法）见 §4.2。
+> **[0.3.0]** The level-8 `&` in the table refers to **binary infix** bitwise AND. The unary prefix `&` (reference) and `mod` / `unmod` (modification right) are unary operators; see §4.9–§4.10.
+> **[Added in 0.3.1]** Unary `*` (dereference) see §4.13; binary `*` (multiplication) see §4.2.
 
-### 4.2 算术运算符
+### 4.2 Arithmetic Operators
 
-| 运算符 | 描述 | 示例 |
+| Operator | Description | Example |
 |--------|------|------|
-| `+` | 加法 | `a + b` |
-| `-` | 减法 | `a - b` |
-| `*` | 乘法 | `a * b` |
-| `/` | 除法 | `a / b` |
-| `%` | 取模 | `a % b` |
+| `+` | Addition | `a + b` |
+| `-` | Subtraction | `a - b` |
+| `*` | Multiplication | `a * b` |
+| `/` | Division | `a / b` |
+| `%` | Modulo | `a % b` |
 
-### 4.3 比较运算符
+### 4.3 Comparison Operators
 
-| 运算符 | 描述 | 示例 |
+| Operator | Description | Example |
 |--------|------|------|
-| `==` | 相等 | `a == b` |
-| `!=` | 不等 | `a != b` |
-| `<` | 小于 | `a < b` |
-| `>` | 大于 | `a > b` |
-| `<=` | 小于等于 | `a <= b` |
-| `>=` | 大于等于 | `a >= b` |
+| `==` | Equality | `a == b` |
+| `!=` | Inequality | `a != b` |
+| `<` | Less than | `a < b` |
+| `>` | Greater than | `a > b` |
+| `<=` | Less than or equal | `a <= b` |
+| `>=` | Greater than or equal | `a >= b` |
 
-### 4.4 逻辑运算符
+### 4.4 Logical Operators
 
-| 运算符 | 描述 | 示例 |
+| Operator | Description | Example |
 |--------|------|------|
-| `&&` | 逻辑与 | `a && b` |
-| `\|\|` | 逻辑或 | `a \|\| b` |
-| `!` | 逻辑非 | `!a` |
+| `&&` | Logical AND | `a && b` |
+| `\|\|` | Logical OR | `a \|\| b` |
+| `!` | Logical NOT | `!a` |
 
-### 4.5 位运算符
+### 4.5 Bitwise Operators
 
-> **[0.3.0]** 本表仅描述**二元中缀**形式。一元前缀 `&` 不是位运算符，而是引用（见 §3.3）。
+> **[0.3.0]** This table describes only **binary infix** forms. The unary prefix `&` is not a bitwise operator; it is the reference (see §3.3).
 
-| 运算符 | 描述 | 示例 |
+| Operator | Description | Example |
 |--------|------|------|
-| `&` | 按位与（二元中缀） | `a & b` |
-| `\|` | 按位或 | `a \| b` |
-| `^` | 按位异或 | `a ^ b` |
-| `~` | 按位非 | `~a` |
-| `<<` | 左移 | `a << 2` |
-| `>>` | 右移 | `a >> 2` |
+| `&` | Bitwise AND (binary infix) | `a & b` |
+| `\|` | Bitwise OR | `a \| b` |
+| `^` | Bitwise XOR | `a ^ b` |
+| `~` | Bitwise NOT | `~a` |
+| `<<` | Left shift | `a << 2` |
+| `>>` | Right shift | `a >> 2` |
 
-### 4.6 赋值运算符 *(0.3.1 修订)*
+### 4.6 Assignment Operators *(revised in 0.3.1)*
 
-> **[0.3.1]** 赋值运算符的**左侧**必须为 lvalue（见 §4.13.2）。非 lvalue 作左侧
-> 是编译期错误（`AssignmentToRvalueError`）。
+> **[0.3.1]** The **left-hand side** of an assignment operator must be an lvalue (see §4.13.2). A non-lvalue on the left
+> is a compile-time error (`AssignmentToRvalueError`).
 
-| 运算符 | 描述 |
+| Operator | Description |
 |--------|------|
-| `=` | 简单赋值 — LHS 必须是 lvalue (§4.13.2);RHS 求值后赋给 LHS;`T*` 之间触发**隐式 `mod()`**，不转移所有权，见 §7.1 |
-| `+=` | 加法赋值 — LHS 必须是 lvalue;`LHS = LHS + RHS` |
-| `-=` | 减法赋值 — LHS 必须是 lvalue;`LHS = LHS - RHS` |
-| `*=` | 乘法赋值 — LHS 必须是 lvalue;`LHS = LHS * RHS` |
-| `/=` | 除法赋值 — LHS 必须是 lvalue;`LHS = LHS / RHS` |
-| `%=` | 取模赋值 — LHS 必须是 lvalue;`LHS = LHS % RHS` |
-| `&=` | 按位与赋值 — LHS 必须是 lvalue;`LHS = LHS & RHS` |
-| `\|=` | 按位或赋值 — LHS 必须是 lvalue;`LHS = LHS \| RHS` |
-| `^=` | 按位异或赋值 — LHS 必须是 lvalue;`LHS = LHS ^ RHS` |
-| `<<=` | 左移赋值 — LHS 必须是 lvalue;`LHS = LHS << RHS` |
-| `>>=` | 右移赋值 — LHS 必须是 lvalue;`LHS = LHS >> RHS` |
+| `=` | Simple assignment — LHS must be an lvalue (§4.13.2); RHS is evaluated and assigned to LHS; between `T*` triggers **implicit `mod()`** without ownership transfer, see §7.1 |
+| `+=` | Add-assign — LHS must be an lvalue; `LHS = LHS + RHS` |
+| `-=` | Sub-assign — LHS must be an lvalue; `LHS = LHS - RHS` |
+| `*=` | Multiply-assign — LHS must be an lvalue; `LHS = LHS * RHS` |
+| `/=` | Divide-assign — LHS must be an lvalue; `LHS = LHS / RHS` |
+| `%=` | Modulo-assign — LHS must be an lvalue; `LHS = LHS % RHS` |
+| `&=` | Bitwise-AND-assign — LHS must be an lvalue; `LHS = LHS & RHS` |
+| `\|=` | Bitwise-OR-assign — LHS must be an lvalue; `LHS = LHS \| RHS` |
+| `^=` | Bitwise-XOR-assign — LHS must be an lvalue; `LHS = LHS ^ RHS` |
+| `<<=` | Left-shift-assign — LHS must be an lvalue; `LHS = LHS << RHS` |
+| `>>=` | Right-shift-assign — LHS must be an lvalue; `LHS = LHS >> RHS` |
 
-**结合性**：赋值运算符是**右结合**（`a = b = c` 等价于 `a = (b = c)`，内层
-`(b = c)` 整体是 lvalue，可作外层 LHS — 见 §4.13.2 表）。
+**Associativity**: assignment operators are **right-associative** (`a = b = c` is equivalent to `a = (b = c)`; the inner
+`(b = c)` as a whole is an lvalue and may serve as the outer LHS — see §4.13.2 table).
 
-**lvalue 上下文**：赋值 LHS 走 lvalue 路径（§4.13.4），RHS 走 rvalue 路径。`=` 的结果
-（整个赋值表达式）是 lvalue，值为赋值后的 LHS。
+**lvalue context**: the LHS of an assignment takes the lvalue path (§4.13.4), and the RHS takes the rvalue path. The result
+of `=` (the whole assignment expression) is an lvalue with the value of the LHS after assignment.
 
-### 4.7 条件运算符
+### 4.7 Conditional Operator
 
 ```cpp
 condition ? expr1 : expr2
 ```
 
-### 4.8 带括号表达式 *(0.3.2 修订)*
+### 4.8 Parenthesized Expression *(revised in 0.3.2)*
 
 ```cpp
-(expr)  // 括号中的任意表达式
+(expr)  // any expression inside parentheses
 ```
 
-> **[0.3.2]** 当 `(T)` 中 `T` 是**类型名**而非**表达式**时，表示 **C-style 显式类型转换** (cast)，见 §4.8.1。C-style cast 与函数式 cast `T(expr)` 完全等价 (见 §4.8.1.2)。
+> **[0.3.2]** When `T` inside `(T)` is a **type name** rather than an **expression**, it denotes a **C-style explicit type cast**; see §4.8.1. The C-style cast is fully equivalent to the functional cast `T(expr)` (see §4.8.1.2).
 
-#### 4.8.1 C-style 显式类型转换 `(`*type*`)`*expr* *(0.3.2 新增)*
+#### 4.8.1 C-style Explicit Type Cast `(`*type*`)`*expr* *(new in 0.3.2)*
 
-C-style cast 是 UltraCPP 中最常用的显式类型转换形式，语法与 C/C++ 一致：
+The C-style cast is the most common explicit type-conversion form in UltraCPP, with the same syntax as C/C++:
 
 ```
 '(' type ')' unary_expression
 ```
 
-其中 `type` 见 §3 (类型系统)，`unary_expression` 见 §4.1 (运算符优先级)。
+`type` is defined in §3 (Type System); `unary_expression` is defined in §4.1 (Operator Precedence).
 
-##### 4.8.1.1 语义 *(0.3.2 新增)*
+##### 4.8.1.1 Semantics *(new in 0.3.2)*
 
-`(T)expr` 将表达式 `expr` 的值转换为类型 `T`。转换规则：
+`(T)expr` converts the value of expression `expr` to type `T`. Conversion rules:
 
-| 源类型 → 目标类型 | 行为 | codegen 层 |
+| Source → Target | Behavior | Codegen layer |
 |-------------------|------|-----------|
-| `T*` → `T*` (同类型) | ✅ no-op (仅编译期确认) | 直接传递指针值 |
-| `T*` → `void*` | ✅ 隐式允许 | 直接传递指针值 |
-| `void*` → `T*` | ✅ 显式 cast (程序员担保类型正确) | bitcast (`bitcast T* ... to T*`) |
-| `void*` → `int` (i64) | ✅ 显式 cast | ptrtoint (`ptrtoint T* ... to i64`) |
-| `int` (i32/i64) → `T*` | ✅ 显式 cast | inttoptr (`inttoptr i64 ... to T*`) |
-| `int` (i32) → `int` (i64) | ✅ 符号扩展 | sext (`sext i32 ... to i64`) |
-| `int` (i64) → `int` (i32) | ✅ 截断 | trunc (`trunc i64 ... to i32`) |
-| `int` → `float` / `double` | ✅ (若支持) | sitofp (`sitofp i32 ... to float`) |
-| 不相关类型 (e.g. `int` → `Point`) | ❌ 编译期错误 `InvalidCastError` | — |
+| `T*` → `T*` (same type) | ✅ no-op (compile-time confirmation only) | pass pointer value through |
+| `T*` → `void*` | ✅ implicit, allowed | pass pointer value through |
+| `void*` → `T*` | ✅ explicit cast (programmer guarantees type correctness) | bitcast (`bitcast T* ... to T*`) |
+| `void*` → `int` (i64) | ✅ explicit cast | ptrtoint (`ptrtoint T* ... to i64`) |
+| `int` (i32/i64) → `T*` | ✅ explicit cast | inttoptr (`inttoptr i64 ... to T*`) |
+| `int` (i32) → `int` (i64) | ✅ sign extension | sext (`sext i32 ... to i64`) |
+| `int` (i64) → `int` (i32) | ✅ truncation | trunc (`trunc i64 ... to i32`) |
+| `int` → `float` / `double` | ✅ (if supported) | sitofp (`sitofp i32 ... to float`) |
+| Unrelated types (e.g. `int` → `Point`) | ❌ compile-time error `InvalidCastError` | — |
 
-##### 4.8.1.2 与函数式 cast `T(expr)` 的关系 *(0.3.2 新增)*
+##### 4.8.1.2 Relationship with Functional Cast `T(expr)` *(new in 0.3.2)*
 
-UltraCPP 同时支持两种 cast 形式：
+UltraCPP supports both cast forms:
 
-| 形式 | 名称 | 例子 |
+| Form | Name | Example |
 |------|------|------|
-| `T(expr)` | 函数式 cast (functional cast) | `int(3.14)` → 3 |
+| `T(expr)` | functional cast | `int(3.14)` → 3 |
 | `(T)expr` | C-style cast | `(int)3.14` → 3 |
 
-两种形式**完全等价**。程序员可任选其一。UltraCPP 推荐使用 C-style cast (与 C/C++ 生态对齐，FFI 互操作更直观)。
+The two forms are **fully equivalent**. The programmer may choose either. UltraCPP recommends the C-style cast (aligned with the C/C++ ecosystem; more intuitive for FFI interop).
 
-> **历史**：0.3.0 / 0.3.1 spec 只显式支持 `T(expr)`，`(T)expr` 缺失，导致 m0_42 中 `*((int*)malloc(8))` 形式语义不清晰。0.3.2 加入 C-style cast 后两种形式等价。
+> **History**: 0.3.0 / 0.3.1 specs only explicitly supported `T(expr)`; `(T)expr` was missing, which made the form `*((int*)malloc(8))` in m0_42 semantically ambiguous. After 0.3.2 added the C-style cast, the two forms are equivalent.
 
-##### 4.8.1.3 示例 *(0.3.2 新增)*
+##### 4.8.1.3 Examples *(new in 0.3.2)*
 
 ```cpp
-// === 整数 ↔ 指针互转 (FFI / 系统调用常用) ===
+// === Integer ↔ pointer conversion (common in FFI / syscalls) ===
 int* p = alloc(int);          // p: int*
-void* vp = (void*)p;          // T* → void*: 隐式允许
+void* vp = (void*)p;          // T* → void*: implicit, allowed
 int addr = (int)vp;           // void* → int: ptrtoint
 int* p2 = (int*)addr;         // int → int*: inttoptr
 
-// === 整数宽度转换 ===
-int big = (int)1000000L;      // i64 → i32: trunc (语义: 取低 32 位)
+// === Integer width conversions ===
+int big = (int)1000000L;      // i64 → i32: trunc (semantics: take the low 32 bits)
 long huge = (long)42;         // i32 → i64: sext
 
-// === FFI 场景 ===
+// === FFI scenario ===
 extern "C" {
     void* malloc(int size);
 }
 
-// === 类型断言 (程序员担保类型正确) ===
-void* raw = malloc(8);        // malloc 通过 §10 extern "C" 引入
-int* typed = (int*)raw;       // void* → int*: bitcast，程序员担保 raw 实际是 int*
+// === Type assertion (programmer guarantees type correctness) ===
+void* raw = malloc(8);        // malloc is brought in via §10 extern "C"
+int* typed = (int*)raw;       // void* → int*: bitcast; programmer guarantees raw is actually int*
 
-int* arr = (int*)malloc(8);   // 必须 cast void* → int*
-*arr = 42;                     // 通过 typed 指针写
+int* arr = (int*)malloc(8);   // must cast void* → int*
+*arr = 42;                     // write through the typed pointer
 ```
 
-##### 4.8.1.4 编译期检查 *(0.3.2 新增)*
+##### 4.8.1.4 Compile-Time Checks *(new in 0.3.2)*
 
-C-style cast 的编译期检查包括：
+Compile-time checks for the C-style cast include:
 
-1. **`type` 必须是已知类型** (§3 类型系统中定义的类型，包括 built-in + 用户定义)。
-2. **转换必须合法** (上表 8 行允许 + 1 行不相关类型拒绝)。
-3. **指针 ↔ 整数转换需显式 cast** (不能隐式 —— 由 §3.5 类型转换规则约束；0.3.2 不变)。
+1. **`type` must be a known type** (types defined in §3 Type System, including built-in + user-defined).
+2. **The conversion must be legal** (8 allowed rows + 1 disallowed unrelated-types row in the table above).
+3. **Pointer ↔ integer conversions require explicit cast** (no implicit conversion — constrained by §3.5 type-conversion rules; unchanged in 0.3.2).
 
-错误类型：`InvalidCastError` (转换不合法) / `UnknownTypeError` (type 不识别)。
+Error kinds: `InvalidCastError` (illegal conversion) / `UnknownTypeError` (unrecognized type).
 
-##### 4.8.1.5 与其他章节的交叉引用 *(0.3.2 新增)*
+##### 4.8.1.5 Cross-References with Other Sections *(new in 0.3.2)*
 
-| 章节 | 关系 |
+| Section | Relationship |
 |------|------|
-| §3 类型系统 | cast 目标 `T` 必须是 §3 定义的类型 |
-| §4.1 优先级 | C-style cast 是 §4.1 第 2.5 级一元 op (与 `*` / `&` 同级，右到左) |
-| §4.8 (本节) | C-style cast 是带括号表达式的特殊形式 |
-| §6.2 函数调用 | 调用结果可作 cast 源：`(int)factorial(5)` |
-| §7.4 `alloc` 与 C stdlib | `malloc` 返回 `void*`，通常需要 cast 到具体类型 |
-| §10 FFI | FFI 函数返回 `void*` 必 cast |
-| §11.0 builtin 签名表 | builtin 函数返回类型已知 (无需 cast) |
-| §12.1 EBNF | `cast_expression` 产生式见 §12.1 (0.3.2 新增) |
+| §3 Type System | cast target `T` must be a type defined in §3 |
+| §4.1 Precedence | C-style cast is a level-2.5 unary op (same level as `*` / `&`, right-to-left) |
+| §4.8 (this section) | C-style cast is a special form of parenthesized expression |
+| §6.2 Function call | call result can be the cast source: `(int)factorial(5)` |
+| §7.4 `alloc` and C stdlib | `malloc` returns `void*`, usually requiring a cast to a concrete type |
+| §10 FFI | FFI functions returning `void*` must be cast |
+| §11.0 builtin signature table | builtin function return types are known (no cast needed) |
+| §12.1 EBNF | the `cast_expression` production is defined in §12.1 *(new in 0.3.2)* |
 
-### 4.9 `mod()` 表达式 — 申请修改权 *(0.3.0 新增：Rule 24)*
+### 4.9 `mod()` Expression — Request the Modification Right *(new in 0.3.0: Rule 24)*
 
-> **[0.3.0 · Rule 24]** `mod(ref_expr)` 申请对**引用**所指对象的修改权。其行为由当前作用域的 `#modlaw` 策略决定。
+> **[0.3.0 · Rule 24]** `mod(ref_expr)` requests the modification right of the object referred to by a **reference**. Its behavior is decided by the `#modlaw` policy in the current scope.
 
-**语法**：
+**Syntax**:
 ```
 mod '(' reference_expression ')'
 ```
 
-**操作数**：`reference_expression` 必须是对引用类型 `T&` 的左值（即 `int&`、`Point&` 等）。注意：0.3.0 已删除 `T&mut` 类型，`mod()` 只接受 `T&` 引用。
+**Operand**: `reference_expression` must be an lvalue of a reference type `T&` (i.e., `int&`, `Point&`, etc.). Note that 0.3.0 has removed the `T&mut` type; `mod()` accepts only `T&` references.
 
-**语义**（Rule 24）：行为由 `#modlaw` 当前策略决定。
+**Semantics (Rule 24)**: behavior is decided by the current `#modlaw` policy.
 
-| `#modlaw` 策略 | `mod(r)` 的行为 |
+| `#modlaw` Policy | Behavior of `mod(r)` |
 |----------------|------------------|
-| `none` | ❌ 编译期错误：`mod() forbidden by #modlaw none policy` |
-| `exclusive` | ✅ 编译期检查争用；若另一个 `T&` 已申请 mod，独占拒绝（`BorrowConflict`） |
-| `shared` | ✅ 允许多个 `T&` 同时获得修改权（程序员责任处理数据竞争） |
+| `none` | ❌ compile-time error: `mod() forbidden by #modlaw none policy` |
+| `exclusive` | ✅ compile-time conflict check; if another `T&` has already requested mod, the exclusive request is denied (`BorrowConflict`) |
+| `shared` | ✅ multiple `T&` may simultaneously obtain the modification right (data races are the programmer's responsibility) |
 
-**示例片段：**
+**Snippet example:**
 
 ```cpp
 #modlaw shared module
 
 int x = 42;
 int& r = x;
-mod(r);              // ✅ 共享策略下可申请
+mod(r);              // ✅ allowed under shared policy
 *r = 100;
-mod(r);              // 作用域内可重复（编译器自动 unmod）
+mod(r);              // repeatable within scope (compiler auto-unmods)
 ```
 
-**隐式 `mod()`（Rule 24 + Q4）：**
+**Implicit `mod()` (Rule 24 + Q4):**
 
-赋值 `p1 = p2` 的 `T*` 版本会**自动**生成 `mod(p1)`，详见 §7.1。因此以下写法隐式成立：
+The `T*` version of assignment `p1 = p2` **automatically** generates `mod(p1)`, see §7.1. So the following works implicitly:
 
 ```cpp
 int* p1 = alloc(int);
-int* p2 = p1;          // 隐式 mod(p1)：p1 获得修改权，p2 仍 owns
-*p1 = 100;             // ✅ 不需显式 mod()
+int* p2 = p1;          // implicit mod(p1): p1 gets the modification right, p2 still owns
+*p1 = 100;             // ✅ no explicit mod() needed
 ```
 
-### 4.10 `unmod()` 表达式 — 释放修改权 *(0.3.0 新增：Rule 24)*
+### 4.10 `unmod()` Expression — Release the Modification Right *(new in 0.3.0: Rule 24)*
 
-`unmod(ref_expr)` 显式释放修改权。**一般省略**——作用域结束或最后一次使用时编译器自动 unmod。
+`unmod(ref_expr)` explicitly releases the modification right. **Usually omitted** — the compiler auto-unmods at scope exit or after the last use.
 
-**语法**：
+**Syntax**:
 ```
 unmod '(' reference_expression ')'
 ```
 
-**使用场景**（可省略时的退化）：
+**Use case (or omitted form):**
 
 ```cpp
-mod(r);                  // 申请
-*r = compute();          // 用
-unmod(r);                // ✅ 想立即释放，缩短临界区（可省略）
+mod(r);                  // request
+*r = compute();          // use
+unmod(r);                // ✅ want to release immediately to shorten the critical section (can be omitted)
 
-// 下面两段等价：
+// The following two blocks are equivalent:
 #modlaw exclusive module
 {
     mod(m);
-    *m = 100;            // m 的最后一次使用 → 编译器自动 unmod(m)
+    *m = 100;            // last use of m → compiler auto-unmod(m)
 }
-*m2 = 200;               // 解锁，m2 可申请
+*m2 = 200;               // unlocked; m2 can request
 ```
 
 ---
 
-### 4.13 表达式分类：lvalue 与 rvalue *(0.3.1 新增)*
+### 4.13 Expression Classification: lvalue and rvalue *(new in 0.3.1)*
 
-UltraCPP 中每个表达式属于以下两类之一：**lvalue**（左值）或 **rvalue**（右值）。这一分类是
-赋值、地址运算、`mod()` / `unmod()` 申请、引用绑定等核心语义的判定基础。
+In UltraCPP every expression belongs to one of two categories: **lvalue** or **rvalue**. This classification is the
+basis for assignment, address-of, `mod()` / `unmod()` requests, reference binding, and other core semantics.
 
-#### 4.13.1 定义 *(0.3.1 新增)*
+#### 4.13.1 Definitions *(new in 0.3.1)*
 
-**lvalue**（左值）— 标识一个对象，具有持久身份：
+**lvalue** — names an object and has persistent identity:
 
-- 有 identity（占据明确的存储位置）
-- 可作为赋值 `=` 的左侧
-- 可被取地址 `&` 运算
-- 在 codegen 层：走 **lvalue 路径** — emit 取地址指令（`getelementptr`、`alloca`
-  引用等），**不**自动 `load` 值
+- Has identity (occupies a definite storage location)
+- May serve as the left side of assignment `=`
+- May be the operand of address-of `&`
+- In codegen: takes the **lvalue path** — emit address-taking instructions (`getelementptr`, `alloca`
+  reference, etc.); does **not** auto-`load` the value
 
-**rvalue**（右值）— 表示一个临时值，无持久身份：
+**rvalue** — represents a temporary value with no persistent identity:
 
-- 没有 identity（临时计算结果）
-- **不**可作为赋值 `=` 的左侧
-- **不**可被取地址
-- 在 codegen 层：走 **rvalue 路径** — emit 求值指令（`load`、立即数、算术运算结果等）
+- No identity (a temporary computed result)
+- **Cannot** serve as the left side of assignment `=`
+- **Cannot** be the operand of address-of
+- In codegen: takes the **rvalue path** — emit evaluation instructions (`load`, immediates, results of arithmetic, etc.)
 
-#### 4.13.2 哪些表达式是 lvalue *(0.3.1 新增)*
+#### 4.13.2 Which Expressions Are lvalues *(new in 0.3.1)*
 
-| 表达式形式 | 类别 | 原因 |
+| Expression Form | Category | Reason |
 |-----------|------|------|
-| 变量名 `x` | lvalue | 标识声明对象 |
-| 解引用 `*p`（p 是 `T*` 指针类型） | lvalue | 标识 p 指向的对象 |
-| 字段访问 `s.field` | lvalue | 标识结构体中的成员 |
-| 索引 `a[i]` | lvalue | 标识数组中的元素 |
-| 引用 `T& r` 的使用 `r` | lvalue | 引用是对象的别名 |
-| 前缀自增 `++x` | lvalue | 修改后的对象 |
-| 前缀自减 `--x` | lvalue | 修改后的对象 |
-| 赋值表达式 `x = v` | lvalue | （整个赋值表达式的结果是 LHS） |
-| 函数调用 `f()` 的结果 | rvalue | 临时返回值 |
-| 字面量 `42`、`"hello"` | rvalue | 立即数 |
-| 算术运算 `a + b`、`a * b` | rvalue | 计算结果 |
-| 比较运算 `a < b`、`a == b` | rvalue | bool 值 |
-| 逻辑运算 `a && b`、`a \|\| b` | rvalue | bool 值 |
-| 后缀自增 `x++` | rvalue | 表达式的值是修改**前**的旧值 |
-| 后缀自减 `x--` | rvalue | 同上 |
-| 取地址 `&x` 的结果 | rvalue | 返回的是指针值（虽然操作 lvalue） |
-| 条件运算 `c ? a : b` | rvalue | 计算结果 |
+| Variable name `x` | lvalue | names the declared object |
+| Dereference `*p` (p is a `T*` pointer type) | lvalue | names the object pointed to by p |
+| Field access `s.field` | lvalue | names the member within the struct |
+| Index `a[i]` | lvalue | names an element of the array |
+| Use `r` of a reference `T& r` | lvalue | the reference is an alias for the object |
+| Prefix increment `++x` | lvalue | the object after modification |
+| Prefix decrement `--x` | lvalue | the object after modification |
+| Assignment expression `x = v` | lvalue | (the result of the whole assignment expression is the LHS) |
+| Result of function call `f()` | rvalue | temporary return value |
+| Literals `42`, `"hello"` | rvalue | immediates |
+| Arithmetic `a + b`, `a * b` | rvalue | computed result |
+| Comparison `a < b`, `a == b` | rvalue | bool value |
+| Logical `a && b`, `a \|\| b` | rvalue | bool value |
+| Postfix increment `x++` | rvalue | the value of the expression is the **old** value before modification |
+| Postfix decrement `x--` | rvalue | same as above |
+| Result of address-of `&x` | rvalue | the result is a pointer value (even though the operand is an lvalue) |
+| Conditional `c ? a : b` | rvalue | computed result |
 
-#### 4.13.3 赋值上下文约束 *(0.3.1 新增)*
+#### 4.13.3 Assignment-Context Constraint *(new in 0.3.1)*
 
-赋值运算符（`=` 及 `+=` / `-=` / `*=` 等复合赋值）的**左侧**必须为 lvalue。
-**非 lvalue 作左侧**是编译期错误（`AssignmentToRvalueError`）：
+The **left-hand side** of an assignment operator (`=` and compound assignments such as `+=` / `-=` / `*=` etc.) must be an lvalue.
+A **non-lvalue on the left** is a compile-time error (`AssignmentToRvalueError`):
 
 ```cpp
-42 = x;          // ❌ 字面量是 rvalue
-x + 1 = 2;       // ❌ 算术表达式是 rvalue
-f() = x;         // ❌ 函数调用结果是 rvalue
-x++ = 1;         // ❌ 后缀自增结果是 rvalue
+42 = x;          // ❌ literal is an rvalue
+x + 1 = 2;       // ❌ arithmetic expression is an rvalue
+f() = x;         // ❌ function-call result is an rvalue
+x++ = 1;         // ❌ postfix-increment result is an rvalue
 
-*x = v;          // ✅ 解引用是 lvalue（§4.13.2 表第 2 行）
-s.field = v;     // ✅ 字段访问是 lvalue
-a[i] = v;        // ✅ 索引是 lvalue
-++x = 1;         // ✅ 前缀自增是 lvalue
-x = y = z;       // ✅ 右结合，内层 `y = z` 整体是 lvalue 作为外层 LHS
+*x = v;          // ✅ dereference is an lvalue (§4.13.2 table row 2)
+s.field = v;     // ✅ field access is an lvalue
+a[i] = v;        // ✅ index is an lvalue
+++x = 1;         // ✅ prefix-increment is an lvalue
+x = y = z;       // ✅ right-associative; inner `y = z` is an lvalue as the outer LHS
 ```
 
-复合赋值（`+=` / `-=` 等）的左侧同样必须为 lvalue，语义约束同 `=`。
+Compound assignments (`+=` / `-=` etc.) also require their LHS to be an lvalue, with the same semantic constraint as `=`.
 
-#### 4.13.4 codegen 实现约束 *(0.3.1 新增)*
+#### 4.13.4 Codegen Implementation Constraint *(new in 0.3.1)*
 
-对 lvalue 表达式，调用 `gen_expr` 在不同上下文有不同行为。UltraCPP 编译器在 codegen
-阶段对每个表达式维护两个上下文信息：
+For an lvalue expression, `gen_expr` behaves differently in different contexts. The UltraCPP compiler in codegen
+maintains two pieces of context information for every expression:
 
-1. **value category**（lvalue / rvalue）— 由本节定义
-2. **concrete type** — 具体类型（如 `int`、`int*`、`Point`）
+1. **Value category** (lvalue / rvalue) — defined in this section
+2. **Concrete type** — the specific type (e.g., `int`, `int*`, `Point`)
 
-| 调用上下文 | lvalue 表达式 codegen 行为 |
+| Call Context | Codegen Behavior for lvalue Expressions |
 |-----------|--------------------------|
-| 赋值 `=` 的 LHS（`UC_EXPR_ASSIGN.target`） | 走 lvalue 路径：emit 取地址（`getelementptr`、`alloca` 引用） |
-| 取地址 `&x` 的操作数 | 走 lvalue 路径：emit 栈 / 全局 / 字段地址 |
-| 表达式语句、函数实参、`=` 的 RHS、子表达式 | 走 rvalue 路径：emit `load` 或值复制 |
+| LHS of assignment `=` (`UC_EXPR_ASSIGN.target`) | lvalue path: emit address-taking (`getelementptr`, `alloca` reference) |
+| Operand of address-of `&x` | lvalue path: emit stack / global / field address |
+| Expression statement, function argument, RHS of `=`, subexpression | rvalue path: emit `load` or value copy |
 
-例：
+Example:
 
 ```c
 int x = 42;
 int* p = &x;
-*p = v;           // LHS: lvalue 路径 → emit gep,store v
-y = *p;           // RHS: rvalue 路径 → emit load
-int z = *p + 1;   // RHS: rvalue 路径 → emit load + add
-&x;               // 取地址操作数: lvalue 路径 → emit 栈地址
+*p = v;           // LHS: lvalue path → emit gep, store v
+y = *p;           // RHS: rvalue path → emit load
+int z = *p + 1;   // RHS: rvalue path → emit load + add
+&x;               // address-of operand: lvalue path → emit stack address
 ```
 
-**与 C/C++ 对比**：UltraCPP 的 lvalue / rvalue 二元分类与 C/C++ 一致（参见 K&R §A7.1、
-C++17 [basic.lval]）。但 UltraCPP **不**区分 C++11 引入的 xvalue（eXpiring value）、
-prvalue（pure rvalue）、glvalue（generalized lvalue）三分法——UltraCPP 只分两类，简单清晰。
+**Comparison with C/C++**: UltraCPP's two-way lvalue / rvalue classification is consistent with C/C++ (see K&R §A7.1,
+C++17 [basic.lval]). But UltraCPP does **not** distinguish the three-way split introduced by C++11 — xvalue (eXpiring value),
+prvalue (pure rvalue), glvalue (generalized lvalue) — UltraCPP keeps only two categories for simplicity and clarity.
 
-#### 4.13.5 与其他章节的交叉引用 *(0.3.1 新增)*
+#### 4.13.5 Cross-References with Other Sections *(new in 0.3.1)*
 
-| 章节 | 关系 |
+| Section | Relationship |
 |------|------|
-| §4.1 优先级表 | 一元 `*` / `&` / `mod` / `unmod` / `++` / `--` 见 §4.1 第 2.5 级 |
-| §4.6 赋值运算符 | "LHS 必须是 lvalue" 引用 §4.13.2 分类表 |
-| §4.9 `mod()` | 操作数 lvalue 要求引用 §4.13.2 |
-| §4.10 `unmod()` | 操作数 lvalue 要求引用 §4.13.2 |
-| §7.1 所有权 + 隐式 mod | 隐式 `mod()` 目标是 lvalue，引用 §4.13.2 |
-| §7.8 引用 `&T` | "操作数必须是左值" 引用 §4.13.2 |
-| §12.1 EBNF | `lvalue` / `rvalue` 规则见 §12.1 *(0.3.1 新增)* |
+| §4.1 precedence table | unary `*` / `&` / `mod` / `unmod` / `++` / `--` see §4.1 level 2.5 |
+| §4.6 assignment operators | "LHS must be an lvalue" references §4.13.2 classification table |
+| §4.9 `mod()` | operand lvalue requirement references §4.13.2 |
+| §4.10 `unmod()` | operand lvalue requirement references §4.13.2 |
+| §7.1 ownership + implicit mod | the target of implicit `mod()` is an lvalue, references §4.13.2 |
+| §7.8 reference `&T` | "operand must be an lvalue" references §4.13.2 |
+| §12.1 EBNF | `lvalue` / `rvalue` rules see §12.1 *(new in 0.3.1)* |
 
 ---
 
-## 5. 语句
+## 5. Statements
 
-### 5.1 表达式语句
+### 5.1 Expression Statement
 
 ```cpp
-x + y;        // 求值并丢弃
-func(10);     // 函数调用
+x + y;        // evaluate and discard
+func(10);     // function call
 ```
 
-### 5.2 复合语句（块）
+### 5.2 Compound Statement (Block)
 
 ```cpp
 {
@@ -868,7 +868,7 @@ func(10);     // 函数调用
 }
 ```
 
-### 5.3 if 语句
+### 5.3 if Statement
 
 ```cpp
 if (condition) {
@@ -890,7 +890,7 @@ if (a > b) {
 }
 ```
 
-### 5.4 while 语句
+### 5.4 while Statement
 
 ```cpp
 while (condition) {
@@ -898,7 +898,7 @@ while (condition) {
 }
 ```
 
-### 5.5 for 语句
+### 5.5 for Statement
 
 ```cpp
 for (int i = 0; i < 10; i++) {
@@ -910,58 +910,58 @@ for (int x : array) {
 }
 ```
 
-### 5.6 return 语句
+### 5.6 return Statement
 
 ```cpp
-return;              // 返回 void
-return 42;           // 返回值
-return x + y;        // 返回表达式结果
+return;              // returns void
+return 42;           // returns a value
+return x + y;        // returns the result of an expression
 ```
 
-### 5.7 break 语句
+### 5.7 break Statement
 
 ```cpp
 while (true) {
     if (condition) {
-        break;       // 退出循环
+        break;       // exit the loop
     }
 }
 ```
 
-### 5.8 continue 语句
+### 5.8 continue Statement
 
 ```cpp
 for (int i = 0; i < 10; i++) {
     if (i % 2 == 0) {
-        continue;    // 跳过迭代
+        continue;    // skip this iteration
     }
 }
 ```
 
-### 5.9 free 语句
+### 5.9 free Statement
 
 ```cpp
 int* p = alloc(int);
 *p = 42;
-free(p);  // 释放内存
+free(p);  // release memory
 ```
 
-### 5.10 声明语句
+### 5.10 Declaration Statement
 
 ```cpp
-int x;                // 变量声明
-int x = 42;           // 带初始化器的声明
-const int y = 100;    // 常量
-int* p = alloc(int);  // owning 指针分配
-int* p2 = &x;         // non-owning 指针（右侧 &x）
-int& r = x;           // 唯一引用类型 T&（右侧是左值）
+int x;                // variable declaration
+int x = 42;           // declaration with initializer
+const int y = 100;    // constant
+int* p = alloc(int);  // owning pointer allocation
+int* p2 = &x;         // non-owning pointer (right side is &x)
+int& r = x;           // the sole reference type T& (right side is an lvalue)
 ```
 
 ---
 
-## 6. 函数
+## 6. Functions
 
-### 6.1 函数定义 *(0.3.2 修订)*
+### 6.1 Function Definition *(revised in 0.3.2)*
 
 ```cpp
 int add(int a, int b) {
@@ -980,17 +980,17 @@ int factorial(int n) {
 }
 ```
 
-> **[0.3.2]** 函数定义时**必须声明返回类型** (`int` / `void` / 用户类型 / `T*` 等)。返回类型决定函数调用表达式的结果类型，见 §6.2.1。
+> **[0.3.2]** A function definition **must declare a return type** (`int` / `void` / user type / `T*` etc.). The return type determines the result type of the function-call expression; see §6.2.1.
 >
-> **编译期检查**：
+> **Compile-time checks**:
 >
-> 1. 函数体所有 `return` 语句的返回值必须与声明的返回类型**匹配** (允许隐式数值拓宽，如 `int` → `long`；不允许窄化或类型无关)。
-> 2. 若声明为非 `void` 返回类型，函数体**必须**至少有一个 `return` 语句 (或在控制流上保证到达末尾时已返回，编译器可放宽此检查)。
-> 3. 若声明为 `void` 返回类型，函数体可有 `return;` (无值) 或省略 `return`。
+> 1. The value of every `return` statement in the body **must match** the declared return type (implicit numeric widening such as `int` → `long` is allowed; narrowing or unrelated types are not).
+> 2. If the declared return type is non-`void`, the body **must** contain at least one `return` statement (or guarantee by control-flow that a value has been returned before reaching the end; the compiler may relax this check).
+> 3. If the declared return type is `void`, the body may contain `return;` (no value) or omit `return`.
 >
-> 错误类型：`ReturnTypeMismatchError` (return 类型不匹配)。
+> Error kind: `ReturnTypeMismatchError` (return type mismatch).
 
-### 6.2 函数调用 *(0.3.2 修订)*
+### 6.2 Function Call *(revised in 0.3.2)*
 
 ```cpp
 int result = add(10, 20);
@@ -998,65 +998,70 @@ greet("Hello");
 int fact = factorial(5);
 ```
 
-> **[0.3.2]** 函数调用的**返回类型**由调用目标的**签名**决定。详见 §6.2.1 函数返回类型规则。简言之：
+> **[0.3.2]** The **return type** of a function call is decided by the **signature** of the call target. See §6.2.1 for the return-type rules. In short:
 >
-> - builtin 函数 (e.g. `print`, `abs_int`)：返回类型查 §11.0 builtin 签名总表
-> - 用户函数 (e.g. `add`)：返回类型 = 函数定义中声明的返回类型 (§6.1)
-> - extern "C" 函数 (e.g. `malloc`)：返回类型 = extern 声明中的返回类型 (§10)
+> - builtin functions (e.g. `print`, `abs_int`): the return type is looked up in the §11.0 builtin signature table
+> - user functions (e.g. `add`): the return type equals the type declared in the function definition (§6.1)
+> - `extern "C"` functions (e.g. `malloc`): the return type equals the type declared in the extern declaration (§10)
 >
-> 返回类型传播规则见 §6.2.1.2 (赋值 RHS / 子表达式 / 函数实参 / cast 源 / return 值)。
+> Return-type propagation rules are described in §6.2.1.2 (assignment RHS / subexpression / function argument / cast source / return value).
 
-#### 6.2.1 函数返回类型 *(0.3.2 新增)*
+#### 6.2.1 Function Return Type *(new in 0.3.2)*
 
-UltraCPP 中，函数调用的返回类型由以下优先级决定：
+In UltraCPP, the return type of a function call is decided by the following priority order:
 
-##### 6.2.1.1 返回类型确定规则 *(0.3.2 新增)*
+##### 6.2.1.1 Return-Type Determination Rules *(new in 0.3.2)*
 
-1. 若被调用函数是 **builtin** (见 §11.0 builtin 签名表)
-   → 返回类型 = §11.0 表中签名
-   例：`factorial(5)` 的返回类型 = `int` (来自 §11.0 表)
-       `abs_int(-5)` 的返回类型 = `int` (来自 §11.0 表)
+1. If the callee is a **builtin** (see §11.0 builtin signature table)
+   → return type = the signature in the §11.0 table
+   Example: the return type of `factorial(5)` = `int` (from the §11.0 table)
+            the return type of `abs_int(-5)` = `int` (from the §11.0 table)
 
-2. 若被调用函数是**用户定义函数** (§6.1)
-   → 返回类型 = 函数定义中声明的返回类型
-   例：`int add(int a, int b)` → 返回类型 = `int`
-       `void greet(const char* name)` → 返回类型 = `void`
+2. If the callee is a **user-defined function** (§6.1)
+   → return type = the type declared in the function definition
+   Example: `int add(int a, int b)` → return type = `int`
+            `void greet(const char* name)` → return type = `void`
 
-3. 若被调用函数是 `extern "C"` (§10 FFI)
-   → 返回类型 = 声明中的返回类型 (程序员担保)
-   例：`extern "C" int abs_int(int x);` → 返回类型 = `int`
+3. If the callee is `extern "C"` (§10 FFI)
+   → return type = the type declared in the extern declaration (programmer-guaranteed)
+   Example: `extern "C" int abs_int(int x);` → return type = `int`
 
-###### 6.2.1.1.1 extern 符号表的存储与填充时机 *(0.3.2 修订补充)*
+###### 6.2.1.1.1 extern Symbol-Table Storage and Population Timing *(added in 0.3.2)*
 
-§6.2.1.1 优先级 3 (extern 路径) 的实现需要 codegen 持有"extern 函数符号表"。本节明确该表的**结构**、**填充时机**和**查询接口**，避免 0.3.2 实施阶段因符号表缺失而 Bug C2 实质未修。
+Implementing priority 3 (extern path) of §6.2.1.1 requires codegen to hold an "extern function symbol table". This
+sub-section specifies the table's **structure**, **population timing** and **lookup interface**, so that Bug C2 is
+truly fixed during 0.3.2 implementation rather than left only superficially addressed.
 
-**1. 数据结构**：
+**1. Data structure**:
 
 ```c
-// 在 codegen 上下文（CGen / UCCodeGenerator）中新增：
+// Added in the codegen context (CGen / UCCodeGenerator):
 typedef struct {
-    char* name;            // 函数名，如 "malloc", "free"
-    char* ret_type;        // LLVM IR 返回类型字符串，如 "i8*", "void"
-    char** param_types;    // 参数类型数组（按声明顺序）
+    char* name;            // function name, e.g. "malloc", "free"
+    char* ret_type;        // LLVM IR return-type string, e.g. "i8*", "void"
+    char** param_types;    // parameter types (in declaration order)
     int param_count;
 } extern_func_sig_t;
 
-// 全局表（编译单元级）：
-extern_func_sig_t* g_extern_funcs;  // 动态数组
+// Global table (compilation-unit level):
+extern_func_sig_t* g_extern_funcs;  // dynamic array
 int g_extern_func_count;
 int g_extern_func_capacity;
 ```
 
-**2. 填充时机**：
+**2. Population timing**:
 
-- **时机**：parser 在解析 `extern "C" { ... }` 块时，**立即**把每个函数声明的（名字、返回类型、参数类型）记录到 `g_extern_funcs`。
-- **触发点**：`parse_extern_decl` 函数末尾；具体位置见 `src-c/src/parser.c` 的 `extern "C"` 块解析路径。
-- **若 extern 块内的声明不是函数**（例如 `extern "C" int errno;` 这种变量声明），跳过符号表记录 (codegen 走 `UC_EXPR_IDENT` 普通路径)。
+- **When**: when the parser parses an `extern "C" { ... }` block, it **immediately** records each function
+  declaration's (name, return type, parameter types) into `g_extern_funcs`.
+- **Trigger point**: at the end of `parse_extern_decl`; specifically on the `extern "C"` block-parsing path
+  inside `src-c/src/parser.c`.
+- **If a declaration inside the extern block is not a function** (e.g. a variable declaration such as
+  `extern "C" int errno;`), skip the symbol-table record (codegen takes the normal `UC_EXPR_IDENT` path).
 
-**3. 查询接口**：
+**3. Lookup interface**:
 
 ```c
-// 在 codegen.c 中实现：
+// Implemented in codegen.c:
 const extern_func_sig_t* lookup_extern_func(const char* name) {
     for (int i = 0; i < g_extern_func_count; i++) {
         if (strcmp(g_extern_funcs[i].name, name) == 0) {
@@ -1067,27 +1072,27 @@ const extern_func_sig_t* lookup_extern_func(const char* name) {
 }
 ```
 
-**4. 与 UC_EXPR_CALL 的集成**：
+**4. Integration with `UC_EXPR_CALL`**:
 
 ```c
 case UC_EXPR_CALL: {
     const char* fn_name = ...;
     const char* ret_type = NULL;
 
-    // Priority 1: builtin（§11.0）
+    // Priority 1: builtin (§11.0)
     const builtin_sig_t* bsig = lookup_builtin(fn_name);
     if (bsig) { ret_type = bsig->ret_type; }
-    // Priority 2: 用户函数（§6.1）
+    // Priority 2: user function (§6.1)
     else {
         const char* user_ret = lookup_user_func_ret_type(fn_name);
         if (user_ret) { ret_type = user_ret; }
     }
-    // Priority 3: extern（§10）—— **新增于 0.3.2**
+    // Priority 3: extern (§10) — **new in 0.3.2**
     if (!ret_type) {
         const extern_func_sig_t* esig = lookup_extern_func(fn_name);
         if (esig) { ret_type = esig->ret_type; }
     }
-    // Priority 4: fallback（仅前 3 级全 miss 时）
+    // Priority 4: fallback (used only when the first 3 levels all miss)
     if (!ret_type) { ret_type = "i32"; }
 
     emit_fmt_writeln(g, "%s = call %s %s(%s)", res, ret_type, fn_name, args);
@@ -1096,124 +1101,126 @@ case UC_EXPR_CALL: {
 }
 ```
 
-**5. void 返回类型的处理**：
+**5. Handling void return types**:
 
-- `void free(void* mem)` 的 `ret_type = "void"`
-- emit `call void @free(i8* %mem)`（无 `%res =` 前缀）
-- 不设置 `g->last_expr_type`（无值可传递）
-- 若后续表达式使用 void 调用结果，编译器报错（per §6.2.1.3 void 约束）。
+- For `void free(void* mem)`, `ret_type = "void"`.
+- Emit `call void @free(i8* %mem)` (no `%res =` prefix).
+- Do not set `g->last_expr_type` (no value to pass).
+- If a later expression uses the result of a void call, the compiler reports an error (per the §6.2.1.3 void constraint).
 
-**6. 与既有设施的关系**：
+**6. Relationship with existing facilities**:
 
-- `g_extern_funcs` 与 `g->local_funcs`（用户函数表）独立存储。
-- `lookup_user_func_ret_type()`（impl-plan:170）保持单一函数接口，内部仍按"先 user 后 extern"顺序查询 (合并两个表为统一接口)。
-- §10 FFI 实施时需要确保 parser 与 codegen 间符号表共享 (可能需要 `CGEN` 结构体持有指针，或全局单例)。
+- `g_extern_funcs` is stored separately from `g->local_funcs` (user-function table).
+- `lookup_user_func_ret_type()` (impl-plan:170) keeps a single function interface; internally it still queries in
+  the "user first, then extern" order (merging the two tables into one unified interface).
+- §10 FFI implementation must ensure the symbol table is shared between the parser and codegen (either by
+  having the `CGEN` struct hold a pointer, or via a global singleton).
 
-##### 6.2.1.2 返回类型传播 *(0.3.2 新增)*
+##### 6.2.1.2 Return-Type Propagation *(new in 0.3.2)*
 
-调用表达式的**结果**有以下用途：
+The **result** of a call expression has the following uses:
 
-| 上下文 | 行为 |
+| Context | Behavior |
 |--------|------|
-| 赋值 RHS | `int x = factorial(5);` — `factorial(5)` 的返回类型 (`int`) 必须可赋给 `x` |
-| 表达式语句 | `factorial(5);` — 丢弃返回值，合法 (类似 C) |
-| 子表达式 | `int y = factorial(5) + 1;` — 返回值作算术运算输入 |
-| 函数实参 | `print_num(factorial(5));` — 返回值传给 `print_num` |
-| 条件 | `if (factorial(5) > 100)` — 返回值作 bool 上下文 |
-| cast 源 | `(long)factorial(5)` — 见 §4.8.1 C-style cast |
-| return 值 | `return factorial(5);` — 必须匹配函数声明返回类型 |
+| Assignment RHS | `int x = factorial(5);` — the return type of `factorial(5)` (`int`) must be assignable to `x` |
+| Expression statement | `factorial(5);` — discards the return value, legal (similar to C) |
+| Subexpression | `int y = factorial(5) + 1;` — the return value becomes the input of arithmetic |
+| Function argument | `print_num(factorial(5));` — the return value is passed to `print_num` |
+| Condition | `if (factorial(5) > 100)` — the return value is used as a bool context |
+| Cast source | `(long)factorial(5)` — see §4.8.1 C-style cast |
+| Return value | `return factorial(5);` — must match the enclosing function's declared return type |
 
-##### 6.2.1.3 void 函数调用 *(0.3.2 新增)*
+##### 6.2.1.3 Void Function Calls *(new in 0.3.2)*
 
-返回类型为 `void` 的函数 (如 `print`, `print_num`)：
+For functions whose return type is `void` (such as `print`, `print_num`):
 
-- 调用表达式的"值"是 `void`，没有具体类型。
-- 不可作赋值 RHS，不可作子表达式，不可作 return 值 (除非外层函数也返回 void)。
-- 可单独作语句：`print("hello");`
+- The "value" of the call expression is `void`, with no concrete type.
+- It cannot serve as an assignment RHS, a subexpression, or a return value (unless the enclosing function also returns `void`).
+- It may stand alone as a statement: `print("hello");`
 
-错误类型：
-- `VoidUsedAsValueError` — void 结果被用作值。
-- `ReturnTypeMismatchError` — return 值与函数声明返回类型不匹配。
+Error kinds:
+- `VoidUsedAsValueError` — a void result is used as a value.
+- `ReturnTypeMismatchError` — return value does not match the function's declared return type.
 
-##### 6.2.1.4 codegen 集成 *(0.3.2 新增)*
+##### 6.2.1.4 Codegen Integration *(new in 0.3.2)*
 
-函数调用的 codegen 实现 (在 `src-c/src/codegen.c` 的 `UC_EXPR_CALL` case)：
+The codegen implementation of a function call (in the `UC_EXPR_CALL` case of `src-c/src/codegen.c`):
 
 ```
-1. 求值所有实参 (走 rvalue 路径，§4.13.4)
-2. emit call 指令: ret_val = call i32 @factorial(i32 5)
-3. 设置 g->last_expr_type 为函数签名返回类型 (从 §11.0 表或函数定义取)
-4. 返回 ret_val (后续表达式可继续使用)
+1. Evaluate all arguments (rvalue path, §4.13.4)
+2. Emit call instruction: ret_val = call i32 @factorial(i32 5)
+3. Set g->last_expr_type to the function signature's return type (from §11.0 table or function definition)
+4. Return ret_val (subsequent expressions may continue to use it)
 ```
 
-例：
+Example:
 
 ```c
 int x = factorial(5);
 // codegen:
-//   %1 = call i32 @factorial(i32 5)   ; §11.0 表查得 factorial 返回 int (i32)
+//   %1 = call i32 @factorial(i32 5)   ; §11.0 table shows factorial returns int (i32)
 //   store i32 %1, i32* %x
-//   g->last_expr_type = "i32"          ; 由 §11.0 提供，修复 Bug C2 (硬编码 i32 错位)
+//   g->last_expr_type = "i32"          ; provided by §11.0; fixes Bug C2 (hard-coded i32 mismatch)
 ```
 
-##### 6.2.1.5 与其他章节的交叉引用 *(0.3.2 新增)*
+##### 6.2.1.5 Cross-References with Other Sections *(new in 0.3.2)*
 
-| 章节 | 关系 |
+| Section | Relationship |
 |------|------|
-| §6.1 函数定义 | 函数定义时声明的返回类型是 §6.2.1 优先级 2 的依据 |
-| §10 FFI | extern 函数声明的返回类型是 §6.2.1 优先级 3 的依据 |
-| §11.0 builtin 签名表 | builtin 函数返回类型是 §6.2.1 优先级 1 的依据 |
-| §4.13.4 codegen 路径 | 调用表达式是 rvalue，返回值类型由 §11.0 提供 |
-| §7.4 `alloc` 与 C stdlib | `malloc` 返回 `void*`，调用方需 cast 到具体类型 (§4.8.1) |
-| §12.1 EBNF | 函数调用产生式见 §12.1 |
+| §6.1 Function definition | the return type declared in a function definition is the basis for §6.2.1 priority 2 |
+| §10 FFI | the return type declared in an extern function declaration is the basis for §6.2.1 priority 3 |
+| §11.0 builtin signature table | builtin function return types are the basis for §6.2.1 priority 1 |
+| §4.13.4 codegen paths | the call expression is an rvalue; the return-value type is provided by §11.0 |
+| §7.4 `alloc` and C stdlib | `malloc` returns `void*`; the caller must cast to a concrete type (§4.8.1) |
+| §12.1 EBNF | the function-call production is defined in §12.1 |
 
-### 6.3 参数传递 *(0.3.0 改写：单一 T& + mod())*
+### 6.3 Parameter Passing *(rewritten in 0.3.0: single T& + mod())*
 
-**传值语义：**
-- 参数被复制到函数形参
-- 修改形参不影响实参
+**Pass-by-value semantics:**
+- The argument is copied into the parameter
+- Modifying the parameter does not affect the caller
 
 ```cpp
 void inc(int x) {
-    x = x + 1;  // 不影响调用者
+    x = x + 1;  // does not affect the caller
 }
 
 int n = 10;
 inc(n);
-// n 仍然是 10
+// n is still 10
 ```
 
-**引用传递用于修改（0.3.0 形式——唯一形式）：**
+**Pass-by-reference for modification (0.3.0 form — the only form):**
 
 ```cpp
-// === 0.3.0 形式（唯一）：通过 mod() 申请 ===
+// === 0.3.0 form (only one): request via mod() ===
 void inc(int& x) {
     mod(x);
-    *&x = *&x + 1;  // 或 x = x + 1（视具体语法）
+    *&x = *&x + 1;  // or x = x + 1 (depends on exact syntax)
 }
 
 int n = 10;
-mod(n);  // 或在调用点 mod(n)
+mod(n);  // or mod(n) at the call site
 inc(&n);
-// n 现在是 11
+// n is now 11
 ```
 
-**只读形参继续用 `T&`（不需 `mod`）：**
+**Read-only parameters continue to use `T&` (no `mod` needed):**
 
 ```cpp
-int read(int& x) {          // 只读参数
-    return x;               // 不调用 mod()
+int read(int& x) {          // read-only parameter
+    return x;               // does not call mod()
 }
 
 int n = 10;
 int v = read(n);            // v == 10
 ```
 
-> **参数类型匹配**：参数类型的确定与调用检查遵循 §6.2.1 的优先级规则。
+> **Parameter type matching**: parameter-type determination and call-site checking follow the §6.2.1 priority rules.
 >
-> **[0.3.0 · Q3 反转, Rule 22, Rule 24]** 0.2.0 提供 `void inc(int&mut x)`（独占 mod-by-default，调用点 `inc(&mut n)`）与 `void inc(int& x)`（只读）两种形参。0.3.0 **删除 `T&mut`**，统一为单一引用类型 `T&` 形参：写入需先 `mod(x)` 申请，由 `#modlaw` 决定是否允许多个 mod 并存。独占性通过 `#modlaw exclusive` + `mod()` 实现，不再是类型层面区分。
+> **[0.3.0 · Q3 inverted, Rule 22, Rule 24]** 0.2.0 offered `void inc(int&mut x)` (exclusive mod-by-default, call site `inc(&mut n)`) and `void inc(int& x)` (read-only) as two kinds of parameters. 0.3.0 **removes `T&mut`** and unifies parameters to the single reference type `T&`: writing requires calling `mod(x)` first, and `#modlaw` decides whether multiple mods may coexist. Exclusivity is implemented via `#modlaw exclusive` + `mod()`, no longer a type-level distinction.
 
-### 6.4 返回值
+### 6.4 Return Value
 
 ```cpp
 int max(int a, int b) {
@@ -1225,15 +1232,15 @@ int max(int a, int b) {
 
 Point get_point() {
     Point p = {1.0, 2.0};
-    return p;  // 按值返回（复制）
+    return p;  // return by value (copy)
 }
 ```
 
-> **返回类型**：返回类型由 §6.2.1 决定。
+> **Return type**: the return type is decided by §6.2.1.
 >
-> **[0.3.0 沿用 0.2.0 · D-7]** 按**值**返回局部变量（如上例的 `return p;`）始终合法。返回指向局部变量的**借用**则是悬垂引用，见 §7.9。
+> **[0.3.0 carries over 0.2.0 · D-7]** Returning a local variable **by value** (as `return p;` above) is always legal. Returning a **borrow** that points to a local variable is a dangling reference; see §7.9.
 
-### 6.5 main 函数约定
+### 6.5 main Function Conventions
 
 ```cpp
 int main() {
@@ -1242,99 +1249,99 @@ int main() {
 }
 ```
 
-`main` 函数：
-- 返回 `int`
-- 可以不接受参数，或：
+The `main` function:
+- Returns `int`
+- May take no parameters, or:
   - `int main(int argc, char** argv)`
 
 ---
 
-## 7. 内存管理
+## 7. Memory Management
 
-### 7.1 所有权语义（**两条权限拆分**） *(0.3.0 重写：Rule 22, Q4, Q5)*
+### 7.1 Ownership Semantics (**two permissions split**) *(rewritten in 0.3.0: Rule 22, Q4, Q5)*
 
-> **[0.3.0 · Rule 22]** 0.3.0 把 0.2.0 的「所有权」拆成两个独立的权限：
+> **[0.3.0 · Rule 22]** 0.3.0 splits the 0.2.0 notion of "ownership" into two independent permissions:
 >
-> | 权限 | 决定什么 | 默认值 | 转移方式 |
+> | Permission | Decides | Default | Transfer |
 > |------|---------|--------|----------|
-> | **所有权** | 谁 delete / free | `T* p = alloc(T)` 时拥有；`T* p = &x` 不拥有 | 显式 `move(p)` |
-> | **修改权** | 谁能改值 | owning 指针默认有；`T&` 默认无（需 `mod()`） | 隐式 `mod()`（按 `#modlaw`）|
+> | **Ownership** | Who deletes / frees | Owned when `T* p = alloc(T)`; not owned when `T* p = &x` | Explicit `move(p)` |
+> | **Modification right** | Who may modify the value | Owning pointers have it by default; `T&` does not (requires `mod()`) | Implicit `mod()` (per `#modlaw`)|
 
-**指针与所有权（Rule 2B, Q4）：**
+**Pointers and ownership (Rule 2B, Q4):**
 
-- **任何时刻唯一 owner**：一个 allocated 对象最多有一个 owning 指针。
-- **`T* p = alloc(T)`**：p 拥有对象的**所有权**和**修改权**。
-- **`T* p = &x`**：p 仅持有 x 的地址，**不 owns x**，也**不**默认有 x 的修改权。
-- **赋值 `p1 = p2` 不复制所有权**（Q4）：源 `p2` 仍然 owns；目标 `p1` 获得**修改权**（隐式 `mod(p1)`）。
+- **Exactly one owner at any time**: an allocated object has at most one owning pointer.
+- **`T* p = alloc(T)`**: p owns the object's **ownership** and **modification right**.
+- **`T* p = &x`**: p merely holds x's address, **does not own x**, and **does not** have x's modification right by default.
+- **Assignment `p1 = p2` does not copy ownership** (Q4): source `p2` still owns; target `p1` obtains the **modification right** (implicit `mod(p1)`).
 
-#### 7.1.1 赋值与修改权（**0.3.0 改写 0.2.0 §7.1.1**）
+#### 7.1.1 Assignment and Modification Right (**0.3.0 rewrites 0.2.0 §7.1.1**)
 
-**示例 C（所有权转移 vs. 修改权）：**
+**Example C (ownership transfer vs. modification right):**
 
 ```cpp
 unique int* p1 = alloc(int);  // p1 owns
 *p1 = 100;
 
-unique int* p2 = p1;           // 隐式 mod(p2)：p2 得修改权，p1 仍 owns
+unique int* p2 = p1;           // implicit mod(p2): p2 gets the modification right, p1 still owns
 *p2 = 200;                      // ✅
-// free(p2);                    // ❌ p2 不 owns
+// free(p2);                    // ❌ p2 does not own
 
-move(p2);                       // 显式移交
-// p1 已 moved-out
-free(p2);                       // ✅ 现在 p2 owns
+move(p2);                       // explicit transfer
+// p1 has been moved-out
+free(p2);                       // ✅ p2 now owns
 ```
 
-**规则（0.3.0 与 0.2.0 关键差异）：**
+**Rules (key differences between 0.3.0 and 0.2.0):**
 
-> 设赋值语句为 `dst = src`，其中 `dst` 与 `src` 的类型均为 `unique T`（等价于 `T*`）。
+> Given an assignment statement `dst = src` where both `dst` and `src` are of type `unique T` (equivalent to `T*`).
 >
-> 0.3.0 行为：
-> 1. `dst` 获得**修改权**（隐式 `mod(dst)`，按当前 `#modlaw` 决定是否多 mod 或独占）。
-> 2. `src` 的**所有权不变**——它仍然 owns；除非显式 `move(src)` 才转。
-> 3. `dst` 的所有权状态：不 owns。所以 `free(dst)` 在 **dest 不 owns** 的情况下是编译期错误。
-
-> 0.2.0 行为（D-5）：`src` 置 null，`dst` 接管所有权。
+> 0.3.0 behavior:
+> 1. `dst` obtains the **modification right** (implicit `mod(dst)`, behavior per current `#modlaw`).
+> 2. `src`'s **ownership is unchanged** — it still owns; only explicit `move(src)` transfers it.
+> 3. `dst`'s ownership status: does not own. So `free(dst)` is a compile-time error when **dst does not own**.
 >
-> 0.3.0 **改写**为：`src` 不动，`dst` 获得修改权。`move(p)` 仍是显式移交所有权的唯一途径（Q5）。
+> 0.2.0 behavior (D-5): `src` becomes null, `dst` takes over ownership.
+>
+> 0.3.0 **rewrites** this to: `src` is untouched, `dst` obtains the modification right. `move(p)` remains the only explicit way to transfer ownership (Q5).
 
-**发生所有权转移 `move()` 的位置**（沿用 0.2.0，Q5）：
+**Where ownership transfer `move()` occurs** (carried over from 0.2.0, Q5):
 
-| 位置 | 行为 | 源 | 目标 |
+| Location | Behavior | Source | Target |
 |------|------|----|------|
-| 显式 `move(p)` | 移交所有权 | `p` | `p2`（接收方） |
-| 函数实参 `f(p)`（形参为 `unique T`） | 移交所有权 | `p` | 形参 |
-| 函数返回 `return p;`（返回类型 `unique T`） | 移交所有权 | `p` | 调用方接收处 |
+| Explicit `move(p)` | Transfer ownership | `p` | `p2` (receiver) |
+| Function argument `f(p)` (parameter is `unique T`) | Transfer ownership | `p` | parameter |
+| Function return `return p;` (return type `unique T`) | Transfer ownership | `p` | caller receive site |
 
-**发生修改权授予的位置**（Q4）：
+**Where modification-right granting occurs** (Q4):
 
-| 位置 | 行为 | 源 | 目标 |
+| Location | Behavior | Source | Target |
 |------|------|----|------|
-| 赋值 `dst = src`（类型为 `unique T`） | 隐式 `mod(dst)` | — | `dst` |
-| 显式 `mod(ref_expr)`（§4.9） | 按 `#modlaw` 申请 | — | ref_expr |
+| Assignment `dst = src` (type `unique T`) | Implicit `mod(dst)` | — | `dst` |
+| Explicit `mod(ref_expr)` (§4.9) | Per `#modlaw` | — | ref_expr |
 
-**不发生任何转移的位置**：`clone(s)`、`&s`、`s == null` 等只读比较。
+**Where no transfer occurs**: `clone(s)`, `&s`, `s == null`, etc., read-only comparisons.
 
-### 7.2 alloc 函数
-
-```cpp
-int* alloc(int)                  // 分配单个元素
-int* alloc(int, int count)      // 分配 count 个元素的数组
-```
-
-**示例：**
-```cpp
-int* p = alloc(int);         // 单个 int
-int* arr = alloc(int, 10);    // 10 个 int 的数组
-char* buf = alloc(char, 256); // 256 字节的缓冲区
-```
-
-### 7.3 free 函数
+### 7.2 alloc Function
 
 ```cpp
-free(ptr)    // 释放内存
+int* alloc(int)                  // allocate a single element
+int* alloc(int, int count)      // allocate an array of count elements
 ```
 
-**示例：**
+**Examples:**
+```cpp
+int* p = alloc(int);         // a single int
+int* arr = alloc(int, 10);    // an array of 10 ints
+char* buf = alloc(char, 256); // a 256-byte buffer
+```
+
+### 7.3 free Function
+
+```cpp
+free(ptr)    // release memory
+```
+
+**Examples:**
 ```cpp
 int* p = alloc(int);
 *p = 42;
@@ -1344,181 +1351,181 @@ int* arr = alloc(int, 10);
 free(arr);
 ```
 
-> **[0.3.0 沿用 0.2.0 · D-6]** `alloc` 与 `free` 的配对由程序员负责，编译器**不强制**检查。
+> **[0.3.0 carries over 0.2.0 · D-6]** The pairing of `alloc` and `free` is the programmer's responsibility; the compiler **does not enforce** it.
 
-### 7.4 move(p) 表达式 *(沿用 0.2.0 · D-4, Q5)*
+### 7.4 `move(p)` Expression *(carried over from 0.2.0 · D-4, Q5)*
 
-> **move 是类型参数化 builtin**，详见 §11.0。
+> **`move` is a type-parameterized builtin**, see §11.0 for details.
 >
-> **[0.3.0 · D-4, Q5]** `move(p)` 是语言的**内建 primitive**，**不是**语法糖，也**不是**普通函数。它是**显式移交所有权**的唯一途径。
+> **[0.3.0 · D-4, Q5]** `move(p)` is the language's **built-in primitive**, **not** syntactic sugar, and **not** an ordinary function. It is the **only way to explicitly transfer ownership**.
 
-**语法**（见 §12.1 `unary_expression`）：
+**Syntax** (see §12.1 `unary_expression`):
 ```
 move '(' expression ')'
 ```
 
-**语义：**
+**Semantics:**
 
-1. 操作数必须是可寻址的左值，类型为 `unique T`（等价于 `T*`）。
-2. `move(p)` 的**结果**是 `p` 原先持有的指针值，类型为 `unique T`。
-3. **运行时效果**：求值 `move(p)` 后，编译器必须发出把 `p` 的存储单元写为 `null` 的代码。
-4. **静态效果**：`p` 被标记为 moved-out，此后对 `p` 的任何使用都是编译期错误 `UseAfterMove`。
-5. `move` 不产生新的分配，也不复制被指向的对象；它只转移所有权。
-6. `move(p)` 与隐式 move（仅在 `dst = src` **不**触发 move 的 0.3.0 行为下，move(p) 是唯一显式手段）的关系：move 是显式手段；隐式赋值只授予修改权，不移交所有权。
+1. The operand must be an addressable lvalue of type `unique T` (equivalent to `T*`).
+2. The **result** of `move(p)` is the pointer value that `p` previously held, of type `unique T`.
+3. **Runtime effect**: after evaluating `move(p)`, the compiler must emit code that writes `p`'s storage cell to `null`.
+4. **Static effect**: `p` is marked as moved-out; any subsequent use of `p` is a compile-time error `UseAfterMove`.
+5. `move` does not allocate or copy the pointed-to object; it only transfers ownership.
+6. The relationship between `move(p)` and implicit move (under 0.3.0's "assignment does not trigger move" behavior, `move(p)` is the only explicit means): `move` is the explicit means; implicit assignment only grants the modification right and does not transfer ownership.
 
 ```cpp
 unique int p1 = alloc(int);
 *p1 = 42;
 
-unique int p2 = move(p1);   // p1 运行时变为 null，静态标记为 moved-out
+unique int p2 = move(p1);   // p1 becomes null at runtime, marked moved-out statically
 
-// int v = *p1;             // ❌ 编译期错误 UseAfterMove
+// int v = *p1;             // ❌ compile-time error UseAfterMove
 int v = *p2;                // ✅ v == 42
 free(p2);                   // ✅
 ```
 
-### 7.5 clone 函数
+### 7.5 clone Function
 
-`clone()` 复制指针，两份独立所有权。
+`clone()` copies the pointer, yielding two independent ownerships.
 
 ```cpp
 int* p1 = alloc(int);
-int* p2 = clone(p1);  // p1 和 p2 独立，各自释放
+int* p2 = clone(p1);  // p1 and p2 are independent, each freed separately
 ```
 
-### 7.6 null 常量
+### 7.6 null Constant
 
 ```cpp
-int* p = null;      // 空指针
-if (p == null) {    // 比较
-    // p 为 null
+int* p = null;      // null pointer
+if (p == null) {    // comparison
+    // p is null
 }
 ```
 
-### 7.7 指针运算
+### 7.7 Pointer Arithmetic
 
 ```cpp
 int* ptr = alloc(int, 10);
-ptr[0] = 1;          // 索引访问
-ptr[5] = ptr[0];    // 复制值
+ptr[0] = 1;          // index access
+ptr[5] = ptr[0];    // copy a value
 
 int* p1 = alloc(int, 10);
-int* p2 = p1 + 5;   // 偏移指针
+int* p2 = p1 + 5;   // offset the pointer
 ```
 
-### 7.8 引用 `&T`（重写 0.2.0 §7.8） *(0.3.0 改写，0.3.1 修订)*
+### 7.8 Reference `&T` (rewriting 0.2.0 §7.8) *(rewritten in 0.3.0, revised in 0.3.1)*
 
-> **[0.3.0 改写]** 0.3.0 删除 `T&mut` 类型。`T&` 是唯一的引用类型，是否可写由 `mod()` + `#modlaw` 决定。
-> **[0.3.1 修订]** 0.3.1 显式定义 lvalue / rvalue 概念（§4.13），本节“操作数必须是左值”
-> 的“左值”引用 §4.13.2 表达式分类表。
+> **[0.3.0 rewrite]** 0.3.0 removes the `T&mut` type. `T&` is the sole reference type; writability is decided by `mod()` + `#modlaw`.
+> **[0.3.1 revision]** 0.3.1 explicitly defines the lvalue / rvalue concepts (§4.13); the "operand must be an lvalue"
+> wording in this section references the §4.13.2 expression classification table.
 
-**语法**（见 §12.1）：
+**Syntax** (see §12.1):
 ```
 '&' unary_expression
 ```
 
-`&expr` 创建对 `expr` 所指对象的引用，结果类型为 `T&`。
+`&expr` creates a reference to the object denoted by `expr`; the result type is `T&`.
 
-**创建规则：**
+**Creation rules:**
 
-1. 操作数必须是 lvalue（见 §4.13.2 表达式分类表 — 哪些表达式是 lvalue）。
-   - ✅ 合法：`&x`（变量）、`&*p`（解引用）、`&s.field`（字段访问）、`&a[i]`（索引）、`&++x`（前缀自增）
-   - ❌ 非法：`&42`（字面量）、`&x + 1`（算术结果）、`&f()`（函数调用结果）、`&x++`（后缀自增结果）
-2. owner 必须处于活跃且已初始化的状态。
-3. 引用不能超出 owner 的生命周期（违反时报 DanglingReference，见 §7.9）。
-4. `&` 不改变 owner 的所有权状态。
+1. The operand must be an lvalue (see the §4.13.2 expression classification table — which expressions are lvalues).
+   - ✅ legal: `&x` (variable), `&*p` (dereference), `&s.field` (field access), `&a[i]` (index), `&++x` (prefix increment)
+   - ❌ illegal: `&42` (literal), `&x + 1` (arithmetic result), `&f()` (function-call result), `&x++` (postfix-increment result)
+3. The owner must be live and initialized.
+3. The reference cannot outlive its owner's lifetime (violation reports `DanglingReference`, see §7.9).
+4. `&` does not change the owner's ownership state.
 
-**可写性（Rule 24）：**
+**Writability (Rule 24):**
 
-5. 写入需先 `mod()`。`r = v;` 必须先用 `mod(r);` 申请修改权，否则是编译期错误。
-6. 多个 `T&` 可并存。
-7. 排他性由 `#modlaw exclusive` 控制（编译期检查 `mod()` 争用）。
+5. Writing requires `mod()` first. `r = v;` must first call `mod(r);` to request the modification right, otherwise it is a compile-time error.
+6. Multiple `T&` may coexist.
+7. Exclusivity is controlled by `#modlaw exclusive` (compile-time check of `mod()` conflicts).
 
 ```cpp
 #modlaw shared module
 
 int x = 42;
 int& r1 = x;
-int& r2 = x;        // ✅ 多个引用并存
-int v = r1 + r2;    // ✅ 读
-// r1 = 100;        // ❌ 编译错：没有 mod 权
-mod(r1);            // ✅ 申请修改权（按 #modlaw 决定行为）
-*r1 = 100;          // ✅ 写入
+int& r2 = x;        // ✅ multiple references coexist
+int v = r1 + r2;    // ✅ read
+// r1 = 100;        // ❌ compile error: no mod right
+mod(r1);            // ✅ request modification right (per #modlaw)
+*r1 = 100;          // ✅ write
 
 #modlaw exclusive module
 
 int y = 10;
 int& m = y;
-mod(m);             // ✅ 独占 mod
+mod(m);             // ✅ exclusive mod
 *m = 100;
-// mod(m2);         // ❌ 编译错：争用
+// mod(m2);         // ❌ compile error: conflict
 
 #modlaw none module
 
 int z = 5;
 int& r = z;
-// mod(r);         // ❌ 编译错：none 策略禁止
-r;                  // ✅ 只读
-// *r = 100;       // ❌ 无 mod 权
+// mod(r);         // ❌ compile error: none policy forbids
+r;                  // ✅ read-only
+// *r = 100;       // ❌ no mod right
 ```
 
-### 7.9 悬垂引用 (Dangling Reference) *(0.3.0 沿用 0.2.0 · D-7)*
+### 7.9 Dangling Reference *(0.3.0 carries over 0.2.0 · D-7)*
 
-定义与触发条件与 0.2.0 §7.10 相同，本节保留供查阅。
+The definition and triggering conditions are the same as 0.2.0 §7.10; this section is retained for reference.
 
-**定义**：一个 `T&` 借用是**悬垂 (dangling)** 的，当它在其 owner 的存储被销毁之后仍然可达。
+**Definition**: a `T&` borrow is **dangling** when it remains reachable after its owner's storage has been destroyed.
 
-**触发条件**（沿用 0.2.0）：
+**Triggering conditions** (carried over from 0.2.0):
 
-- **(a)** `&T` 借用的 owner 已离开作用域。
-- **(b)** 函数返回引用，但 owner 是该函数的局部变量。
+- **(a)** The owner of an `&T` borrow has gone out of scope.
+- **(b)** A function returns a reference, but the owner is a local variable of that function.
 
-**示例（a）（沿用 0.2.0）**：
+**Example (a) (carried over from 0.2.0)**:
 
 ```cpp
 int main() {
     int& r;
     {
         int x = 42;
-        r = x;              // 借用 x（0.3.0 语法：右侧是左值，不是 &x）
-    }                       // ← x 离开作用域
+        r = x;              // borrow x (0.3.0 syntax: right side is an lvalue, not &x)
+    }                       // ← x goes out of scope
     return r;               // ❌ DanglingReference
 }
 ```
 
-**正例（沿用 0.2.0）**：
+**Positive example (carried over from 0.2.0)**:
 
 ```cpp
 int make_answer_by_value() {
     int x = 42;
-    return x;               // ✅ 按值返回（复制）
+    return x;               // ✅ return by value (copy)
 }
 
 unique int make_answer_owned() {
     unique int p = alloc(int);
     *p = 42;
-    return p;               // ✅ move：所有权 transfer（见 §7.1.1）
+    return p;               // ✅ move: ownership transfer (see §7.1.1)
 }
 ```
 
-### 7.10 const T* / T* const 自定义语义详解（Q6） *(0.3.0 新增)*
+### 7.10 `const T*` / `T* const` Custom Semantics in Detail (Q6) *(new in 0.3.0)*
 
-> **[0.3.0 · Q6 自定义语义，与 C++ 相反]** 详见 §3.8 概念部分，本节给出更深入的语义规则。
+> **[0.3.0 · Q6 custom semantics, opposite of C++]** See §3.8 for the conceptual part; this section gives deeper semantic rules.
 
 #### 7.10.1 `const T*`
 
-- **指针锁定**：声明 `const T* p = &x;` 后，**不能再赋给 p**（`p = &y;` 是编译期错误）。
-- **只读访问**：通过 `p` 不能写（`*p = v;` 是编译期错误）。
-- **生命周期安全**：编译器会验证指向对象的生命周期 ≥ 借用的使用范围。
-- **不允许指向 owning heap 变量**（owning heap 可能在未来被 move / free，导致悬垂）。
+- **Pointer-lock**: after `const T* p = &x;`, **p can no longer be reassigned** (`p = &y;` is a compile-time error).
+- **Read-only access**: cannot write through `p` (`*p = v;` is a compile-time error).
+- **Lifetime safety**: the compiler verifies that the pointed-to object's lifetime ≥ the borrow's use range.
+- **Cannot point to an owning heap variable** (the owning heap may later be moved or freed, causing dangle).
 
 #### 7.10.2 `T* const`
 
-- **数据只读视图**：通过 `r` 不能写（`*r = v;` 是编译期错误）。
-- **允许 rebind**：`r = &y;` 合法。
-- **同样不允许指向 owning heap 变量**——若 h 是 owning，`T* const r = h;` 在编译期被拒。
+- **Data read-only view**: cannot write through `r` (`*r = v;` is a compile-time error).
+- **Rebind allowed**: `r = &y;` is legal.
+- **Same prohibition on pointing to owning heap** — if h is owning, `T* const r = h;` is rejected at compile time.
 
-#### 7.10.3 owning heap 禁止的诊断
+#### 7.10.3 Diagnostic for Owning-Heap Prohibition
 
 ```
 error[E0650]: cannot create read-only view of owning heap pointer
@@ -1532,15 +1539,15 @@ error[E0650]: cannot create read-only view of owning heap pointer
    = help: copy the value first: `int v = *h; const int* p = &v;`
 ```
 
-#### 7.10.4 与 `mod()` 的关系
+#### 7.10.4 Relationship with `mod()`
 
-`const T*` 与 `T* const` 都是**只读**的——`mod()` 不适用于它们，因为它们的设计意图就是「不让任何代码写它们」。
+Both `const T*` and `T* const` are **read-only** — `mod()` does not apply to them, because their design intent is precisely "no code can write through them".
 
 ---
 
-## 8. struct 类型
+## 8. struct Types
 
-### 8.1 struct 定义
+### 8.1 struct Definition
 
 ```cpp
 struct Point {
@@ -1554,7 +1561,7 @@ struct Circle {
 }
 ```
 
-### 8.2 字段访问
+### 8.2 Field Access
 
 ```cpp
 Point p;
@@ -1567,19 +1574,19 @@ c.center.y = 0.0;
 c.radius = 5.0;
 ```
 
-### 8.3 内存布局
+### 8.3 Memory Layout
 
-结构体使用**顺序布局**，可能为对齐添加填充：
+Structures use **sequential layout**, with padding possibly added for alignment:
 
 ```cpp
 struct Example {
-    char  c;    // 1 字节
-    int   i;    // 4 字节（可能添加 3 字节填充）
-    short s;    // 2 字节
+    char  c;    // 1 byte
+    int   i;    // 4 bytes (3 bytes of padding may be added)
+    short s;    // 2 bytes
 }
 ```
 
-### 8.4 作为字段的函数指针
+### 8.4 Function Pointers as Fields
 
 ```cpp
 struct Comparator {
@@ -1595,75 +1602,75 @@ int result = cmp.compare(10, 20);  // result = 30
 
 ---
 
-## 9. 模块和预处理器 *(0.3.0 新增 §9.9)*
+## 9. Modules and Preprocessor *(new in 0.3.0 §9.9)*
 
-### 9.1 预处理阶段
+### 9.1 Preprocessing Phase
 
-UltraCPP 在词法分析之前运行**预处理阶段**，处理以下指令：
+UltraCPP runs a **preprocessing phase** before lexical analysis, handling the following directives:
 
-| 指令 | 行为 |
+| Directive | Behavior |
 |------|------|
-| `#include "path"` | 展开文件内容到当前位置 |
-| `#import "module"` | 记录模块依赖（不展开内容） |
-| `#modlaw <perm> <scope>` *(0.3.0 新增)* | 设置当前文件 / 模块的修改权策略（见 §9.9） |
-| `export <declaration>` | 标记导出的函数/变量 |
+| `#include "path"` | Expand the file's contents at the current position |
+| `#import "module"` | Record a module dependency (do not expand contents) |
+| `#modlaw <perm> <scope>` *(new in 0.3.0)* | Set the modification-right policy for the current file / module (see §9.9) |
+| `export <declaration>` | Mark exported functions/variables |
 
-**预处理输出**：
-1. 展开 `#include` 后的纯代码
-2. 模块依赖列表
-3. 当前 `#modlaw` 策略
-4. 导出符号列表
+**Preprocessing output:**
+1. Pure code with `#include` expanded
+2. Module dependency list
+3. Current `#modlaw` policy
+4. Exported symbol list
 
-### 9.2 #include 语法和语义
+### 9.2 #include Syntax and Semantics
 
-**源码复制**：`#include` 将指定文件的内容**逐字复制**到 `#include` 指令位置。
+**Source copy**: `#include` copies the contents of the specified file **verbatim** into the location of the `#include` directive.
 
 ```cpp
 #include "file_path"
 ```
 
-**示例：**
+**Example:**
 ```cpp
 // main.upp
 #include "../../lib/math.uc"
 
 int main() {
-    int result = add(5, 3);  // add() 定义在 math.uc 中
+    int result = add(5, 3);  // add() defined in math.uc
     return result;
 }
 ```
 
-**行为**：
-- `#include` 后的代码直接获得被包含文件的所有定义
-- 不需要额外的声明即可调用被包含文件中的函数
-- 文件路径相对于**当前源文件目录**解析
+**Behavior:**
+- Code after `#include` directly acquires all definitions of the included file
+- No additional declaration is required to call functions in the included file
+- File paths are resolved relative to the **current source file's directory**
 
-**搜索路径顺序**：
-1. 相对于当前源文件目录
-2. 相对于项目根目录
-3. 相对于指定的 include 路径
+**Search path order:**
+1. Relative to the current source file's directory
+2. Relative to the project root
+3. Relative to an explicitly specified include path
 
-### 9.3 #import 语法和语义
+### 9.3 #import Syntax and Semantics
 
-**模块导入**：`#import` 记录对某个模块的依赖，**不展开其内容**。
+**Module import**: `#import` records a dependency on a module **without expanding its contents**.
 
 ```cpp
 #import "module_path"
 #import "module_path" as alias
 ```
 
-**示例：**
+**Example:**
 ```cpp
-#import "math";           // 导入 math 模块
-#import "io" as stdio;    // 导入 io 模块并起别名
+#import "math";           // import the math module
+#import "io" as stdio;    // import the io module with an alias
 ```
 
-**行为**：
-1. 记录模块依赖，但不展开源代码
-2. 被导入模块需要单独编译
-3. 调用模块函数需要 `extern` 声明或 `#include` 其接口
+**Behavior:**
+1. Records the module dependency but does not expand the source
+2. The imported module must be compiled separately
+3. Calling module functions requires an `extern` declaration or `#include` of the interface
 
-**生成的依赖文件**：
+**Generated dependency file:**
 ```json
 {
   "module": "math",
@@ -1672,9 +1679,9 @@ int main() {
 }
 ```
 
-### 9.4 export 声明
+### 9.4 export Declarations
 
-标记函数或变量为**模块导出**，外部可以通过 `#import` 访问。
+Mark a function or variable as a **module export**; the outside can access it via `#import`.
 
 ```cpp
 export int add(int a, int b) {
@@ -1689,25 +1696,25 @@ export struct Point {
 }
 ```
 
-**规则**：
-- 没有 `export` 的符号是**模块私有**的
-- `export` 只能在模块顶层使用
-- 导出的函数/变量可以被 `#import` 该模块的代码访问
+**Rules:**
+- Symbols without `export` are **module-private**
+- `export` can only be used at the top level of a module
+- Exported functions/variables can be accessed by code that `#import`s the module
 
-### 9.5 模块设计规则
+### 9.5 Module Design Rules
 
-UltraCPP 的模块系统遵循以下规则：
+UltraCPP's module system follows these rules:
 
-1. **定义函数不需要声明** - 同文件内函数调用无需前置声明
-2. **外部模块函数需要 import** - 调用其他模块的函数必须 `#import` 该模块
-3. **内部函数不可外部访问** - 未 export 的函数只能模块内部使用
+1. **No declaration required to define functions** - Within the same file, function calls need no forward declaration
+2. **Functions in other modules require import** - Calling functions from another module must `#import` that module
+3. **Internal functions cannot be accessed externally** - Functions without `export` can only be used inside the module
 
-**示例**：
+**Example:**
 ```cpp
 // lib/math.uc
-export int add(int a, int b);  // 导出接口
+export int add(int a, int b);  // exported interface
 
-int _internal_helper(int x) {  // 内部函数，外部不可见
+int _internal_helper(int x) {  // internal function, not visible outside
     return x + 1;
 }
 
@@ -1721,21 +1728,21 @@ int add(int a, int b) {
 #include "../../lib/math.uc"
 
 int main() {
-    add(5, 3);           // ✅ 可以调用
-    _internal_helper(1); // ❌ 不可调用（未导出）
+    add(5, 3);           // ✅ can call
+    _internal_helper(1); // ❌ cannot call (not exported)
     return 0;
 }
 ```
 
-### 9.6 模块搜索路径
+### 9.6 Module Search Paths
 
-| 路径类型 | 解析方式 |
+| Path Type | Resolution |
 |----------|----------|
-| 相对路径 | 相对于当前源文件目录 |
-| 绝对路径 | 相对于项目根目录 |
-| 指定路径 | 通过 `-I` 参数添加的搜索路径 |
+| Relative path | Relative to the current source file's directory |
+| Absolute path | Relative to the project root |
+| Specified path | Added via `-I` argument |
 
-### 9.7 循环依赖检测
+### 9.7 Circular Dependency Detection
 
 ```cpp
 // a.uc
@@ -1748,115 +1755,115 @@ int func_a() {
 
 ```cpp
 // b.uc
-#include "a.uc"  // 错误：检测到循环依赖
+#include "a.uc"  // error: circular dependency detected
 
 int func_b() {
     return 42;
 }
 ```
 
-**检测规则**：如果两个模块相互 `#include`，编译器应报告错误。
+**Detection rule**: If two modules mutually `#include` each other, the compiler should report an error.
 
-### 9.8 编译流程
+### 9.8 Compilation Pipeline
 
 ```
-源代码 (.uc/.upp)
+Source code (.uc/.upp)
     │
     ▼
 ┌─────────────────┐
-│   预处理阶段     │
-│  - 展开 #include │
-│  - 记录 #import  │
-│  - 解析 #modlaw  │ (0.3.0 新增)
-│  - 解析 export   │
+│   Preprocessing │
+│  - Expand #include│
+│  - Record #import │
+│  - Parse #modlaw  │ (new in 0.3.0)
+│  - Parse export   │
 └─────────────────┘
     │
     ▼
 ┌─────────────────┐
-│   词法分析       │
-│   语法分析       │
-│   代码生成       │
+│   Lexical analysis│
+│   Syntax analysis │
+│   Code generation │
 └─────────────────┘
     │
     ▼
   LLVM IR (.ll)
     │
     ▼
-  llc (汇编)
+  llc (assembly)
     │
     ▼
-  目标文件 (.o)
+  Object file (.o)
     │
     ▼
-  链接器 (gcc/ld)
+  Linker (gcc/ld)
     │
     ▼
-  可执行文件
+  Executable
 ```
 
-### 9.9 `#modlaw` 指令 *(0.3.0 新增：Rule 23)*
+### 9.9 `#modlaw` Directive *(new in 0.3.0: Rule 23)*
 
-> **[0.3.0 · Rule 23]** 关键字：`#modlaw`（全小写，下划线）。语法：`#modlaw <perm> <scope>`。
+> **[0.3.0 · Rule 23]** Keyword: `#modlaw` (all lowercase, underscore). Syntax: `#modlaw <perm> <scope>`.
 
-**语法**：
+**Syntax**:
 ```
 #modlaw <perm> <scope>
 ```
 
-**合法组合（仅 6 种）：**
+**Legal combinations (only 6):**
 
-| `perm`     | `scope`    | 含义                                                      |
+| `perm`     | `scope`    | Meaning                                                      |
 |------------|------------|-----------------------------------------------------------|
-| `none`     | `global`   | 全局禁止 `mod()`；引用只读                                |
-| `none`     | `module`   | 本模块禁止 `mod()`；引用只读                              |
-| `exclusive`| `global`   | 全局 `mod()` 独占（编译期检查争用）                       |
-| `exclusive`| `module`   | 本模块 `mod()` 独占（编译期检查争用）                     |
-| `shared`   | `global`   | 全局 `mod()` 共享（多 mod 允许，程序员责任处理数据竞争）  |
-| `shared`   | `module`   | 本模块 `mod()` 共享（多 mod 允许，程序员责任处理数据竞争）|
+| `none`     | `global`   | Global `mod()` forbidden; references are read-only         |
+| `none`     | `module`   | This module's `mod()` forbidden; references are read-only  |
+| `exclusive`| `global`   | Global `mod()` exclusive (compile-time conflict checks)    |
+| `exclusive`| `module`   | This module's `mod()` exclusive (compile-time conflict checks) |
+| `shared`   | `global`   | Global `mod()` shared (multiple mods allowed; data races are programmer's responsibility) |
+| `shared`   | `module`   | This module's `mod()` shared (multiple mods allowed; data races are programmer's responsibility)|
 
-**非法组合**：其他 10 种组合是编译期错误。例如 `#modlaw none shared`、`#modlaw exclusive none`、`#modlaw shared exclusive` 等。
+**Illegal combinations**: The other 10 combinations are compile-time errors. For example `#modlaw none shared`, `#modlaw exclusive none`, `#modlaw shared exclusive`, etc.
 
-**作用域（`scope`）：**
+**Scope (`scope`):**
 
-- `global`：影响整个文件以及被 `#include` 引入的所有符号。
-- `module`：仅影响当前 `.uc` 模块内的符号；被 `#include` 的文件不继承。
-- 默认未指定 `#modlaw` 时，等价于 `#modlaw shared module`。
+- `global`: affects the entire file and all symbols introduced via `#include`.
+- `module`: affects only symbols within the current `.uc` module; included files do not inherit.
+- The default when `#modlaw` is unspecified is equivalent to `#modlaw shared module`.
 
-**位置**：`#modlaw` 指令必须出现在模块的**顶部**（在 `import` / `include` / `export` 之后，第一个函数 / 变量声明之前）。同一模块最多一条 `#modlaw`；重复出现是编译期错误。
+**Position**: the `#modlaw` directive must appear at the **top** of the module (after `import` / `include` / `export`, before the first function / variable declaration). At most one `#modlaw` per module; duplicates are a compile-time error.
 
-**示例 B（三种合法策略）：**
+**Example B (three legal policies):**
 
 ```cpp
-// === 共享模式（默认） ===
+// === shared mode (default) ===
 #modlaw shared module
 
 int x = 42;
-int& r1 = x;       // 共享引用
-int& r2 = x;       // 也共享
-mod(r1);            // ✅ r1 获得共享 mod
-mod(r2);            // ✅ r2 也可获得（数据竞争程序员责任）
+int& r1 = x;       // shared reference
+int& r2 = x;       // also shared
+mod(r1);            // ✅ r1 obtains a shared mod
+mod(r2);            // ✅ r2 can also obtain it (data race is programmer's responsibility)
 *r1 = 100; *r2 = 200;
 
-// === 独占模式 ===
+// === exclusive mode ===
 #modlaw exclusive module
 
 int y = 10;
 int& m = y;
-mod(m);             // ✅ 独占 mod
-// mod(m2);         // ❌ 编译错：争用
+mod(m);             // ✅ exclusive mod
+// mod(m2);         // ❌ compile error: conflict
 *m = 100;
 
-// === none 模式 ===
+// === none mode ===
 #modlaw none module
 
 int z = 5;
 int& r = z;
-// mod(r);         // ❌ 编译错：none 策略禁止
-r;                  // ✅ 只读
-// *r = 100;       // ❌ 无 mod 权
+// mod(r);         // ❌ compile error: none policy forbids
+r;                  // ✅ read-only
+// *r = 100;       // ❌ no mod right
 ```
 
-**错误诊断：**
+**Error diagnostic:**
 
 ```
 error[E0701]: `#modlaw` policy forbids `mod()` under `none`
@@ -1872,22 +1879,22 @@ error[E0701]: `#modlaw` policy forbids `mod()` under `none`
 
 ---
 
-## 10. FFI（外部函数接口）
+## 10. FFI (Foreign Function Interface)
 
-### 10.1 extern "C" 块
+### 10.1 `extern "C"` Block
 
 ```cpp
 extern "C" {
-    // C 函数声明
+    // C function declarations
 }
 ```
 
-### 10.2 C 类型映射
+### 10.2 C Type Mapping
 
-| C 类型 | UltraCPP 类型 |
+| C Type | UltraCPP Type |
 |--------|---------------|
 | `T*` | `T*` |
-| `const T*` | UltraCPP 中含义**与 C 不同**（见 §3.8 / §7.10）；FFI 桥接时须显式标注 `readonly` |
+| `const T*` | Meaning in UltraCPP **differs from C** (see §3.8 / §7.10); at the FFI bridge, must be explicitly annotated `readonly` |
 | `void*` | `void*` |
 | `int (*)(T)` | `int (*)(T)` |
 | `int` | `int` |
@@ -1895,19 +1902,19 @@ extern "C" {
 | `char` | `char` |
 | `char*` | `char*` |
 
-> **[0.3.0 新增注记]** 在 FFI 边界，C 标准库的 `const char*`（指向 const data）在 UltraCPP 中既是"指针锁定"又是"数据只读"。两种语义都与 C 等价（都不能写），但 rebind 语义不同：如果 UltraCPP 代码持有来自 C 的 `const char*`，编译器把它视为**指针锁定**——这与 C 的 `const char*` 行为（指针可改）有差异，是 0.3.0 在 §3.8 自定义语义的直接后果。
+> **[0.3.0 new note]** At the FFI boundary, the C standard library's `const char*` (pointing to const data) is in UltraCPP both "pointer-locked" and "data read-only". Both semantics are equivalent to C (neither can write), but the rebind semantics differ: if UltraCPP code holds a `const char*` coming from C, the compiler treats it as **pointer-locked** — this differs from C's `const char*` behavior (pointer is mutable), a direct consequence of the custom semantics in §3.8 of 0.3.0.
 
-> **FFI 返回类型**遵循 §6.2.1 的优先级 3（extern 声明）。
+> **FFI return type** follows §6.2.1 priority 3 (extern declaration).
 
-### 10.3 unsafe 块
+### 10.3 unsafe Block
 
 ```cpp
 unsafe {
-    // FFI 调用和原始指针操作
+    // FFI calls and raw pointer operations
 }
 ```
 
-**示例：**
+**Example:**
 ```cpp
 extern "C" {
     void* malloc(int size);
@@ -1921,13 +1928,13 @@ char* allocate_buffer(int size) {
 }
 ```
 
-> **[0.3.0 沿用 0.2.0 · D-2, D-7]** `unsafe` 块内**抑制**所有权与借用检查：§7.1 的隐式 `mod()` 检查、§7.8 的借用规则、§7.9 的 `DanglingReference` 在 `unsafe` 块内不报告。`unsafe` **不改变**语义——`move` 仍然把源置 null（§7.4），`&` 仍然是引用（§7.8）——它只是把安全责任转移给程序员。
+> **[0.3.0 carries over 0.2.0 · D-2, D-7]** Inside an `unsafe` block, **ownership and borrow checks are suppressed**: the implicit `mod()` check of §7.1, the borrow rules of §7.8, and the `DanglingReference` of §7.9 are not reported inside `unsafe`. `unsafe` **does not change semantics** — `move` still nulls the source (§7.4), and `&` is still a reference (§7.8) — it merely shifts the safety responsibility to the programmer.
 
-### 10.4 内联汇编
+### 10.4 Inline Assembly
 
-嵌入汇编必须放在 `unsafe` 块中。
+Embedded assembly must be placed in an `unsafe` block.
 
-**语法：**
+**Syntax:**
 ```cpp
 unsafe {
     asm {
@@ -1939,7 +1946,7 @@ unsafe {
 }
 ```
 
-**示例：**
+**Example:**
 ```cpp
 int result;
 int input = 10;
@@ -1956,54 +1963,54 @@ unsafe {
 }
 ```
 
-**约束字符：**
-| 约束 | 含义 |
+**Constraint characters:**
+| Constraint | Meaning |
 |------|------|
-| `r` | 通用寄存器 |
-| `=` | 输出寄存器 |
-| `&` | early clobber（不得重用） |
-| `m` | 内存引用 |
+| `r` | General register |
+| `=` | Output register |
+| `&` | Early clobber (must not be reused) |
+| `m` | Memory reference |
 
 ---
 
-## 11. 标准库约定 *(0.3.2 修订)*
+## 11. Standard Library Conventions *(revised in 0.3.2)*
 
-> **[0.3.2]** 本章描述 UltraCPP 标准库函数的**签名约定**和**语义约定**。**builtin 签名总表**见 §11.0 (0.3.2 新增)。编译器在 codegen 阶段查询 §11.0 表以确定函数调用的返回类型，详见 §6.2.1。
+> **[0.3.2]** This chapter describes UltraCPP standard-library functions' **signature conventions** and **semantic conventions**. The **builtin signature master table** is in §11.0 (new in 0.3.2). The compiler queries the §11.0 table during codegen to determine a function call's return type; see §6.2.1 for details.
 
-### 11.0 builtin 签名总表 *(0.3.2 新增)*
+### 11.0 Builtin Signature Master Table *(new in 0.3.2)*
 
-UltraCPP 提供以下 **builtin 函数**。builtin 函数由编译器**内置识别**：
+UltraCPP provides the following **builtin functions**. Builtin functions are **intrinsically recognized** by the compiler:
 
-- 不需要 `#include` 任何头文件
-- 不需要在用户代码中声明
-- codegen 阶段直接 emit 对应的 LLVM IR 调用
+- No `#include` of any header is required
+- No declaration is needed in user code
+- During codegen, the compiler directly emits the corresponding LLVM IR call
 
-> **历史**：0.3.1 spec 没有 builtin 签名总表，散落在 §11.1-§11.6 中。0.3.2 集中为 §11.0，便于 codegen 查询和 spec 维护。
+> **History**: 0.3.1 spec did not have a builtin signature master table; the signatures were scattered across §11.1–§11.6. 0.3.2 centralizes them as §11.0 to simplify codegen queries and spec maintenance.
 
-#### 11.0.1 完整 builtin 签名表 *(0.3.2 新增)*
+#### 11.0.1 Complete Builtin Signature Table *(new in 0.3.2)*
 
-| 函数名 | 签名 | 返回类型 | 分类 | 详细说明 |
+| Function | Signature | Return Type | Category | Details |
 |--------|------|----------|------|----------|
 | `print` | `void print(const char* s)` | `void` | I/O | §11.1 |
 | `print_num` | `void print_num(int n)` | `void` | I/O | §11.1 |
 | `print_float` | `void print_float(double f)` | `void` | I/O | §11.1 |
-| `strlen` | `int strlen(const char* s)` | `int` | 字符串 | §11.2 |
-| `strcpy` | `char* strcpy(char* dest, const char* src)` | `char*` | 字符串 | §11.2 |
-| `strcmp` | `int strcmp(const char* a, const char* b)` | `int` | 字符串 | §11.2 |
-| `memcpy` | `void* memcpy(void* dest, const void* src, int n)` | `void*` | 内存 | §11.3 |
-| `memmove` | `void* memmove(void* dest, const void* src, int n)` | `void*` | 内存 | §11.3 |
-| `memset` | `void* memset(void* s, int c, int n)` | `void*` | 内存 | §11.3 |
-| `sizeof_impl` | `int sizeof_impl()` | `int` | 工具 | §11.4 |
-| `alignof_impl` | `int alignof_impl()` | `int` | 工具 | §11.4 |
-| `is_null` | `bool is_null(int* ptr)` | `bool` | 工具 | §11.4 |
-| `clone_impl` | `int* clone_impl(int* ptr)` | `int*` | 工具 | §11.4 |
-| `move` | `T* move(T* p)` *(类型参数化)* | `T*` | 内存 | §7.5, §11.3 |
-| `alloc` | `T* alloc(T)` *(类型参数化，由 `alloc(int)` 等实例化)* | `T*` | 内存 | §7.4, §11.3 |
-| `abs_int` | `int abs_int(int x)` | `int` | 数学 | 0.3.2 收录 (m0_41 触发) |
+| `strlen` | `int strlen(const char* s)` | `int` | string | §11.2 |
+| `strcpy` | `char* strcpy(char* dest, const char* src)` | `char*` | string | §11.2 |
+| `strcmp` | `int strcmp(const char* a, const char* b)` | `int` | string | §11.2 |
+| `memcpy` | `void* memcpy(void* dest, const void* src, int n)` | `void*` | memory | §11.3 |
+| `memmove` | `void* memmove(void* dest, const void* src, int n)` | `void*` | memory | §11.3 |
+| `memset` | `void* memset(void* s, int c, int n)` | `void*` | memory | §11.3 |
+| `sizeof_impl` | `int sizeof_impl()` | `int` | utility | §11.4 |
+| `alignof_impl` | `int alignof_impl()` | `int` | utility | §11.4 |
+| `is_null` | `bool is_null(int* ptr)` | `bool` | utility | §11.4 |
+| `clone_impl` | `int* clone_impl(int* ptr)` | `int*` | utility | §11.4 |
+| `move` | `T* move(T* p)` *(type-parameterized)* | `T*` | memory | §7.5, §11.3 |
+| `alloc` | `T* alloc(T)` *(type-parameterized, instantiated by `alloc(int)` etc.)* | `T*` | memory | §7.4, §11.3 |
+| `abs_int` | `int abs_int(int x)` | `int` | math | added in 0.3.2 (triggered by m0_41) |
 
-**类型映射到 LLVM IR**：
+**Type mapping to LLVM IR**:
 
-| UltraCPP 类型 | LLVM IR 类型 |
+| UltraCPP Type | LLVM IR Type |
 |---------------|--------------|
 | `void` | `void` |
 | `bool` | `i1` |
@@ -2014,17 +2021,17 @@ UltraCPP 提供以下 **builtin 函数**。builtin 函数由编译器**内置识
 | `char` | `i8` |
 | `T*` | `T*` (e.g. `i32*`, `i8*`) |
 | `void*` | `i8*` |
-| `const char*` | `i8*` (无 LLVM const 概念) |
+| `const char*` | `i8*` (LLVM has no `const` concept) |
 
-#### 11.0.2 codegen 集成 *(0.3.2 新增)*
+#### 11.0.2 Codegen Integration *(new in 0.3.2)*
 
-`src-c/src/codegen.c` 中，builtin 签名表用 `static const struct` 数组维护：
+In `src-c/src/codegen.c`, the builtin signature table is maintained as a `static const struct` array:
 
 ```c
-// 伪代码 (实际实现见 src-c/src/codegen.c)
+// Pseudocode (actual implementation in src-c/src/codegen.c)
 typedef struct {
     const char* name;
-    const char* ret_type;  // LLVM IR 类型字符串
+    const char* ret_type;  // LLVM IR type string
     int is_void;
 } builtin_sig_t;
 
@@ -2043,12 +2050,12 @@ static const builtin_sig_t builtin_sigs[] = {
     {"is_null",     "i1",   0},
     {"clone_impl",  "i32*", 0},
     {"abs_int",     "i32",  0},
-    // 类型参数化的 alloc/move 单独处理
+    // type-parameterized alloc/move are handled separately
     {NULL, NULL, 0}  // sentinel
 };
 ```
 
-`UC_EXPR_CALL` 处理：
+`UC_EXPR_CALL` handling:
 
 ```c
 case UC_EXPR_CALL:
@@ -2056,60 +2063,60 @@ case UC_EXPR_CALL:
     const char* fn_name = call_expr->as.call.callee;
     const builtin_sig_t* sig = lookup_builtin(fn_name);
     if (sig) {
-        // builtin: 从签名表取返回类型
+        // builtin: take the return type from the signature table
         g->last_expr_type = cgen_strdup(sig->ret_type);
         if (sig->is_void) {
-            // void 函数无返回值，不 emit ret_val
+            // void function has no return value; do not emit ret_val
         }
     } else {
-        // 用户函数: 从函数定义取返回类型
-        // ... (查符号表)
+        // user function: take the return type from the function definition
+        // ... (look up in the symbol table)
     }
     break;
 ```
 
-#### 11.0.3 添加新 builtin 的流程 *(0.3.2 新增)*
+#### 11.0.3 Flow for Adding a New Builtin *(new in 0.3.2)*
 
-未来要加新 builtin (例如 `sqrt`, `pow`)：
+To add a new builtin in the future (e.g. `sqrt`, `pow`):
 
-1. 在 §11.x 子节加详细说明 (语义、示例)。
-2. 在 §11.0 表加一行签名。
-3. 在 `src-c/src/codegen.c` 的 `builtin_sigs[]` 加一项。
-4. (可选) 在 `src-c/src/stdlib/` 加 stub 实现 (若 builtin 需要 runtime 支持)。
+1. Add the detailed description (semantics, examples) in a §11.x sub-section.
+2. Add a signature row in the §11.0 table.
+3. Add an entry to `builtin_sigs[]` in `src-c/src/codegen.c`.
+4. (Optional) Add a stub implementation in `src-c/src/stdlib/` if the builtin needs runtime support.
 
-#### 11.0.4 与其他章节的交叉引用 *(0.3.2 新增)*
+#### 11.0.4 Cross-References with Other Sections *(new in 0.3.2)*
 
-| 章节 | 关系 |
+| Section | Relationship |
 |------|------|
-| §6.2.1 函数返回类型 | builtin 签名是优先级 1 的依据 |
-| §7.4 `alloc` 与 C stdlib | `malloc` 通过 §10 extern "C" 引入；codegen 查 extern 符号表 (非 builtin 表) |
-| §7.5 `move` | `move` 是 builtin (类型参数化)，见 §11.0.1 表 |
-| §11.1-§11.6 | 各子节详细说明引用 §11.0 |
-| §12.1 EBNF | 函数调用产生式见 §12.1 |
+| §6.2.1 Function return type | the builtin signature is the basis for priority 1 |
+| §7.4 `alloc` and C stdlib | `malloc` is brought in via §10 `extern "C"`; codegen consults the extern symbol table (not the builtin table) |
+| §7.5 `move` | `move` is a builtin (type-parameterized), see the §11.0.1 table |
+| §11.1–§11.6 | detailed sub-section descriptions reference §11.0 |
+| §12.1 EBNF | the function-call production is defined in §12.1 |
 
-### 11.1 基本 I/O 函数
+### 11.1 Basic I/O Functions
 
-> **[0.3.2]** 本节详细说明以下 builtin：`print`, `print_num`, `print_float`。完整签名表见 §11.0。
+> **[0.3.2]** This sub-section details the following builtins: `print`, `print_num`, `print_float`. For the complete signature table see §11.0.
 
 ```cpp
-void print_num(int n);        // 打印整数
-void print(const char* s);    // 打印字符串
-void print_float(double f);   // 打印浮点数
+void print_num(int n);        // print integer
+void print(const char* s);    // print string
+void print_float(double f);   // print float
 ```
 
-### 11.2 字符串函数
+### 11.2 String Functions
 
-> **[0.3.2]** 本节详细说明以下 builtin：`strlen`, `strcpy`, `strcmp`。完整签名表见 §11.0。
+> **[0.3.2]** This sub-section details the following builtins: `strlen`, `strcpy`, `strcmp`. For the complete signature table see §11.0.
 
 ```cpp
-int strlen(const char* s);  // 字符串长度
+int strlen(const char* s);  // string length
 char* strcpy(char* dest, const char* src);
 int strcmp(const char* a, const char* b);
 ```
 
-### 11.3 内存函数
+### 11.3 Memory Functions
 
-> **[0.3.2]** 本节详细说明以下 builtin：`memcpy`, `memmove`, `memset`, `alloc` (类型参数化), `move` (类型参数化)。完整签名表见 §11.0。
+> **[0.3.2]** This sub-section details the following builtins: `memcpy`, `memmove`, `memset`, `alloc` (type-parameterized), `move` (type-parameterized). For the complete signature table see §11.0.
 
 ```cpp
 void* memcpy(void* dest, const void* src, int n);
@@ -2117,72 +2124,72 @@ void* memmove(void* dest, const void* src, int n);
 void* memset(void* s, int c, int n);
 ```
 
-### 11.4 工具函数
+### 11.4 Utility Functions
 
-> **[0.3.2]** 本节详细说明以下 builtin：`sizeof_impl`, `alignof_impl`, `is_null`, `clone_impl`, `abs_int`。完整签名表见 §11.0。
-
-```cpp
-int sizeof_impl();       // 类型大小
-int alignof_impl();      // 类型对齐
-bool is_null(int* ptr);  // 空检查
-int* clone_impl(int* ptr);  // 指针克隆
-```
-
-### 11.5 线程原语 *(0.3.0 新增)*
+> **[0.3.2]** This sub-section details the following builtins: `sizeof_impl`, `alignof_impl`, `is_null`, `clone_impl`, `abs_int`. For the complete signature table see §11.0.
 
 ```cpp
-// --- 跨线程所有权 ---
-move_to_thread(T* p, int tid);    // 显式移交所有权到线程 tid
-spawn_thread(int tid, void fn()); // 启动无所有权传递的线程
-spawn_thread_with(int tid, T* p); // 启动线程并隐式 move(p)
-join_thread(int tid);             // 等待线程结束
-join_all();                       // 等待所有已 spawn 的线程
-current_tid();                    // 当前线程 id
-
-// --- 线程局部存储 ---
-__thread int x;                   // 每线程独立
-__thread int buf[256];            // 每线程独立数组
-
-// --- 共享原语 ---
-mutex<T>          mx;             // 显式 mutex 包装（stdlib 类型，见 §11.5.1）
-atomic<T>         at;             // 显式 atomic 包装（stdlib 类型，见 §11.5.1）
-shared T*         sp = ...;       // 跨线程可见（编译期强制）
-
-// --- 隐式线程支持 ---
-thread1() { ... }                 // 由编译器自动生成 mutex / barrier
+int sizeof_impl();       // size of a type
+int alignof_impl();      // alignment of a type
+bool is_null(int* ptr);  // null check
+int* clone_impl(int* ptr);  // pointer clone
 ```
 
-#### 11.5.1 共享同步类型 `mutex<T>` / `atomic<T>` *(0.3.0 新增)*
+### 11.5 Thread Primitives *(new in 0.3.0)*
 
-> **[0.3.0 新增]** `mutex<T>` 与 `atomic<T>` 是**标准库类型**（定义在 `lib/sync.uc`），**不是关键字**。它们提供跨线程修改权的显式包装。
+```cpp
+// --- Cross-thread ownership ---
+move_to_thread(T* p, int tid);    // explicitly transfer ownership to thread tid
+spawn_thread(int tid, void fn()); // start a thread without ownership transfer
+spawn_thread_with(int tid, T* p); // start a thread and implicitly move(p)
+join_thread(int tid);             // wait for the thread to finish
+join_all();                       // wait for all spawned threads
+current_tid();                    // current thread id
 
-**`mutex<T>`**：
+// --- Thread-local storage ---
+__thread int x;                   // per-thread independent
+__thread int buf[256];            // per-thread independent array
 
-| 成员 | 描述 |
+// --- Shared primitives ---
+mutex<T>          mx;             // explicit mutex wrapper (stdlib type, see §11.5.1)
+atomic<T>         at;             // explicit atomic wrapper (stdlib type, see §11.5.1)
+shared T*         sp = ...;       // visible across threads (enforced at compile time)
+
+// --- Implicit thread support ---
+thread1() { ... }                 // compiler auto-generates mutex / barrier
+```
+
+#### 11.5.1 Shared Synchronization Types `mutex<T>` / `atomic<T>` *(new in 0.3.0)*
+
+> **[new in 0.3.0]** `mutex<T>` and `atomic<T>` are **standard-library types** (defined in `lib/sync.uc`), **not keywords**. They provide explicit wrappers for cross-thread modification rights.
+
+**`mutex<T>`**:
+
+| Member | Description |
 |------|------|
-| `lock()` | 加锁（阻塞直到获得锁） |
-| `unlock()` | 解锁 |
-| `try_lock()` | 尝试加锁，失败返回 `false` |
-| `wait()` | 在条件变量上等待（与 `notify` 配合） |
-| `notify()` / `notify_all()` | 唤醒等待者 |
+| `lock()` | Acquire the lock (blocks until obtained) |
+| `unlock()` | Release the lock |
+| `try_lock()` | Try to acquire the lock; returns `false` on failure |
+| `wait()` | Wait on a condition variable (used with `notify`) |
+| `notify()` / `notify_all()` | Wake waiters |
 
 ```cpp
 mutex<int> mx;
 
 void worker() {
     mx.lock();
-    // 临界区
+    // critical section
     mx.unlock();
 }
 ```
 
-**`atomic<T>`**：
+**`atomic<T>`**:
 
-| 成员 | 描述 |
+| Member | Description |
 |------|------|
-| `load()` | 原子读 |
-| `store(v)` | 原子写 |
-| `exchange(v)` | 原子交换 |
+| `load()` | Atomic read |
+| `store(v)` | Atomic write |
+| `exchange(v)` | Atomic swap |
 | `compare_exchange(expected, desired)` | CAS |
 
 ```cpp
@@ -2194,38 +2201,38 @@ void worker() {
 }
 ```
 
-**与 `#modlaw` 的关系**：
+**Relationship with `#modlaw`**:
 
-- `mutex<T>` / `atomic<T>` 的 lock / load / store 操作**不**通过 `mod()` 系统——它们自带同步原语。
-- 当变量类型为 `mutex<T>` 时，**编译器自动生成的 mutex 被抑制**（程序员已显式控制），避免双重加锁。
-- `atomic<T>` 同理：硬件原子指令已保证可见性，无需编译器再生成同步代码。
+- The lock / load / store operations on `mutex<T>` / `atomic<T>` do **not** go through the `mod()` system — they bring their own synchronization primitives.
+- When a variable's type is `mutex<T>`, the compiler's auto-generated mutex is **suppressed** (the programmer already controls it explicitly), avoiding double locking.
+- The same applies to `atomic<T>`: hardware atomic instructions already guarantee visibility, so the compiler does not need to generate synchronization code.
 
-### 11.6 `alloc` / `free` 配对约定 *(0.3.0 沿用 0.2.0 · D-6, 0.3.2 加 §11.0 跨引用)*
+### 11.6 `alloc` / `free` Pairing Convention *(carried over from 0.2.0 in 0.3.0 · D-6, plus §11.0 cross-reference in 0.3.2)*
 
-> **[0.3.0 沿用]** `alloc(T)` 与 `free(p)` 的配对由程序员负责，编译器**不强制**检查。
+> **[carried over in 0.3.0]** The pairing of `alloc(T)` with `free(p)` is the programmer's responsibility; the compiler does **not** enforce it.
 >
-> **[0.3.2]** `alloc` 与 `move` 收录在 §11.0 builtin 签名总表 (类型参数化 builtin)；`free` / `malloc` 是 C 标准库函数，须通过 §10 `extern "C"` 块引入，**不在** §11.0 builtin 表中。详见 §11.0.4 与 §10.1。
+> **[0.3.2]** `alloc` and `move` are listed in the §11.0 builtin signature master table (type-parameterized builtins); `free` / `malloc` are C standard-library functions and must be brought in via §10 `extern "C"` blocks; they are **not** in the §11.0 builtin table. See §11.0.4 and §10.1 for details.
 
-**规范规则**：
+**Specification rules**:
 
-1. 每一次成功的 `alloc(T)` 都产生一个新的分配，其所有权归接收该结果的 `unique T` 变量。
-2. 每一个分配**应当**恰好被 `free` 一次。这是一条**程序员责任**。
-3. 编译器**不**报告：未释放（内存泄漏）、重复释放、释放非 `alloc` 产物。
-4. 编译器**仍然**报告 `UseAfterMove` / `UseAfterDrop` / `DanglingReference`。
+1. Every successful `alloc(T)` produces a fresh allocation whose ownership belongs to the `unique T` variable that receives the result.
+2. Every allocation **shall** be passed to `free` exactly once. This is a **programmer responsibility**.
+3. The compiler does **not** report: missing free (memory leak), double free, or freeing a pointer that did not come from `alloc`.
+4. The compiler **still** reports `UseAfterMove` / `UseAfterDrop` / `DanglingReference`.
 
 ---
 
-## 12. 附录
+## 12. Appendix
 
-### 12.1 完整 EBNF 语法 *(0.3.0 修订)*
+### 12.1 Complete EBNF Grammar *(revised in 0.3.0)*
 
-> **[0.3.0]** 相对 0.2.0 的新增与改动（保留 0.2.0 全部产生式，新增 mod/unmod/move_to_thread/__thread/shared）：
-> 1. 关键字列表新增 `mod`、`unmod`、`shared`、`__thread`、`move_to_thread`。
-> 2. `unary_expression` 新增 `'mod' '(' expression ')'` 与 `'unmod' '(' expression ')'`（Rule 24）。
-> 3. 新增 `preprocessor_directive` 顶层产生式并包含 `#modlaw` 规则（Rule 23）。
-> 4. `unary_expression` 新增 `'move_to_thread' '(' expression ',' expression ')'`（Rule 26）。
-> 5. `declaration`/`variable_declaration` 接受可选的存储类 `('shared' | '__thread')`（Rule 25, 27）。
-> 6. `type` 的 `pointer_type` 增列 `const T*` 与 `T* const`（Q6，自定义语义与 C++ 相反）。
+> **[0.3.0]** Additions and changes relative to 0.2.0 (preserves all 0.2.0 productions; adds mod/unmod/move_to_thread/__thread/shared):
+> 1. The keyword list adds `mod`, `unmod`, `shared`, `__thread`, `move_to_thread`.
+> 2. `unary_expression` adds `'mod' '(' expression ')'` and `'unmod' '(' expression ')'` (Rule 24).
+> 3. A new `preprocessor_directive` top-level production is added, including the `#modlaw` rule (Rule 23).
+> 4. `unary_expression` adds `'move_to_thread' '(' expression ',' expression ')'` (Rule 26).
+> 5. `declaration` / `variable_declaration` accept an optional storage class `('shared' | '__thread')` (Rules 25, 27).
+> 6. The `pointer_type` under `type` adds `const T*` and `T* const` (Q6; custom semantics opposite to C++).
 
 ```
 // === Program ===
@@ -2458,20 +2465,20 @@ letter             ::= 'a'..'z' | 'A'..'Z' | '_'                      // '__thre
 digit              ::= '0'..'9'
 ```
 
-#### 12.1.1 关于 `&` 的解析注记 *(0.3.0 修订)*
+#### 12.1.1 Note on Parsing `&` *(revised in 0.3.0)*
 
-0.3.0 **删除 `&mut` 产生式**。`'&' unary_expression` 是唯一引用产生式，无需前瞻——`&` 总是后接一个一元表达式。`mut` 不再是关键字。
+0.3.0 **removes the `&mut` production**. `'&' unary_expression` is the sole reference production; no lookahead is required — `&` is always followed by a unary expression. `mut` is no longer a keyword.
 
-#### 12.1.2 关于 `const T*` / `T* const` 的解析注记 *(0.3.0 新增：Q6)*
+#### 12.1.2 Note on Parsing `const T*` / `T* const` *(new in 0.3.0: Q6)*
 
-`const` 与 `*` 在 `type` 上的位置需要 **1 个记号的前瞻**：
+The position of `const` and `*` in `type` requires **one token of lookahead**:
 
-- `const type *` → 指针锁定（指针不能 rebind）。
-- `type * const` → 数据只读视图。
+- `const type *` → pointer is locked (the pointer cannot rebind).
+- `type * const` → data is a read-only view.
 
-这与 C++ 解析规则**相反**——在 UltraCPP 里，`const` 永远修饰它**紧邻的右侧**或**紧邻的左侧**记号，但**不**传递到「指向的对象」上。具体语义见 §3.8 / §7.10。
+This is **opposite to the C++** parsing rules — in UltraCPP, `const` always modifies the token **immediately to its right** or **immediately to its left**, but does **not** propagate to "the pointed-to object". See §3.8 / §7.10 for detailed semantics.
 
-### 12.2 保留关键字 *(0.3.0 修订)*
+### 12.2 Reserved Keywords *(revised in 0.3.0)*
 
 ```
 as         break      char       const      continue
@@ -2483,162 +2490,162 @@ while      clone
 mod        unmod      shared     __thread   move_to_thread
 ```
 
-> **[0.3.0 新增]** `mod`、`unmod`、`shared`、`__thread`、`move_to_thread`。**0.3.0 删除** `mut`（仅作为 `&mut` 记号的组成部分，删除 `T&mut` 后不再需要）。详见 §4.9、§4.10、§13。
+> **[new in 0.3.0]** `mod`, `unmod`, `shared`, `__thread`, `move_to_thread`. **0.3.0 removes** `mut` (it existed only as a component of the `&mut` token; no longer needed once `T&mut` was removed). See §4.9, §4.10, §13 for details.
 
-### 12.3 运算符优先级表 *(0.3.0 修订,0.3.1 补 2.5 级)*
+### 12.3 Operator Precedence Table *(revised in 0.3.0; level 2.5 added in 0.3.1)*
 
-| 级别 | 运算符 | 描述 |
+| Level | Operator | Description |
 |------|--------|------|
-| 1 | `::` | 作用域解析 |
-| 2 | `()` `[]` `.` `->` `++` `--` | 后缀 |
-| 2.5 | `*` `&` `+` `-` `!` `~` `mod` `unmod` `++` `--` (前缀) | 一元 *(0.3.1 补)* |
-| 2.5 | `(`*type*`)` | **C 风格强制类型转换** *(0.3.2 补)* |
-| 3 | `*` `/` `%` | 乘法 |
-| 4 | `+` `-` | 加法 |
-| 5 | `<<` `>>` | 移位 |
-| 6 | `<` `>` `<=` `>=` | 关系 |
-| 7 | `==` `!=` | 相等 |
-| 8 | `&` | 按位与（**二元中缀**） |
-| 9 | `^` | 按位异或 |
-| 10 | `\|` | 按位或 |
-| 11 | `&&` | 逻辑与 |
-| 12 | `\|\|` | 逻辑或 |
-| 13 | `?:` | 三元条件 |
-| 14 | `=` `+=` `-=` `*=` `/=` `%=` `&=` `\|=` `^=` `<<=` `>>=` | 赋值 |
-| 15 | `move` `clone` `move_to_thread` *(0.3.0 新增)* | 所有权操作 |
+| 1 | `::` | Scope resolution |
+| 2 | `()` `[]` `.` `->` `++` `--` | Postfix |
+| 2.5 | `*` `&` `+` `-` `!` `~` `mod` `unmod` `++` `--` (prefix) | Unary *(added in 0.3.1)* |
+| 2.5 | `(`*type*`)` | **C-style cast** *(added in 0.3.2)* |
+| 3 | `*` `/` `%` | Multiplicative |
+| 4 | `+` `-` | Additive |
+| 5 | `<<` `>>` | Shift |
+| 6 | `<` `>` `<=` `>=` | Relational |
+| 7 | `==` `!=` | Equality |
+| 8 | `&` | Bitwise AND (**binary infix**) |
+| 9 | `^` | Bitwise XOR |
+| 10 | `\|` | Bitwise OR |
+| 11 | `&&` | Logical AND |
+| 12 | `\|\|` | Logical OR |
+| 13 | `?:` | Ternary conditional |
+| 14 | `=` `+=` `-=` `*=` `/=` `%=` `&=` `\|=` `^=` `<<=` `>>=` | Assignment |
+| 15 | `move` `clone` `move_to_thread` *(new in 0.3.0)* | Ownership operations |
 
-**一元运算符**（优先级高于上表所有二元运算符，右到左结合）：
+**Unary operators** (higher precedence than every binary operator above; right-to-left associativity):
 
-| 运算符 | 描述 |
+| Operator | Description |
 |--------|------|
-| `+` `-` | 正号 / 取负 |
-| `!` | 逻辑非 |
-| `~` | 按位非 |
-| `*` | 解引用 |
-| `&` | **引用**（§3.3） |
-| `mod` `unmod` *(0.3.0 新增)* | 申请 / 释放修改权（Rule 24） |
+| `+` `-` | Unary plus / negation |
+| `!` | Logical NOT |
+| `~` | Bitwise NOT |
+| `*` | Dereference |
+| `&` | **Reference** (§3.3) |
+| `mod` `unmod` *(new in 0.3.0)* | Acquire / release modification right (Rule 24) |
 
-### 12.4 附录 X：对未来工作的影响 *(0.3.0 修订)*
+### 12.4 Appendix X: Impact on Future Work *(revised in 0.3.0)*
 
-#### 12.4.1 实施策略（沿用 0.2.0）
+#### 12.4.1 Implementation Strategy (carried over from 0.2.0)
 
-C 主机（`src-c/`）是生产编译器；本规范的语义以其作为首个落地目标。具体算法参考 `.dev/plans/0.1.0-devhandbook.md`：
+The C host (`src-c/`) is the production compiler; this specification's semantics take it as the first landing target. See `.dev/plans/0.1.0-devhandbook.md` for the concrete algorithms:
 
-| 本规范章节 | devhandbook 参考 | 内容 |
+| Specification section | devhandbook reference | Content |
 |-----------|------------------|------|
-| §3.2 / §7.1 所有权 + 修改权拆分 | §4.4 | 双状态表（所有权位 + mod 位） |
-| §7.4 `move(p)` | §4.8 `record_move` | 移动点 |
-| §7.8 引用（`T&`） | §4.5、§4.7 | 借用 + mod 规则 |
-| §7.9 悬垂 | §4.6、§12.4 | 生命周期推断 |
-| §9.9 `#modlaw` | §4.5（扩） | 修改权策略表 |
-| §11.5.1 `mutex<T>` / `atomic<T>` | §4.6（扩） | 显式同步类型 |
-| §13.1 跨线程可见 | §4.6（扩） | `shared` 强制标注 |
-| §13.2 跨线程所有权 | §4.8（扩） | `move_to_thread` 实现 |
+| §3.2 / §7.1 Ownership + modification-right split | §4.4 | Dual-state table (ownership bit + mod bit) |
+| §7.4 `move(p)` | §4.8 `record_move` | Move points |
+| §7.8 References (`T&`) | §4.5, §4.7 | Borrow + mod rules |
+| §7.9 Dangling | §4.6, §12.4 | Lifetime inference |
+| §9.9 `#modlaw` | §4.5 (extended) | Modification-right policy table |
+| §11.5.1 `mutex<T>` / `atomic<T>` | §4.6 (extended) | Explicit synchronization types |
+| §13.1 Cross-thread visibility | §4.6 (extended) | `shared` enforced annotation |
+| §13.2 Cross-thread ownership | §4.8 (extended) | `move_to_thread` implementation |
 
-**新增产物（0.3.0）：**
+**New artifacts (0.3.0):**
 
-1. 词法：`mod`、`unmod`、`shared`、`__thread`、`move_to_thread` 关键字与 `#modlaw` 指令（`src-c/src/lexer.c`）。
-2. 文法：4 个新产生式 + `const T*` / `T* const` 解析新规则（`src-c/src/parser.c`）。
-3. 错误种类：`UC_ERR_MODLAW`、`UC_ERR_CROSS_THREAD_MOVE`、`UC_ERR_OWNING_HEAP_VIEW`（`src-c/include/uc_error.h`）。
-4. 编译阶段：所有权检查器升级为「双状态」——所有权位 + 修改权位（`src-c/src/ownership.c`）。
-5. 线程支持：`spawn_thread`、`join_thread`、`mutex<T>`、`atomic<T>` 实现（`src-c/src/thread.c`）。
-6. 测试语料：`test/modlaw/{pass,fail}/`、`test/threading/{pass,fail}/`、`test/const_ptr/{pass,fail}/`。
+1. Lexical: `mod`, `unmod`, `shared`, `__thread`, `move_to_thread` keywords and the `#modlaw` directive (`src-c/src/lexer.c`).
+2. Grammar: 4 new productions + new parsing rules for `const T*` / `T* const` (`src-c/src/parser.c`).
+3. Error kinds: `UC_ERR_MODLAW`, `UC_ERR_CROSS_THREAD_MOVE`, `UC_ERR_OWNING_HEAP_VIEW` (`src-c/include/uc_error.h`).
+4. Compilation phase: ownership checker upgraded to "dual state" — ownership bit + modification-right bit (`src-c/src/ownership.c`).
+5. Threading support: `spawn_thread`, `join_thread`, `mutex<T>`, `atomic<T>` implementations (`src-c/src/thread.c`).
+6. Test corpus: `test/modlaw/{pass,fail}/`, `test/threading/{pass,fail}/`, `test/const_ptr/{pass,fail}/`.
 
-#### 12.4.2 未落入本版本的事项
+#### 12.4.2 Items Not Covered in This Version
 
-| 事项 | 状态 | 去向 |
+| Item | Status | Destination |
 |------|------|------|
-| `MissingFree` / `DoubleFree` | 不实现 | §11.6，候选可选诊断 |
-| `Owned<T>` / `Ref<T>` / `RefMut<T>` 内部类型 | 不进入用户语言 | devhandbook §4.1 |
-| 非词法生命周期的精确定义 | 仅描述为"到最后一次使用" | 待算法实现后回填 |
-| `__thread` 在声明位置的具体语法 | 已支持 `__thread T x;` 形式 | 待后续实现细节 |
-| `#modlaw` 的运行时切换 | 不实现 | 0.3.0 仅编译期策略；运行时切换延后 |
+| `MissingFree` / `DoubleFree` | Not implemented | §11.6, candidate optional diagnostics |
+| `Owned<T>` / `Ref<T>` / `RefMut<T>` internal types | Not exposed in the user language | devhandbook §4.1 |
+| Precise definition of non-lexical lifetimes | Only described as "until last use" | To be backfilled after algorithm implementation |
+| Concrete syntax for `__thread` at declaration sites | `__thread T x;` form already supported | Implementation details pending |
+| Runtime switching of `#modlaw` | Not implemented | 0.3.0 is compile-time policy only; runtime switching deferred |
 
 ---
 
-## 13. 线程模型 *(0.3.0 新增章节)*
+## 13. Threading Model *(new chapter in 0.3.0)*
 
-> **[0.3.0]** 本章是 0.3.0 完整新增章节。UltraCPP 在 0.3.0 中加入线程模型：跨线程可见的 `shared` 标注（Rule 25）、跨线程所有权显式移交（Rule 26）、线程局部存储 `__thread`（Rule 27）、以及四种存储类（Rule 28）。
+> **[0.3.0]** This chapter is an entirely new chapter added in 0.3.0. UltraCPP introduces a threading model in 0.3.0: the `shared` annotation for cross-thread visibility (Rule 25), explicit cross-thread ownership transfer (Rule 26), thread-local storage `__thread` (Rule 27), and four storage classes (Rule 28).
 
-### 13.1 共享变量（`shared` 标注强制）
+### 13.1 Shared Variables (`shared` Annotation Enforced)
 
-> **[0.3.0 · Rule 25]** 跨线程访问必须使用 `shared` 标注，否则编译错。
+> **[0.3.0 · Rule 25]** Cross-thread access must use the `shared` annotation; otherwise it is a compile error.
 
-**语法**：
+**Syntax**:
 ```cpp
 shared T var;
-shared T* p = alloc(T);    // owning + shared（堆对象的共享）
-shared int* counter;       // 跨线程可见
+shared T* p = alloc(T);    // owning + shared (shared heap object)
+shared int* counter;       // visible across threads
 ```
 
-**强制规则**：
+**Enforcement rules**:
 
-- 任何在 `spawn_thread(...)` 函数体内访问的**全局 / 静态**变量，**必须**声明为 `shared`。否则编译期错误：`non-shared global accessed from spawned thread`。
-- `__thread` 变量除外（每线程独立，天然不需要 `shared`）。
+- Any **global / static** variable accessed inside a `spawn_thread(...)` body **must** be declared `shared`. Otherwise the compile-time error is `non-shared global accessed from spawned thread`.
+- `__thread` variables are exempt (each thread has its own; `shared` is not required).
 
-**编译器自动生成 mutex**：
+**Compiler auto-generated mutex**:
 
 ```cpp
 #modlaw exclusive global
 
-shared int* counter = alloc(int);  // 共享 owning 指针
+shared int* counter = alloc(int);  // shared owning pointer
 
 thread1() {
     int& r = counter;
-    mod(r);                          // 编译期 OK，运行时自动生成 mutex 包装
-    *r = *r + 1;                     // 独占写
-} // r 离开作用域 → 自动 unmod
+    mod(r);                          // compile-time OK; runtime auto-generates a mutex wrapper
+    *r = *r + 1;                     // exclusive write
+} // r leaves scope → automatic unmod
 
 thread2() {
     int& r = counter;
-    mod(r);                          // 若 thread1 仍持锁则阻塞
+    mod(r);                          // blocks if thread1 still holds the lock
     *r = *r + 1;
 }
 ```
 
-**程序员可选显式包装**：
+**Optional explicit programmer wrapper**:
 
 ```cpp
-shared mutex<int*> counter;     // 显式 mutex 包装（mutex<T> 是 stdlib 类型，见 §11.5.1）
-shared atomic<int> state;        // 显式 atomic 包装（atomic<T> 是 stdlib 类型，见 §11.5.1）
+shared mutex<int*> counter;     // explicit mutex wrapper (`mutex<T>` is a stdlib type, see §11.5.1)
+shared atomic<int> state;        // explicit atomic wrapper (`atomic<T>` is a stdlib type, see §11.5.1)
 ```
 
-> **[0.3.0 修订]** `mutex<T>` 与 `atomic<T>` 是 **§11.5.1 标准库类型**，不是关键字。**当变量类型为 `mutex<T>` 或 `atomic<T>` 时，编译器自动生成的 mutex 被抑制**——程序员已显式控制同步，避免双重加锁。
+> **[revised in 0.3.0]** `mutex<T>` and `atomic<T>` are **§11.5.1 standard-library types**, not keywords. **When a variable's type is `mutex<T>` or `atomic<T>`, the compiler's auto-generated mutex is suppressed** — the programmer explicitly controls synchronization, avoiding double locking.
 
-### 13.2 跨线程所有权（Rule 26）
+### 13.2 Cross-thread Ownership (Rule 26)
 
-> **[0.3.0 · Rule 26]** 跨线程所有权必须显式 `move_to_thread(p, tid)` 或 `spawn_thread_with(tid, p)`。
+> **[0.3.0 · Rule 26]** Cross-thread ownership must be transferred explicitly via `move_to_thread(p, tid)` or `spawn_thread_with(tid, p)`.
 
-**示例 F（跨线程所有权）：**
+**Example F (cross-thread ownership):**
 
 ```cpp
-int x = 42; // thread1 创建
+int x = 42; // created by thread1
 
-move_to_thread(x, thread2_id);  // x 移交 thread2
-// thread1 中 x 已 moved-out
+move_to_thread(x, thread2_id);  // x is transferred to thread2
+// x in thread1 is now moved-out
 
-// 或通过 spawn：
+// Or via spawn:
 int y = 100;
-spawn_thread_with(thread2_id, y);  // 隐式 move
+spawn_thread_with(thread2_id, y);  // implicit move
 
-// thread2 中：
+// In thread2:
 void thread2() {
-    // x 和 y 都可见且可访问
+    // both x and y are visible and accessible
 }
 ```
 
-**规则**：
+**Rules**:
 
-1. **`move_to_thread(p, tid)`**：显式移交 `p`（必须是 owning 或引用）的所有权到线程 `tid`；调用方此后无权访问 `p`。
-2. **`spawn_thread_with(tid, p)`**：启动线程时隐式 move，等价于 `move_to_thread(p, tid)` + `spawn_thread(...)`。
-3. **不可跨线程传栈引用**：`T&` 借用如果 owner 是栈变量，不可 `move_to_thread`——栈是 thread-local（见 §13.4）。
-4. **跨线程传引用的限制**：跨线程传引用只能传：heap（shared owner）、global（shared）、TLS（thread-local，但接收方须正确匹配 TLS）。
+1. **`move_to_thread(p, tid)`**: explicitly transfers ownership of `p` (must be owning or a reference) to thread `tid`; the caller has no further access to `p` afterwards.
+2. **`spawn_thread_with(tid, p)`**: implicitly moves at thread launch; equivalent to `move_to_thread(p, tid)` + `spawn_thread(...)`.
+3. **Stack references cannot cross threads**: if the owner of a `T&` borrow is a stack variable, you cannot `move_to_thread` it — the stack is thread-local (see §13.4).
+4. **Limits on cross-thread references**: a reference passed across threads can only be: heap (shared owner), global (shared), or TLS (thread-local — but the sender and receiver must correctly match the TLS).
 
-### 13.3 跨线程修改权（mutex / atomic）
+### 13.3 Cross-thread Modification Rights (mutex / atomic)
 
-> **[0.3.0 · Rule 25 续]** 跨线程修改权由编译器自动生成的 mutex 或程序员显式 `mutex<T>` / `atomic<T>` 包装支持。`mutex<T>` 与 `atomic<T>` 是 §11.5.1 标准库类型，不是关键字。
+> **[0.3.0 · Rule 25 cont.]** Cross-thread modification rights are supported by the compiler's auto-generated mutex or the programmer's explicit `mutex<T>` / `atomic<T>` wrappers. `mutex<T>` and `atomic<T>` are §11.5.1 standard-library types, not keywords.
 
-**自动 mutex（编译期）：**
+**Auto mutex (compile time):**
 
 ```cpp
 #modlaw exclusive global
@@ -2647,107 +2654,107 @@ shared int* counter = alloc(int);
 
 void worker() {
     int& r = counter;
-    mod(r);           // 编译器生成 pthread_mutex_lock
-    *r = *r + 1;      // 临界区
-}                     // 离开作用域 → pthread_mutex_unlock
+    mod(r);           // compiler emits pthread_mutex_lock
+    *r = *r + 1;      // critical section
+}                     // leaving scope → pthread_mutex_unlock
 ```
 
-**显式 `mutex<T>`：**
+**Explicit `mutex<T>`:**
 
 ```cpp
 mutex<int> mx;
 
 void worker_explicit() {
-    mx.lock();         // 显式加锁（不是 mod()——见 §11.5.1）
-    // 临界区
-    mx.unlock();       // 显式解锁
+    mx.lock();         // explicit lock (not mod() — see §11.5.1)
+    // critical section
+    mx.unlock();       // explicit unlock
 }
 ```
 
-**显式 `atomic<T>`：**
+**Explicit `atomic<T>`:**
 
 ```cpp
 atomic<int> state;
 
 void worker_atomic() {
-    int v = state.load();    // 硬件原子加载
-    state.store(v + 1);      // 硬件原子存储
+    int v = state.load();    // hardware-atomic load
+    state.store(v + 1);      // hardware-atomic store
 }
 ```
 
-> **与 `mod()` 的关系**：`mutex<T>` / `atomic<T>` 的 lock / load / store 操作**不**走 `mod()` 通道——它们自带同步原语。`mod()` 申请的是「修改权」，适用于普通 `T&` 引用。这两套机制互不冲突。
+> **Relationship with `mod()`**: the lock / load / store operations on `mutex<T>` / `atomic<T>` do **not** go through the `mod()` channel — they bring their own synchronization primitives. `mod()` requests the "modification right", which applies to ordinary `T&` references. The two mechanisms do not conflict.
 
-**`shared` 配合 `#modlaw`：**
+**`shared` combined with `#modlaw`:**
 
-| `#modlaw` | `shared` + mod 行为 |
+| `#modlaw` | `shared` + mod behavior |
 |------------|----------------------|
-| `shared` | 多个线程可同时 mod；程序员责任处理数据竞争 |
-| `exclusive` | 编译期 / 运行时检查唯一持锁；不持锁时阻塞 |
-| `none` | shared 不允许 mod（编译期错误） |
+| `shared` | Multiple threads can mod simultaneously; the programmer is responsible for data races |
+| `exclusive` | Compile-time / runtime checks enforce a single lock holder; blocks when not holding the lock |
+| `none` | `shared` is not allowed to mod (compile-time error) |
 
-### 13.4 多线程内存布局（Rule 28）
+### 13.4 Multi-thread Memory Layout (Rule 28)
 
-> **[0.3.0 · Rule 28]** 四种内存区域各自的线程可见性。
+> **[0.3.0 · Rule 28]** Thread visibility of each of the four memory regions.
 
-| 存储类 | 线程可见性 | 跨线程引用能否传 | 备注 |
+| Storage class | Thread visibility | Cross-thread reference transfer allowed? | Notes |
 |--------|------------|------------------|------|
-| **栈**（函数局部变量） | thread-local | ❌ 不允许 | owner 离开作用域即销毁 |
-| **堆**（`alloc(T)`） | **shared** | ✅ 允许（须 `shared` 或 `move_to_thread`） | 单 owner，可 move |
-| **全局 / 静态**（文件作用域 / `static`） | **shared** | ✅ 允许（须 `shared` 标注） | 进程级生命周期 |
-| **TLS**（`__thread`） | thread-local | ❌ 不允许 | GCC 风格；每线程独立 |
+| **Stack** (function-local variables) | thread-local | ❌ No | Owner is destroyed when it leaves scope |
+| **Heap** (`alloc(T)`) | **shared** | ✅ Yes (requires `shared` or `move_to_thread`) | Single owner, movable |
+| **Global / static** (file scope / `static`) | **shared** | ✅ Yes (requires the `shared` annotation) | Process-level lifetime |
+| **TLS** (`__thread`) | thread-local | ❌ No | GCC-style; per-thread independent |
 
-**关键约束**：
+**Key constraints**:
 
-- **栈** 引用**不能**传给其他线程（owner 在另一个线程离开作用域时销毁）。
-- 跨线程传引用只允许 **heap / global / TLS**——其中 TLS 须确保发送方与接收方是同一线程。
-- **不允许**通过 `spawn_thread` 隐式捕获栈变量：编译器报错 `cannot capture stack reference into spawned thread`。
+- **Stack** references **cannot** be passed to other threads (the owner is destroyed when the other thread leaves scope).
+- Cross-thread reference passing is allowed only for **heap / global / TLS** — for TLS, the sender and receiver must be the same thread.
+- **Not allowed**: implicitly capturing stack variables via `spawn_thread`. The compiler emits the error `cannot capture stack reference into spawned thread`.
 
-### 13.5 `__thread` 线程局部存储（Rule 27）
+### 13.5 `__thread` Thread-local Storage (Rule 27)
 
-> **[0.3.0 · Rule 27]** `__thread T x;`（GCC 风格）声明线程局部变量。
+> **[0.3.0 · Rule 27]** `__thread T x;` (GCC-style) declares a thread-local variable.
 
-**语法**：
+**Syntax**:
 ```cpp
-__thread int x;               // 每线程独立的 int
-__thread int buf[256];        // 每线程独立的数组
-__thread int* p;              // 每线程独立的指针（指针本身是 thread-local，指向哪不一定）
+__thread int x;               // per-thread independent int
+__thread int buf[256];        // per-thread independent array
+__thread int* p;              // per-thread independent pointer (the pointer itself is thread-local; what it points to is not necessarily so)
 ```
 
-**语义**：
+**Semantics**:
 
-- 每个线程都有 `x` 的**独立副本**，互不影响。
-- 初始化仅发生一次（主线程），其它线程继承主线程的初值；这是 GCC `__thread` 的标准语义。
-- 不需要 `shared` 标注（thread-local 天然隔离）。
+- Each thread has an **independent copy** of `x`; they do not affect each other.
+- Initialization happens exactly once (the main thread); other threads inherit the main thread's initial value. This is the standard GCC `__thread` semantics.
+- The `shared` annotation is not required (thread-local is naturally isolated).
 
-**示例**：
+**Examples**:
 
 ```cpp
-__thread int local = 42;     // 每线程独立
+__thread int local = 42;     // per-thread independent
 
 void worker() {
-    local = local + 1;       // 仅影响当前线程
+    local = local + 1;       // only affects the current thread
     print_int(local);
 }
 ```
 
-### 13.6 完整线程模型示例
+### 13.6 Complete Threading Model Examples
 
-> **示例 E（线程模型综合示例）：**
+> **Example E (comprehensive threading model example):**
 
 ```cpp
 #modlaw exclusive global
 
-shared int* counter = alloc(int);  // 跨线程可见（强制 shared）
+shared int* counter = alloc(int);  // visible across threads (shared is enforced)
 
 thread1() {
     int& r = counter;
-    mod(r);                          // 编译期 OK，运行时 mutex
-    *r = *r + 1;                      // 独占写
-} // r 离开作用域 → 自动 unmod
+    mod(r);                          // compile-time OK; runtime mutex
+    *r = *r + 1;                      // exclusive write
+} // r leaves scope → automatic unmod
 
 thread2() {
     int& r = counter;
-    mod(r);                          // 若 thread1 仍持锁则阻塞
+    mod(r);                          // blocks if thread1 still holds the lock
     *r = *r + 1;
 }
 
@@ -2755,27 +2762,27 @@ main() {
     spawn_thread(thread1);
     spawn_thread(thread2);
     join_all();
-    free(counter);                  // main 是 owner
+    free(counter);                  // main is the owner
     return 0;
 }
 
-// === __thread 线程局部 ===
-__thread int local = 42;  // 每线程独立
+// === __thread thread-local ===
+__thread int local = 42;  // per-thread independent
 ```
 
 ---
 
-## 文档历史
+## Document History
 
-| 版本 | 日期 | 描述 |
+| Version | Date | Description |
 |------|------|------|
-| 0.1 | 2026-04-13 | 初始规范 |
-| 0.1 | 2026-04-17 | 更新所有权默认语义、添加 `clone()`、更新内联汇编语法 |
-| 0.1.0 | 2026-04-18 | 0.1.0 定版 |
-| 0.2.0 | 2026-08-07 | 落实 8 条设计决策 D-1 .. D-8：`unique` 泛型化、`&` 不可变借用、`&mut` 入语言、`move` 内建 primitive、显式化赋值 move 规则、`alloc`/`free` 不强制配对、`DanglingReference` 触发条件、C 主机优先决策。*（注：0.3.0 反转 D-3，删除 `&mut`；D-2 关于 `&` 语义被 Q3 反转覆盖。）* |
-| **0.3.0** | **2026-08-07** | **本版本**：两条权限彻底拆分（Rule 22）；新增 `#modlaw` 指令（Rule 23）；新增 `mod()` / `unmod()` 表达式（Rule 24）；新增线程模型章节 §13（Rule 25–28）；改写 §3.3 引用类型为**单一 `T&`**（Q3 反转，**删除 `T&mut`**）；改写 §3.8 指针修饰符为「与 C++ 相反」的 Q6 自定义语义；改写 §7.1 赋值为「隐式 `mod()` + 不转所有权」（Q4=a）；重写 §3.2 区分 owning 与 non-owning 指针（Rule 2B）；§11.5.1 新增 `mutex<T>` / `atomic<T>` 标准库类型（修订 #5、#6）。状态：草稿。 |
-| **0.3.1** | **2026-08-12** | **本版本（lvalue / rvalue 概念明确化，S2）**：新增 §4.13 「表达式分类：lvalue 与 rvalue」完整章节（§4.13.1 定义 + §4.13.2 lvalue 分类表 + §4.13.3 赋值上下文约束 + §4.13.4 codegen 实现约束 + §4.13.5 交叉引用）；§4.1 优先级表补 2.5 级一元 op（`*` `&` `+` `-` `!` `~` `mod` `unmod` 前缀 `++` `--`，右到左）；§4.6 赋值运算符表 11 行统一加「LHS 必须是 lvalue (§4.13.2)」约束 + 头注 + 结合性 + lvalue 上下文说明；§7.8 引用创建规则 1 引用 §4.13.2 并加 5 合法 + 4 非法示例；§12.1 EBNF 加 `lvalue` / `rvalue` 非终结符并改 `assignment_expression` LHS 标注；§12.3 附录优先级表同步加 2.5 级。**修复 m0_42 deref-assign bug**（`*view = payload` 从 compile_failed → PASS）。不引入新语法、不修改现有语义、向后兼容。状态：草稿。 |
+| 0.1 | 2026-04-13 | Initial specification |
+| 0.1 | 2026-04-17 | Updated default ownership semantics; added `clone()`; updated inline assembly syntax |
+| 0.1.0 | 2026-04-18 | 0.1.0 finalized |
+| 0.2.0 | 2026-08-07 | Implemented the 8 design decisions D-1 .. D-8: `unique` generalized, `&` immutable borrow, `&mut` enters the language, `move` as a builtin primitive, explicit assignment move rules, `alloc`/`free` not enforced pairing, `DanglingReference` trigger conditions, C-host-first decision. *(Note: 0.3.0 reverses D-3 and removes `&mut`; D-2's `&` semantics are superseded by the Q3 reversal.)* |
+| **0.3.0** | **2026-08-07** | **This version**: complete split of the two permissions (Rule 22); added the `#modlaw` directive (Rule 23); added `mod()` / `unmod()` expressions (Rule 24); added the threading model chapter §13 (Rules 25–28); rewrote §3.3 reference types as **a single `T&`** (Q3 reversal, **removing `T&mut`**); rewrote §3.8 pointer modifiers to the Q6 custom semantics "opposite to C++"; rewrote §7.1 assignment as "implicit `mod()` + no ownership transfer" (Q4=a); rewrote §3.2 to distinguish owning vs non-owning pointers (Rule 2B); §11.5.1 added the `mutex<T>` / `atomic<T>` standard-library types (revisions #5, #6). Status: draft. |
+| **0.3.1** | **2026-08-12** | **This version (lvalue / rvalue concept clarification, S2)**: added the full §4.13 "Expression classification: lvalue and rvalue" chapter (§4.13.1 definition + §4.13.2 lvalue classification table + §4.13.3 assignment-context constraints + §4.13.4 codegen implementation constraints + §4.13.5 cross-references); §4.1 precedence table gains level 2.5 unary ops (`*` `&` `+` `-` `!` `~` `mod` `unmod` prefix `++` `--`, right-to-left); §4.6 assignment-operator table's 11 rows uniformly gain the "LHS must be an lvalue (§4.13.2)" constraint + header note + associativity + lvalue context note; §7.8 reference-creation rule 1 references §4.13.2 and adds 5 valid + 4 invalid examples; §12.1 EBNF adds the `lvalue` / `rvalue` non-terminals and updates the `assignment_expression` LHS annotation; §12.3 appendix precedence table synchronously adds level 2.5. **Fixed the m0_42 deref-assign bug** (`*view = payload` from compile_failed → PASS). Introduces no new syntax, no semantic changes, fully backward compatible. Status: draft. |
 
 ---
 
-*UltraCPP 0.3.1 语言规范（草稿）*
+*UltraCPP 0.3.1 Language Specification (draft)*
