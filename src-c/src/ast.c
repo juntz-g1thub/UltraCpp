@@ -703,6 +703,13 @@ UCExpr* uc_expr_call(UCExpr* callee, UCVec* args) {
     e->kind = UC_EXPR_CALL;
     e->as.call.callee = callee;
     e->as.call.args = args;
+    /* is_builtin stays 0 (user-defined) thanks to xcalloc above */
+    return e;
+}
+
+UCExpr* uc_expr_call_builtin(UCExpr* callee, UCVec* args, int is_builtin) {
+    UCExpr* e = uc_expr_call(callee, args);
+    e->as.call.is_builtin = is_builtin ? 1 : 0;
     return e;
 }
 
@@ -833,6 +840,8 @@ static void expr_free(void* p) {
                               expr_free(e->as.cast.operand); break;
         case UC_EXPR_ALLOC:   type_free(e->as.alloc_type); break;
         case UC_EXPR_SIZEOF:  type_free(e->as.sizeof_ty); break;
+        case UC_EXPR_IS_NULL: expr_free(e->as.move_expr); break;   /* 0.3.3 §3c — reuses move_expr slot pending commit 2 semantic definition */
+        case UC_EXPR_ALIGNOF: type_free(e->as.sizeof_ty); break;   /* 0.3.3 §3c — reuses sizeof_ty slot pending commit 2 semantic definition */
         case UC_EXPR_IDENT:   uc_string_free(&e->as.ident); break;
         case UC_EXPR_LITERAL: uc_literal_free(&e->as.literal); break;
         case UC_EXPR_BLOCK:
@@ -991,6 +1000,14 @@ static void expr_dump(const UCExpr* e, FILE* out, int indent) {
             break;
         case UC_EXPR_SIZEOF:
             fputs("Sizeof\n", out);
+            type_dump(e->as.sizeof_ty, out, indent + 2);
+            break;
+        case UC_EXPR_IS_NULL:
+            fputs("IsNull\n", out);
+            expr_dump(e->as.move_expr, out, indent + 2);
+            break;
+        case UC_EXPR_ALIGNOF:
+            fputs("Alignof\n", out);
             type_dump(e->as.sizeof_ty, out, indent + 2);
             break;
         case UC_EXPR_IDENT:

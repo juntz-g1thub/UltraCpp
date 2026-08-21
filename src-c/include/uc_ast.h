@@ -402,6 +402,8 @@ typedef enum UCExprKind {
     UC_EXPR_CAST,
     UC_EXPR_ALLOC,
     UC_EXPR_SIZEOF,
+    UC_EXPR_IS_NULL,   /* is_null(x) intrinsic — 0.3.3 §3c (parser produces UC_EXPR_CALL w/ is_builtin=1 in commit 2) */
+    UC_EXPR_ALIGNOF,   /* alignof(T) intrinsic — 0.3.3 §3c (parser produces UC_EXPR_CALL w/ is_builtin=1 in commit 2) */
     UC_EXPR_IDENT,
     UC_EXPR_LITERAL,
     UC_EXPR_BLOCK,
@@ -428,6 +430,7 @@ struct UCExpr {
         struct {
             UCExpr* callee;         /* owned */
             UCVec* args;            /* owned; each item is UCExpr* */
+            int is_builtin;         /* 0 = user-defined function; 1 = builtin (alloc/free/move/clone/mod/unmod per 0.3.3 §11.0.1) */
             char* return_type;      /* codegen-resolved LLVM IR type */
         } call;
         struct {
@@ -464,6 +467,12 @@ UCExpr* uc_expr_binary(UCBinaryOp op, UCExpr* lhs, UCExpr* rhs);
 UCExpr* uc_expr_ternary(UCExpr* cond, UCExpr* then_e, UCExpr* else_e);
 UCExpr* uc_expr_unary(UCUnaryOp op, UCExpr* operand);
 UCExpr* uc_expr_call(UCExpr* callee, UCVec* args);
+/* Constructor variant that explicitly sets the is_builtin flag on UCExprCall.
+ * Use this for builtin call sites (alloc/free/move/clone/mod/unmod, etc.).
+ * uc_expr_call() above keeps its original 2-arg signature for ABI backward
+ * compatibility — it leaves is_builtin at the calloc-zeroed default of 0
+ * (i.e. user-defined call). Added per 0.3.3 §3 commit 1. */
+UCExpr* uc_expr_call_builtin(UCExpr* callee, UCVec* args, int is_builtin);
 UCExpr* uc_expr_index(UCExpr* target, UCExpr* index);
 UCExpr* uc_expr_field(UCExpr* target, UCString field);
 UCExpr* uc_expr_assign(UCExpr* target, UCExpr* value);
