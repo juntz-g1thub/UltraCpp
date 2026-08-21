@@ -1538,6 +1538,24 @@ static UCExpr* parse_unary(UCParser* p) {
  *
  * `++` / `--` are not implemented because the C lexer does not yet emit
  * UC_TOK_OP_INC / UC_TOK_OP_DEC (the Rust lexer does, see Phase 1.1). */
+
+/* Returns 1 when `name` is one of the UltraCPP intrinsic-call names that
+ * must be emitted as UCExprCall with is_builtin=1 (handled by dedicated
+ * codegen emitters in commit 3). Per 0.3.3 §11.0.1 (intrinsic codegen);
+ * spec'd in .dev/drafts/0.3.3-implementation-process.md §3 commit 2.
+ *
+ * Currently recognised: is_null(x), sizeof(T), alignof(T).
+ *
+ * NULL-safe: a NULL `name` (defensive against any future ident constructed
+ * with an empty UCString) returns 0 so callers fall back to the default
+ * user-defined-call construction. */
+static int is_intrinsic_name(const char* name) {
+    if (!name) return 0;
+    return strcmp(name, "is_null") == 0
+        || strcmp(name, "sizeof")  == 0
+        || strcmp(name, "alignof") == 0;
+}
+
 static UCExpr* parse_postfix(UCParser* p) {
     UCExpr* expr = parse_primary(p);
     if (is_err(p) || !expr) return expr;
@@ -1570,7 +1588,21 @@ static UCExpr* parse_postfix(UCParser* p) {
                 uc_vec_free(args, NULL);
                 return NULL;
             }
-            expr = uc_expr_call(expr, args);
+            /* When the callee is a bare identifier whose name matches one
+             * of UltraCPP's intrinsic-call names (is_null, sizeof, alignof),
+             * emit it as a builtin call so commit 3's codegen emitters
+             * (emit_null_intrinsic etc.) can take over. Every other callee
+             * — including non-ident callees like (foo)() and user-defined
+             * functions — stays on the standard 2-arg uc_expr_call path
+             * (is_builtin remains the calloc-zeroed 0). */
+            int is_builtin = 0;
+            if (expr->kind == UC_EXPR_IDENT
+                && is_intrinsic_name(expr->as.ident.data)) {
+                is_builtin = 1;
+            }
+            expr = is_builtin
+                ? uc_expr_call_builtin(expr, args, 1)
+                : uc_expr_call(expr, args);
         } else if (match(p, UC_TOK_DOT)) {
             if (!check(p, UC_TOK_IDENT)) {
                 err_here(p, "expected field name after '.'");
