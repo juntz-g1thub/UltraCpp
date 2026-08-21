@@ -1,14 +1,14 @@
-# UltraCPP 0.3.3 Language Specification (0.3.2 baseline + 0.3.3 deltas pending translation)
+# UltraCPP 0.3.3 Language Specification
 
 > **Version**: 0.3.3
 >
 > **Previous version**: 0.3.2 — [`UltraCPP-v0.3.2-spec-en.md`](./UltraCPP-v0.3.2-spec-en.md)
 >
-> **Status**: DRAFT — 0.3.2 baseline content; 0.3.3 deltas pending translation
+> **Status**: draft
 >
 > **Date**: 2026-08-18
 >
-> Same-version Chinese translation: [简体中文](./UltraCPP-v0.3.3-spec-zh-CN.md) (CURRENT 0.3.3 content; this EN file is stale)
+> Same-version Chinese translation: [简体中文](./UltraCPP-v0.3.3-spec-zh-CN.md)
 
 ---
 
@@ -480,7 +480,7 @@ For further details (diagnostics when violated, dereference semantics) see §7.1
 
 ## 4. Expressions *(new in 0.3.0 §4.9, §4.10)*
 
-### 4.1 Operator Precedence and Associativity *(revised in 0.3.1)*
+### 4.1 Operator Precedence and Associativity *(revised in 0.3.1, revised in 0.3.3)*
 
 | Level | Operator | Associativity |
 |--------|--------|--------|
@@ -674,7 +674,7 @@ Error kinds: `InvalidCastError` (illegal conversion) / `UnknownTypeError` (unrec
 | §11.0 builtin signature table | builtin function return types are known (no cast needed) |
 | §12.1 EBNF | the `cast_expression` production is defined in §12.1 *(new in 0.3.2)* |
 
-### 4.9 `mod()` Expression — Request the Modification Right *(new in 0.3.0: Rule 24)*
+### 4.9 `mod()` Expression — Request the Modification Right *(new in 0.3.0: Rule 24, revised in 0.3.3 — Reclassification as builtin functions)*
 
 > **[0.3.0 · Rule 24]** `mod(ref_expr)` requests the modification right of the object referred to by a **reference**. Its behavior is decided by the `#modlaw` policy in the current scope.
 
@@ -715,7 +715,7 @@ int* p2 = p1;          // implicit mod(p1): p1 gets the modification right, p2 s
 *p1 = 100;             // ✅ no explicit mod() needed
 ```
 
-### 4.10 `unmod()` Expression — Release the Modification Right *(new in 0.3.0: Rule 24)*
+### 4.10 `unmod()` Expression — Release the Modification Right *(new in 0.3.0: Rule 24, revised in 0.3.3 — Reclassification as builtin functions)*
 
 `unmod(ref_expr)` explicitly releases the modification right. **Usually omitted** — the compiler auto-unmods at scope exit or after the last use.
 
@@ -742,7 +742,7 @@ unmod(r);                // ✅ want to release immediately to shorten the criti
 
 ---
 
-### 4.13 Expression Classification: lvalue and rvalue *(new in 0.3.1)*
+### 4.13 Expression Classification: lvalue and rvalue *(new in 0.3.1, deref clarified in 0.3.3)*
 
 In UltraCPP every expression belongs to one of two categories: **lvalue** or **rvalue**. This classification is the
 basis for assignment, address-of, `mod()` / `unmod()` requests, reference binding, and other core semantics.
@@ -835,17 +835,124 @@ int z = *p + 1;   // RHS: rvalue path → emit load + add
 C++17 [basic.lval]). But UltraCPP does **not** distinguish the three-way split introduced by C++11 — xvalue (eXpiring value),
 prvalue (pure rvalue), glvalue (generalized lvalue) — UltraCPP keeps only two categories for simplicity and clarity.
 
-#### 4.13.5 Cross-References with Other Sections *(new in 0.3.1)*
+#### 4.13.5 deref Semantics *(new in 0.3.3)*
+
+Complete semantics of the deref operator `*` (unary prefix) in UltraCPP. This section supplements the row "deref `*p` is an lvalue" of the §4.13.2 classification table with full boundary details.
+
+##### 4.13.5.1 Basic deref `*p` (p is `T*`) *(new in 0.3.3)*
+
+```cpp
+T* p = alloc(T);   // p: T*
+T v = *p;          // deref: read the object p points to
+*p = new_val;      // deref: write to the object p points to
+```
+
+- **Type**: `T` (the pointee type of `p`)
+- **Category**: **lvalue** (see §4.13.2 lvalue classification table — deref always yields an lvalue because it names a memory location)
+- **Meaning**: access the object pointed to by `p`
+- **codegen**: emit `load T, T* p_slot` (read) or `store T new_val, T* p_slot` (write)
+
+##### 4.13.5.2 Compound deref forms *(new in 0.3.3)*
+
+**`&*p`** (addr-of then deref):
+
+```cpp
+T* p = alloc(T);
+T** pp = &*p;  // equivalent to pp = p
+```
+
+- **Equivalence**: `&*p ≡ p` (identity)
+- **codegen**: compiler optimizes this — no `load` + `getelementptr` is emitted; the SSA value of `p` is returned directly.
+
+**`*&x`** (when x is an lvalue):
+
+```cpp
+int x = 42;
+int v = *&x;  // equivalent to v = x
+```
+
+- **Precondition**: `x` must be an lvalue (has a memory address)
+- **Equivalence**: `*&x ≡ x` (identity)
+- **codegen**: compiler optimizes this — no `getelementptr` + `load` is emitted; the SSA value of `x` is returned directly.
+
+**Multi-level deref `**pp`** (pp is `T**`):
+
+```cpp
+T** pp = alloc(T*);   // pointer to pointer
+*pp = alloc(T);       // *pp: lvalue, type T*
+T* p = *pp;           // read
+**pp = new_val;       // multi-level deref + write
+```
+
+- **Type**: `T` (two pointer levels are peeled)
+- **Category**: **lvalue**
+- **codegen**: emit two `load T*, T** pp_slot` + `load T, T* inner_slot` (read); or `getelementptr` + `store` (write)
+
+**`p->field`** (deref + field access):
+
+```cpp
+struct Point { int x; int y; };
+Point* p = alloc(Point);
+int v = p->x;       // ≡ (*p).x
+p->y = 100;         // ≡ (*p).y = 100
+```
+
+- **Equivalence**: `p->field ≡ (*p).field` (§4.13.5.2 is consistent with C/C++)
+- **codegen**: emit `getelementptr` + `load` / `store`
+
+##### 4.13.5.3 Relation with §3.5 pointer types *(new in 0.3.3)*
+
+`p->field` and `(*p).field` involve struct field access:
+
+- struct fields are defined in §3.7
+- `Point* p` yields a `Point` lvalue through deref, then `.field` is used to access
+- `p->field` is syntactic sugar; codegen is equivalent to `(*p).field`
+
+##### 4.13.5.4 Precedence *(new in 0.3.3)*
+
+`*` (deref) as a unary prefix sits at **level 2.5** of §4.1, **right-to-left**.
+
+It differs from arithmetic `*` (level 3, **left-to-right**) — the two are distinguished by **operand position** via positional overloading:
+
+```cpp
+int a = *p;     // level 2.5: * is deref, unary prefix
+int b = a * b;  // level 3: * is multiplication, binary infix
+int c = **pp;   // level 2.5: two derefs, right-to-left, equivalent to *(*pp)
+```
+
+##### 4.13.5.5 Error Cases *(new in 0.3.3)*
+
+| Error | Error type | Trigger |
+|------|------|------|
+| `p` in `*p` is not a pointer type | `InvalidDereferenceError` | e.g. `*42` (int cannot be deref'd) |
+| `pp` in `**pp` is not `T**` | `InvalidDereferenceError` | e.g. `**42` |
+| `*null` | compile-time legal, runtime segfault | `null` is a `T*` and may be deref'd; runtime triggers a segmentation fault |
+
+##### 4.13.5.6 Cross-References *(new in 0.3.3)*
 
 | Section | Relationship |
 |------|------|
-| §4.1 precedence table | unary `*` / `&` / `mod` / `unmod` / `++` / `--` see §4.1 level 2.5 |
+| §3.5 pointer types | `p` must be a pointer type for deref |
+| §3.7 struct fields | `p->field` accesses struct fields |
+| §4.1 precedence table | deref is at level 2.5 (unary prefix) |
+| §4.13.2 lvalue category | deref yields an lvalue |
+| §4.13.3 rvalue | deref does not produce an rvalue (it has a memory location) |
+| §4.13.4 codegen path | deref goes through the lvalue path (load / store) |
+| §7.10 custom pointer | `const T*` deref is still an lvalue (but read-restricted) |
+| §12.1 EBNF | `*` production in `unary_expression` |
+
+#### 4.13.6 Cross-References with Other Sections *(new in 0.3.1, revised in 0.3.3)*
+
+| Section | Relationship |
+|------|------|
+| §4.1 precedence table | unary `*` / `&` / `++` / `--` see §4.1 level 2.5 (0.3.3 removes `mod` / `unmod`) |
 | §4.6 assignment operators | "LHS must be an lvalue" references §4.13.2 classification table |
-| §4.9 `mod()` | operand lvalue requirement references §4.13.2 |
-| §4.10 `unmod()` | operand lvalue requirement references §4.13.2 |
+| §4.9 `mod()` | operand lvalue requirement references §4.13.2 (0.3.3 revision: `mod` is a builtin function, see §11.0.1) |
+| §4.10 `unmod()` | operand lvalue requirement references §4.13.2 (0.3.3 revision: `unmod` is a builtin function, see §11.0.1) |
+| §4.13.5 deref Semantics | full boundary of "deref always yields an lvalue" see §4.13.5 |
 | §7.1 ownership + implicit mod | the target of implicit `mod()` is an lvalue, references §4.13.2 |
 | §7.8 reference `&T` | "operand must be an lvalue" references §4.13.2 |
-| §12.1 EBNF | `lvalue` / `rvalue` rules see §12.1 *(new in 0.3.1)* |
+| §12.1 EBNF | `lvalue` / `rvalue` rules see §12.1 *(new in 0.3.1)*; the `*` / `&` productions in `unary_expression` see §12.1 (0.3.3 revised under `builtin_function_call`) |
 
 ---
 
@@ -1258,6 +1365,121 @@ The `main` function:
 
 ## 7. Memory Management
 
+### 7.0 Concept Clarification: Operators vs Builtin Functions *(new in 0.3.3)*
+
+In UltraCPP, "language primitives" fall into two categories:
+
+#### 7.0.1 Operators (§4.1 precedence table)
+
+Unary / binary / ternary operators, with **associativity**, listed in the §4.1 precedence table:
+
+- **Unary prefix**: `*` (deref), `&` (addr-of), `+` `-` `!` `~` `++` `--` (level 2.5, **right-to-left**)
+- **Unary postfix**: `++` `--` (level 2, **left-to-right**)
+- **Binary**: `*` `/` `%` `+` `-` `<<` `>>` `<` `>` `<=` `>=` `==` `!=` `&` (bitwise AND) `^` `|` `&&` `||` `=` `+=` `-=` `*=` `/=` `%=` `&=` `|=` `^=` `<<=` `>>=` (levels 3–13, **left-to-right**)
+- **Ternary**: `?:` (level 14, **right-to-left**)
+- **Scope**: `::` (level 1, **left-to-right**)
+
+> **Note**: `*` is positionally overloaded at level 2.5 (prefix, deref) and level 3 (binary, multiplication); the two are distinguished by **operand position**. `&` is similarly positionally overloaded at level 2.5 (prefix, addr-of) and level 8 (binary, bitwise AND), distinguished by the same mechanism.
+
+#### 7.0.2 Builtin Functions (§11.0 signature master table)
+
+**Function-call syntax** (with `()` parentheses), handled through the codegen path in the compiler:
+
+> **[0.3.3 + runtime-architecture integration]** §11.0.1 builtin language primitives (**6 entries**) + compiler intrinsics (4 entries, not in BUILTIN_SIGS[]) + §11.0.2 UltraCPP stdlib (`lib/*.uc`, not in BUILTIN_SIGS[]):
+
+- §11.0.1 **builtin language primitives (6 entries, in BUILTIN_SIGS[])**:
+  - §7.2 `alloc(T)` — heap allocation, returns `T*` (owning)
+  - §7.3 `free(p)` — release an owning pointer (promoted from FFI to builtin per runtime-arch §3.2)
+  - §7.4 `move(p)` — ownership transfer, source becomes moved-out
+  - §7.5 `clone(s)` — independent copy (deep clone)
+  - §4.9 `mod(ref)` — acquire the modification right; codegen emits the `@uc_borrow_mod_enter` IR marker
+  - §4.10 `unmod(ref)` — release the modification right; codegen emits the `@uc_borrow_mod_exit` IR marker
+- **Compiler intrinsics (4 entries, not in BUILTIN_SIGS[], per runtime-arch §5.2)**:
+  - §7.6 `null` — null pointer constant (codegen emits `i8* null`)
+  - `is_null(p)` — codegen emits `icmp eq i8* %p, null`
+  - `sizeof(T)` — compile-time constant
+  - `alignof(T)` — compile-time constant
+- §11.0.2 **UltraCPP stdlib paths (provided by user `import "lib/*.uc"`, not in BUILTIN_SIGS[])**:
+  - `lib/print.uc` — `uc_print` / `uc_print_num` / `uc_print_float`
+  - `lib/string.uc` — `uc_strlen` / `uc_strcpy` / `uc_strcmp` (UltraCPP-implemented, no libc dependency, per runtime-arch §3.1)
+  - `lib/memory.uc` — `uc_memcpy` / `uc_memmove` / `uc_memset`
+  - `lib/math.uc` — `uc_abs` (replaces `abs_int`)
+  - `lib/alloc.uc` / `lib/sys.uc` (sys:: namespace, §10.4)
+  - `lib/uc_runtime.c` (C temporary bootstrap, replaced in 0.4.0+)
+
+**Call form**: `name(arg1, arg2, ...)` (all 6 builtin entries) or `name` (intrinsic `null` is a constant).
+
+**Return type**: see the §11.0.1 signature table (consistent with §6.2.1 function return type rules introduced in 0.3.2). stdlib function return types are determined by the function definitions in `lib/*.uc` (no lookup against the builtin table).
+
+#### 7.0.3 Key Clarification: Reclassification as builtin functions *(new in 0.3.3)*
+
+`mod`, `unmod`, `move`, `clone` were listed as "operators" in 0.2.0 / 0.3.0 specs:
+
+- 0.2.0 spec §4.1 level 15: `move`, `clone` are operators
+- 0.3.0 spec §4.1 footnote: `mod` / `unmod` are unary operators
+- 0.3.0 spec §12.3 appendix precedence table level 15: `move`, `clone`, `move_to_thread` are "ownership operations"
+
+**0.3.3 correction**: these four are all **builtin function calls**, on the same level as `alloc` / `free` / `move` / `clone` (§11.0.1 language primitives).
+
+**Reason for the correction**:
+
+1. They are **always invoked with parentheses** (`mod(ref)` rather than `mod ref`) — there is no prefix / postfix form.
+2. They **have signatures** (return type + parameter type), matching the characteristics of builtin functions.
+3. They **do not have a fixed precedence** — in `mod(ref)` the operand `ref` is a complete expression, which differs from the precedence semantics of operators like `+` `-`.
+4. Mixing them into the precedence table **causes misreading** (e.g. does `a + move(b)` require precedence lookup?).
+
+**Special nature of `mod` / `unmod`** *(0.3.3 + runtime-architecture §3.2 + §5.1 integration)*:
+
+- `mod` / `unmod` are **builtins (class A)** — no longer in the half-finished "compile-time decision without runtime function" state (revised in the 2026-08-17 runtime-architecture integration).
+- They sit alongside `alloc` / `free` / `move` / `clone` in §11.0.1 and enter the BUILTIN_SIGS[] table (BUILTIN_SIGS[] now has 6 entries).
+- The codegen layer **does** emit LLVM IR calls — but the calls emit **IR markers** (`@uc_borrow_mod_enter` / `@uc_borrow_mod_exit` intrinsics), not ordinary function calls:
+  - `@uc_borrow_mod_enter(%ref)` — marks "entering a modifiable borrow scope" (this marker may be optimized to a no-op because checking is done at compile time).
+  - `@uc_borrow_mod_exit(%ref)` — marks "exiting a modifiable borrow scope".
+- mod state is maintained by three mechanisms:
+  1. **IR marker** (codegen emit) — each `UCExprBuiltinCall` node corresponds to `@uc_borrow_mod_enter` / `@uc_borrow_mod_exit` IR calls.
+  2. **`UCExprCall.mod_state` field** (compile-time) — requesting / granted / released.
+  3. **Borrow checker** (compile-time) — validates mod pairing at scope exit (Rule 24).
+- **Reason for promoting to builtin** (per runtime-architecture §3.2): `mod` / `unmod` are the entry / exit points of borrow-checker state, and the compiler **must** record them explicitly in the IR. The previous "intrinsic / compile-time decision" path could not guarantee every call site emitted correctly, so the unified builtin path was adopted.
+- **History** (0.2.0–0.3.3): `mod` / `unmod` have been repeatedly reclassified in 0.2.0 / 0.3.0 / 0.3.1 / 0.3.2 (`operator` → `intrinsic` → `builtin`); the 0.3.3 + runtime-architecture integration is the final form.
+
+**After the correction**:
+
+- §4.1 precedence table **removes** level 15 `move clone`, and **removes** `mod` / `unmod` from the level 2.5 unary row.
+- §4.1 footnote is **rewritten** to explain that `mod` / `unmod` are function calls.
+- §12.3 appendix precedence table **removes** level 15, which now belongs to §11.0.1 builtin signature table.
+- §11.0 is regrouped into §11.0.1 (language primitives — 6 builtin entries: `alloc` / `free` / `move` / `clone` / `mod` / `unmod`) + §11.0.2 (UltraCPP stdlib paths `lib/*.uc`, not in BUILTIN_SIGS[]; per runtime-architecture §3.1 + §5.3).
+- §4.9 / §4.10 gain a [0.3.3 revised] note: `mod` / `unmod` are **builtin functions**, and codegen emits IR markers (`@uc_borrow_mod_{enter,exit}`); they are not pure compile-time decisions.
+
+#### 7.0.4 Historical Retrospective *(new in 0.3.3)*
+
+| Version | §4.1 table level 15 | Footnote description of mod / unmod | §11.0 builtin table | Section placement |
+|------|------|------|------|------|
+| 0.2.0 | `move`, `clone` are operators | (no mod / unmod) | (no table) | §4.1 table |
+| 0.3.0 | `move`, `clone` are operators (carried over) | "mod / unmod are unary operators" | (no table) | §4.1 table + §12.3 |
+| 0.3.1 (S2) | (unchanged) | (unchanged) | (no table) | §4.1 table + §12.3 |
+| 0.3.2 (S4 + S5) | (unchanged) | (unchanged) | "single table, 18 entries" | §4.1 table + §12.3 + §11.0 |
+| **0.3.3 + runtime-arch (this document)** | level 15 removed | "mod / unmod are builtin functions (class A, codegen emits IR marker)" | **§11.0.1 (6 language primitives: `alloc` / `free` / `move` / `clone` / `mod` / `unmod`) + §11.0.2 (UltraCPP stdlib paths `lib/*.uc`, not in BUILTIN_SIGS[])** | §11.0.1 + §10.2 / §10.3 / §10.4 |
+
+0.3.3 is the first version to clearly distinguish "operator vs builtin function"; the runtime-architecture integration revision (2026-08-17) further promoted `mod` / `unmod` from "half builtin" to **full** builtin (class A, emits IR marker), and moved stdlib out of the BUILTIN_SIGS[] table (UltraCPP provides its own). For Plan A implementation details, see `.dev/drafts/0.3.3-implementation-plan.md`.
+
+#### 7.0.5 Cross-References *(new in 0.3.3)*
+
+| Section | Relationship |
+|------|------|
+| §3 type system | type constraints for operator and builtin-function operands come from §3 |
+| §4.1 operator precedence | the complete operator list is in §4.1 |
+| §4.9 `mod(ref)` | `mod` is a builtin function (§11.0.1, class A, codegen emits IR marker), not an operator |
+| §4.10 `unmod(ref)` | `unmod` is a builtin function (§11.0.1, class A, codegen emits IR marker), not an operator |
+| §6.2.1 function return type | the return type of a builtin function is determined by the §11.0 signature table |
+| §7.1 ownership | `move` / `clone` are the core builtins of §7.1 concepts (`null` is an intrinsic and is not in §11.0.1, per runtime-arch §5.2) |
+| §7.3 `free(p)` | `free` is a builtin (§11.0.1, class A, emits `@free` and marks the pointer dangling), not FFI |
+| §7.4 `move(p)` | full semantics see §7.4 (this section is classification; §7.4 is semantics) |
+| §7.5 `clone(s)` | full semantics see §7.5 |
+| §11.0.1 builtin language primitives (6 entries) | §11.0.1 lists the **6** language-primitive builtins: `alloc` / `free` / `move` / `clone` / `mod` / `unmod` (per runtime-arch §5.1) |
+| §11.0.2 UltraCPP stdlib paths | §11.0.2 lists `lib/print.uc` / `lib/string.uc` / `lib/memory.uc` / `lib/math.uc` / `lib/alloc.uc` / `lib/sys.uc`; stdlib is not in BUILTIN_SIGS[] (per runtime-arch §5.3 + §9.2) |
+| §12.1 EBNF | the `builtin_function_call` production see §12.1 (added 0.3.3) — only the 6 language primitives; stdlib goes through `import "lib/*.uc"` and is not in `builtin_function_call` |
+| §12.3 appendix precedence table | synchronized with §4.1 revision |
+
 ### 7.1 Ownership Semantics (**two permissions split**) *(rewritten in 0.3.0: Rule 22, Q4, Q5)*
 
 > **[0.3.0 · Rule 22]** 0.3.0 splits the 0.2.0 notion of "ownership" into two independent permissions:
@@ -1353,7 +1575,7 @@ free(arr);
 
 > **[0.3.0 carries over 0.2.0 · D-6]** The pairing of `alloc` and `free` is the programmer's responsibility; the compiler **does not enforce** it.
 
-### 7.4 `move(p)` Expression *(carried over from 0.2.0 · D-4, Q5)*
+### 7.4 `move(p)` Expression *(carried over from 0.2.0 · D-4, Q5, revised in 0.3.3 — Reclassification as builtin functions)*
 
 > **`move` is a type-parameterized builtin**, see §11.0 for details.
 >
@@ -1384,7 +1606,7 @@ int v = *p2;                // ✅ v == 42
 free(p2);                   // ✅
 ```
 
-### 7.5 clone Function
+### 7.5 clone Function *(rewritten in 0.3.0, revised in 0.3.3 — Reclassification as builtin functions)*
 
 `clone()` copies the pointer, yielding two independent ownerships.
 
@@ -1413,7 +1635,7 @@ int* p1 = alloc(int, 10);
 int* p2 = p1 + 5;   // offset the pointer
 ```
 
-### 7.8 Reference `&T` (rewriting 0.2.0 §7.8) *(rewritten in 0.3.0, revised in 0.3.1)*
+### 7.8 Reference `&T` (rewriting 0.2.0 §7.8) *(rewritten in 0.3.0, revised in 0.3.1, revised in 0.3.3 — see §4.13.5 deref Semantics)*
 
 > **[0.3.0 rewrite]** 0.3.0 removes the `T&mut` type. `T&` is the sole reference type; writability is decided by `mod()` + `#modlaw`.
 > **[0.3.1 revision]** 0.3.1 explicitly defines the lvalue / rvalue concepts (§4.13); the "operand must be an lvalue"
@@ -1879,9 +2101,9 @@ error[E0701]: `#modlaw` policy forbids `mod()` under `none`
 
 ---
 
-## 10. FFI (Foreign Function Interface)
+## 10. FFI (Foreign Function Interface) *(introduced in 0.3.0, revised in 0.3.3)*
 
-### 10.1 `extern "C"` Block
+### 10.1 `extern "C"` Block *(introduced in 0.3.0, revised in 0.3.3)*
 
 ```cpp
 extern "C" {
@@ -1889,7 +2111,210 @@ extern "C" {
 }
 ```
 
-### 10.2 C Type Mapping
+> **[0.3.3 revision]** The `extern "C"` block is **only for users declaring external C functions themselves** (rare cases such as calling system libraries or legacy C code). It is **not used for stdlib** — stdlib is written by UltraCPP itself in `lib/*.uc` (per runtime-architecture §3.1 "UltraCPP does not use libc as runtime"). Once stdlib uses `lib/*.uc`, `extern "C"` is only used for temporary bootstrap leftover calls during the 0.3.x phase.
+
+### 10.2 Preprocessor Macros *(new in 0.3.3, per runtime-architecture §7)*
+
+UltraCPP adopts **C-style preprocessor macro syntax**, not Rust-style `#[cfg(...)]`. Rationale: compatible with the C ecosystem toolchain; seamless with the existing C implementation in `src-c/`; friendly learning curve. The `@` prefix avoids conflicts with user-code identifiers.
+
+```c
+@ifdef(TARGET_OS_LINUX)
+    // Linux implementation
+@end
+
+@ifdef(TARGET_OS_DARWIN)
+    // macOS implementation
+@end
+
+@if defined(TARGET_OS_LINUX) && defined(TARGET_ARCH_X86_64)
+    // x86_64 Linux specific code
+@end
+
+@if !defined(TARGET_OS_LINUX)
+    @error("lib/sys/raw.uc only supports Linux; other platforms require separate implementations")
+@end
+```
+
+#### 10.2.1 Syntax Subset *(new in 0.3.3)*
+
+| Syntax | Equivalent C | Description |
+|------|------|------|
+| `@ifdef(MACRO) ... @end` | `#ifdef MACRO ... #endif` | single condition |
+| `@ifndef(MACRO) ... @end` | `#ifndef MACRO ... #endif` | inverse |
+| `@if defined(MACRO) && defined(MACRO2) ... @end` | `#if defined(MACRO) && defined(MACRO2) ... #endif` | compound |
+| `@if !defined(MACRO) ... @end` | `#if !defined(MACRO) ... #endif` | negation |
+| `@else` / `@elif(EXPR)` | `#else` / `#elif` | branch |
+| `@define(NAME, VALUE)` | `#define NAME VALUE` | macro definition |
+| `@error("msg")` | `#error "msg"` | compile-time error |
+| `@warning("msg")` | `#warning "msg"` | compile-time warning |
+
+#### 10.2.2 Predefined Macros *(new in 0.3.3, per runtime-architecture §7.2)*
+
+| Macro | Value | Use |
+|---|---|---|
+| `TARGET_OS_LINUX` | 1 | Linux platform |
+| `TARGET_OS_DARWIN` | 1 | macOS platform |
+| `TARGET_OS_WINDOWS` | 1 | Windows platform |
+| `TARGET_OS_FREEBSD` | 1 | FreeBSD platform |
+| `TARGET_ARCH_X86_64` | 1 | x86_64 architecture |
+| `TARGET_ARCH_AARCH64` | 1 | ARM 64 architecture |
+| `TARGET_ARCH_RISCV64` | 1 | RISC-V 64 architecture |
+| `TARGET_ULTRA_VERSION` | "0.3.3" | UltraCPP compiler version |
+| `TARGET_ULTRA_FEATURES` | bit flags | enabled language features |
+
+- **Predefined macro source** (per runtime-architecture §11): the uc compiler auto-detects via `uname` at startup; can be explicitly overridden by `-D NAME=VALUE`.
+- **Detection timing**: lexer / parser phase; `@ifdef` / `@if defined()` is evaluated immediately and does not enter the AST.
+
+### 10.3 Inline Assembly *(new in 0.3.3, per runtime-architecture §8)*
+
+UltraCPP adopts **C / GCC-style inline assembly syntax**, not Rust's `asm!` macro. Rationale: LLVM toolchain understands it directly; seamless with the current C implementation in `src-c/`; consistent with §10.2 preprocessor macros in using C ecosystem conventions.
+
+```c
+unsafe {
+    int result;
+    asm {
+        "syscall"
+        : "=a"(result)               // output operand
+        : "0"(num), "D"(arg1)         // input operands (0 = reuse output 0)
+        : "rcx", "r11", "cc", "memory"  // clobbers
+    }
+}
+```
+
+#### 10.3.1 Syntax Format *(new in 0.3.3)*
+
+Format (4 sections, separated by colons):
+
+1. **Instruction template**: `"syscall"` — GCC-style string-literal instruction.
+2. **Output operands**: `: "=a"(result)` — `=` means write-only.
+3. **Input operands**: `: "0"(num), "D"(arg1)` — `"0"` means same register as output 0.
+4. **Clobbers**: `: "rcx", "r11", "cc", "memory"` — caller-saved / memory may be modified.
+
+#### 10.3.2 Constraint Characters *(new in 0.3.3, per runtime-architecture §8.2, ref GCC)*
+
+| Constraint | Meaning |
+|------|------|
+| `r` | any general-purpose register |
+| `a` | rax / eax (x86_64 syscall num) |
+| `D` | rdi / edi (x86_64 arg 1) |
+| `S` | rsi / esi (x86_64 arg 2) |
+| `d` | rdx / edx (x86_64 arg 3) |
+| `c` | rcx / ecx (x86_64 arg 4, clobbered after syscall) |
+| `b` | rbx / ebx (x86_64 arg 5) |
+| `=r` | output register (write-only) |
+| `+r` | read-write operand |
+| `0`–`7` | reuse the same register as operand N |
+| `r0`–`r7` | ARM / RISC-V register numbers |
+| `m` | memory operand |
+| `i` | immediate |
+| `cc` | condition-code register (flags) |
+| `memory` | memory may be modified (compiler must flush register cache) |
+
+#### 10.3.3 vs Rust `asm!` *(new in 0.3.3)*
+
+UltraCPP chose C style over Rust's `asm!` macro:
+
+| UltraCPP (C style) | Rust `asm!` |
+|---|---|
+| `asm { "syscall" : "=a"(r) : "0"(n) : "cc" }` | `asm!("syscall", out("rax") r, in("rax") n, lateout("rcx") _, lateout("r11") _, options(preserves_flags))` |
+| Clobber list as the fourth section | `lateout(...)` / `options(...)` |
+| `"0"` reuses a prior operand | passing the same variable directly |
+| `asm volatile { ... }` | `options(preserves_flags, nostack)` etc. |
+
+### 10.4 `sys::` System Call Namespace *(new in 0.3.3, per runtime-architecture §6)*
+
+UltraCPP introduces the `sys::` namespace as a cross-platform system-call abstraction layer. It mimics the glibc pattern (high-level wrapper + low-level entry + inline assembly), but is implemented entirely in UltraCPP itself, without depending on libc.
+
+#### 10.4.1 Architecture *(new in 0.3.3, per runtime-architecture §6.1)*
+
+```
+User code
+    sys::read(fd, buf, len)
+        ↓
+UltraCPP stdlib layer (lib/sys/sys.uc, written in UltraCPP)
+        ↓
+UltraCPP low-level layer (lib/sys/raw.uc, asm { "syscall" ... })
+        ↓
+LLVM IR layer
+        ↓
+Machine code (syscall / svc / ecall)
+        ↓
+Kernel mode (Linux / macOS / Windows NT / FreeBSD)
+```
+
+#### 10.4.2 `sys::` API First Version *(new in 0.3.3, per runtime-architecture §6.2)*
+
+| Category | Function | Description |
+|------|------|------|
+| **File I/O** | `sys::read(fd, buf, len)` | read `len` bytes from `fd` into `buf` |
+| | `sys::write(fd, buf, len)` | write `len` bytes from `buf` to `fd` |
+| | `sys::open(path, flags)` | open / create file, return `fd` |
+| | `sys::close(fd)` | close `fd` |
+| | `sys::lseek(fd, offset, whence)` | move the file pointer |
+| **Memory mapping** | `sys::mmap(addr, len, prot, flags, fd, offset)` | memory map |
+| | `sys::munmap(addr, len)` | unmap |
+| | `sys::mprotect(addr, len, prot)` | modify memory protection |
+| **Process** | `sys::exit(code)` | terminate the process |
+| | `sys::getpid()` | obtain the process ID |
+| | `sys::fork()` | fork a child process |
+| | `sys::execve(path, argv, envp)` | execute a new program |
+| | `sys::wait4(pid, status, options, rusage)` | wait for child |
+| **Thread** | `sys::clone(...)` | create thread / child process |
+| | `sys::futex_wait(addr, val)` | futex wait |
+| | `sys::futex_wake(addr, max)` | futex wake |
+| **Time** | `sys::clock_gettime(clock_id, ts)` | obtain clock time |
+| | `sys::nanosleep(req, rem)` | high-precision sleep |
+| **raw** | `sys::raw_syscall(num, arg1, arg2, ...)` | low-level entry (direct to kernel) |
+
+#### 10.4.3 Cross-Platform Unified Naming Principle *(new in 0.3.3, per runtime-architecture §6.3)*
+
+- **User code uses `sys::read(fd, buf, len)`** — identical across platforms.
+- **Implementations branch on `@ifdef(TARGET_OS_*)`** — the same interface name dispatches to platform-specific implementations (using §10.2 macros).
+- **Implementations branch on `@ifdef(TARGET_ARCH_*)`** — the same interface dispatches to different `asm { ... }` blocks per architecture (using §10.3 inline assembly).
+- **Directory layout** (`lib/sys/`):
+  ```
+  lib/sys/
+  ├── sys.uc          // sys:: namespace API public header
+  ├── raw.uc          // sys::raw_syscall low-level implementation
+  ├── linux.uc        // Linux-specific implementation (@ifdef-tagged)
+  ├── darwin.uc       // macOS-specific implementation
+  ├── windows.uc      // Windows-specific implementation (Win32 syscalls)
+  └── freebsd.uc      // FreeBSD-specific implementation
+  ```
+
+#### 10.4.4 Relation with stdlib *(new in 0.3.3)*
+
+- `sys::` is **UltraCPP-provided stdlib** (implemented in `lib/sys/*.uc`), **not** a builtin (not listed in §11.0.1).
+- Users obtain it via `import "lib/sys/sys.uc"`; no entry in `BUILTIN_SIGS[]` is required (per runtime-architecture §5.3).
+- **raw_syscall**: `sys::raw_syscall` accepts a syscall number + args, and is implemented in `lib/sys/raw.uc` using `asm { "syscall" ... }` (x86_64) / `asm { "svc #0" ... }` (aarch64) / `asm { "ecall" ... }` (riscv64) (per §10.3 + runtime-architecture §6.1).
+
+### 10.5 Cross-References with Other Sections *(new in 0.3.3)*
+
+| Section | Relationship |
+|------|------|
+| §10.1 `extern "C"` block | user-declared external C functions; **not used for stdlib** (per runtime-arch §3.1) |
+| §10.2 preprocessor macros | C-style `@ifdef` / `@if defined()`; cross-platform dispatch of `sys::` depends on them |
+| §10.3 inline assembly | C / GCC-style `asm { ... }`; implementation of `sys::raw_syscall` depends on it |
+| §10.4 `sys::` namespace | cross-platform system-call abstraction (implemented by users in `lib/`, not in the builtin table) |
+| §11.0.2 UltraCPP stdlib paths | `lib/sys.uc` belongs to UltraCPP stdlib (§11.0.2) |
+| §12.1 EBNF | `preprocessor_directive` / `asm_block` / `qualified_call` productions (added 0.3.3) |
+
+#### 10.5.1 Error Code Mapping *(new in 0.3.3, per runtime-architecture §11)*
+
+> **[0.3.3 new]** After integrating the runtime-architecture decision, the following 6 new error codes are added to the enum in `src-c/include/uc_error.h` (matching the existing `UC_ERR_*` format). The 3 error codes introduced in 0.3.0 (`UC_ERR_MODLAW` / `UC_ERR_CROSS_THREAD_MOVE` / `UC_ERR_OWNING_HEAP_VIEW`) are preserved and recorded in the §12.4 history table.
+
+| Error code | Trigger | Related section |
+|---|---|---|
+| `UC_ERR_ParserUnknownDirective` | parser encounters an unknown `@directive` (e.g. `@foo`, not in the `@ifdef` / `@if` / `@ifndef` / `@else` / `@elif` / `@end` / `@define` / `@error` / `@warning` list) | §10.2 preprocessor macros |
+| `UC_ERR_CodegenAllocNoType` | type `T` cannot be inferred in an `alloc(T)` call (no type annotation + no argument hint) | §7.2 / §11.0.1 |
+| `UC_ERR_CodegenModNonRef` | argument of `mod(expr)` / `unmod(expr)` is not an `&T` reference (e.g. a temporary, a literal) | §4.9 / §4.10 / §11.0.1 / Rule 24 |
+| `UC_ERR_CodegenAsmInvalidSegment` | one of the 4 sections of an `asm { ... }` block has a syntax error (e.g. output constraint is not `=X` form) | §10.3 inline assembly |
+| `UC_ERR_CodegenSysInvalidName` | `name` of `sys::name(args)` is not on the allow-list (e.g. `sys::foo`) | §10.4 `sys::` namespace |
+| `UC_ERR_AsmTooManyConstraints` | operands (outputs + inputs) of an `asm` block exceed 16 (the LLVMInlineAsm limit) | §10.3 inline assembly |
+
+**Implementation site**: `src-c/include/uc_error.h` (enum incremental 6 entries) + `src-c/src/error.c` (string mapping 6 lines).
+
+### 10.6 C Type Mapping
 
 | C Type | UltraCPP Type |
 |--------|---------------|
@@ -1906,7 +2331,7 @@ extern "C" {
 
 > **FFI return type** follows §6.2.1 priority 3 (extern declaration).
 
-### 10.3 unsafe Block
+### 10.7 unsafe Block
 
 ```cpp
 unsafe {
@@ -1930,7 +2355,7 @@ char* allocate_buffer(int size) {
 
 > **[0.3.0 carries over 0.2.0 · D-2, D-7]** Inside an `unsafe` block, **ownership and borrow checks are suppressed**: the implicit `mod()` check of §7.1, the borrow rules of §7.8, and the `DanglingReference` of §7.9 are not reported inside `unsafe`. `unsafe` **does not change semantics** — `move` still nulls the source (§7.4), and `&` is still a reference (§7.8) — it merely shifts the safety responsibility to the programmer.
 
-### 10.4 Inline Assembly
+### 10.8 Inline Assembly *(legacy simple syntax)*
 
 Embedded assembly must be placed in an `unsafe` block.
 
@@ -1973,7 +2398,7 @@ unsafe {
 
 ---
 
-## 11. Standard Library Conventions *(revised in 0.3.2)*
+## 11. Standard Library Conventions *(revised in 0.3.2, revised in 0.3.3, runtime-architecture integrated)*
 
 > **[0.3.2]** This chapter describes UltraCPP standard-library functions' **signature conventions** and **semantic conventions**. The **builtin signature master table** is in §11.0 (new in 0.3.2). The compiler queries the §11.0 table during codegen to determine a function call's return type; see §6.2.1 for details.
 
@@ -1987,43 +2412,58 @@ UltraCPP provides the following **builtin functions**. Builtin functions are **i
 
 > **History**: 0.3.1 spec did not have a builtin signature master table; the signatures were scattered across §11.1–§11.6. 0.3.2 centralizes them as §11.0 to simplify codegen queries and spec maintenance.
 
-#### 11.0.1 Complete Builtin Signature Table *(new in 0.3.2)*
+#### 11.0.1 builtin language primitives *(new category in 0.3.3, runtime-architecture §5.1 integration)*
 
-| Function | Signature | Return Type | Category | Details |
-|--------|------|----------|------|----------|
-| `print` | `void print(const char* s)` | `void` | I/O | §11.1 |
-| `print_num` | `void print_num(int n)` | `void` | I/O | §11.1 |
-| `print_float` | `void print_float(double f)` | `void` | I/O | §11.1 |
-| `strlen` | `int strlen(const char* s)` | `int` | string | §11.2 |
-| `strcpy` | `char* strcpy(char* dest, const char* src)` | `char*` | string | §11.2 |
-| `strcmp` | `int strcmp(const char* a, const char* b)` | `int` | string | §11.2 |
-| `memcpy` | `void* memcpy(void* dest, const void* src, int n)` | `void*` | memory | §11.3 |
-| `memmove` | `void* memmove(void* dest, const void* src, int n)` | `void*` | memory | §11.3 |
-| `memset` | `void* memset(void* s, int c, int n)` | `void*` | memory | §11.3 |
-| `sizeof_impl` | `int sizeof_impl()` | `int` | utility | §11.4 |
-| `alignof_impl` | `int alignof_impl()` | `int` | utility | §11.4 |
-| `is_null` | `bool is_null(int* ptr)` | `bool` | utility | §11.4 |
-| `clone_impl` | `int* clone_impl(int* ptr)` | `int*` | utility | §11.4 |
-| `move` | `T* move(T* p)` *(type-parameterized)* | `T*` | memory | §7.5, §11.3 |
-| `alloc` | `T* alloc(T)` *(type-parameterized, instantiated by `alloc(int)` etc.)* | `T*` | memory | §7.4, §11.3 |
-| `abs_int` | `int abs_int(int x)` | `int` | math | added in 0.3.2 (triggered by m0_41) |
+The "language primitives" builtins described in §7.0, directly related to memory ownership / borrow checking. **Total of 6 entries**, all class A builtins, all codegen-emitted, all entering `BUILTIN_SIGS[]`:
 
-**Type mapping to LLVM IR**:
+| Function | Return Type | Parameter Signature | Spec Section | Notes |
+|------|----------|----------|----------|------|
+| `alloc(T)` | `T*` (owning) | `T` type | §7.2 | heap allocation, returns owning pointer; codegen emits `call i8* @malloc(sizeof(T))` |
+| `free(p)` | `void` | `T*` (owning) | §7.3 | release owning pointer; codegen emits `call void @free(i8* %p)` and marks `p` as freed |
+| `move(p)` | `T*` (new owner, source moved-out) | `T*` | §7.4 | ownership transfer; codegen emits IR marker + load + returns new owner |
+| `clone(s)` | `T*` (independent owning copy) | `T*` | §7.5 | deep copy / independent clone; codegen emits `alloc(T) + LLVMBuildMemcpy` |
+| `mod(ref)` | `void` | `T&` (reference) | §4.9 | acquire modification right (Rule 24); codegen emits IR marker (`@uc_borrow_mod_enter`, borrow-checker state entry) |
+| `unmod(ref)` | `void` | `T&` (reference) | §4.10 | release modification right (Rule 24); codegen emits IR marker (`@uc_borrow_mod_exit`, borrow-checker state exit) |
 
-| UltraCPP Type | LLVM IR Type |
-|---------------|--------------|
-| `void` | `void` |
-| `bool` | `i1` |
-| `int` | `i32` |
-| `long` / `int64` | `i64` |
-| `float` | `float` |
-| `double` | `double` |
-| `char` | `i8` |
-| `T*` | `T*` (e.g. `i32*`, `i8*`) |
-| `void*` | `i8*` |
-| `const char*` | `i8*` (LLVM has no `const` concept) |
+**Type parameterization**: `alloc(T)` / `move(p)` / `clone(s)` are type-parameterized builtins — the parameter `T` is inferred from context during codegen (e.g. `alloc(int)` → allocate `sizeof(int)` bytes).
 
-#### 11.0.2 Codegen Integration *(new in 0.3.2)*
+**Precedence**: `mod`, `unmod`, `move`, `clone` are **not in the §4.1 operator precedence table** (0.3.3 revision); see §7.0.3 Key Clarification for details.
+
+**`free` promotion note** (runtime-architecture §3.2 + §5.1):
+- In 0.3.2 / 0.3.3 original plans, `free` went through `extern "C"` FFI; now it is promoted to a builtin.
+- Rationale: `free` is a state-change point the borrow checker must track (after free, `p` is considered dangling); it cannot transparently pass through libc (otherwise the IR cannot mark the freed state), so the compiler must emit it explicitly.
+
+**`mod` / `unmod` promotion note** (runtime-architecture §3.2 + §5.1):
+- In 0.3.2 / 0.3.3 original plans, `mod` / `unmod` were "compile-time decisions without runtime function"; now they are promoted to builtins.
+- Rationale: they are the entry / exit of borrow-checker state, and the compiler must record them explicitly in the IR (emit `@uc_borrow_mod_enter` / `@uc_borrow_mod_exit` intrinsics); the dedicated `UC_INTRINSIC_MOD` / `UC_INTRINSIC_UNMOD` indirect path is no longer needed.
+
+#### 11.0.2 UltraCPP stdlib paths *(new category in 0.3.3, runtime-architecture §3.1 + §9.2 integration)*
+
+> **[0.3.3 major revision — runtime-architecture integration]** All items of the 0.3.2 §11.0 "stdlib conventions (14 entries)" table (`print` / `strlen` / `strcpy` / `strcmp` / `memcpy` / `memmove` / `memset` / `sizeof_impl` / `alignof_impl` / `is_null` / `clone_impl` / `print_num` / `print_float` / `abs_int`) are **all removed**: they **do not enter BUILTIN_SIGS[]**, and they **do not depend on libc**. These stdlib functions are written by UltraCPP itself in `lib/*.uc`. The bootstrapping path is documented in `.dev/drafts/0.3.0-runtime-architecture.md` §9.2.
+
+**Paths**:
+
+| File | Provided Functions | Notes |
+|------|----------|------|
+| `lib/print.uc` | `uc_print(s)` / `uc_print_num(n)` / `uc_print_float(f)` | replaces the original builtins `print` / `print_num` / `print_float` |
+| `lib/string.uc` | `uc_strlen` / `uc_strcpy` / `uc_strcmp` | UltraCPP-implemented, no libc dependency |
+| `lib/memory.uc` | `uc_memcpy` / `uc_memmove` / `uc_memset` | UltraCPP-implemented |
+| `lib/math.uc` | `uc_abs` (replaces `abs_int`) | UltraCPP-implemented |
+| `lib/alloc.uc` | `uc_alloc` / `uc_free` thin wrappers | backup (for testing); the main path goes through §11.0.1 builtins |
+| `lib/sync.uc` | (future) `uc_mutex` / `uc_atomic` | to be added after Stage 1 |
+| `lib/sys.uc` + `lib/sys/raw.uc` | full `sys::` namespace implementation | §10.4 |
+| `lib/test/test_runtime.uc` | runtime unit tests | after Stage 1 |
+
+**Bootstrap path** (per runtime-architecture §9):
+- 0.3.x phase (0.3.1–0.3.7): **`lib/uc_runtime.c` (C implementation) is a temporary bootstrap** — it provides the minimum set (print / strlen / memcpy, etc.) so that 0.3.x is functional.
+- 0.4.0+ phase: **first self-hosting** — use `uc_compiler` to compile `lib/*.uc` and replace the C temporary runtime.
+- 1.0 phase: full self-hosting (`src-c/` can be removed).
+
+> **Relation between `lib/uc_runtime.c` and `lib/*.uc`**: from 0.3.3 onward, users should **prefer writing stdlib in `lib/*.uc` using UltraCPP itself**; `lib/uc_runtime.c` is only a temporary bridge, replaced file-by-file once `lib/*.uc` is online. The final goal: at 1.0, `lib/uc_runtime.c` is fully replaced by `lib/*.uc`, and the `src-c/` directory can be removed (unless kept as a preserved backend implementation).
+
+> **[0.3.3 transition note]** codegen still emits `declare i8* @malloc(i64)` and `declare void @free(i8*)` (from libc), and `UC_STMT_FREE` / `UC_EXPR_ALLOC` emit direct calls to libc. This is to remain compatible with the existing `lib/uc_runtime.c` C bootstrap. In the **0.4.0+ phase**, once `lib/*.uc` self-built stdlib is complete, these libc declarations are removed and all functionality is provided by UltraCPP stdlib.
+
+#### 11.0.3 Codegen Integration *(revised in 0.3.2, revised in 0.3.3)*
 
 In `src-c/src/codegen.c`, the builtin signature table is maintained as a `static const struct` array:
 
@@ -2075,7 +2515,7 @@ case UC_EXPR_CALL:
     break;
 ```
 
-#### 11.0.3 Flow for Adding a New Builtin *(new in 0.3.2)*
+#### 11.0.4 Flow for Adding a New Builtin *(new in 0.3.2, revised in 0.3.3)*
 
 To add a new builtin in the future (e.g. `sqrt`, `pow`):
 
@@ -2084,7 +2524,7 @@ To add a new builtin in the future (e.g. `sqrt`, `pow`):
 3. Add an entry to `builtin_sigs[]` in `src-c/src/codegen.c`.
 4. (Optional) Add a stub implementation in `src-c/src/stdlib/` if the builtin needs runtime support.
 
-#### 11.0.4 Cross-References with Other Sections *(new in 0.3.2)*
+#### 11.0.5 Cross-References with Other Sections *(new in 0.3.2, revised in 0.3.3)*
 
 | Section | Relationship |
 |------|------|
@@ -2224,8 +2664,10 @@ void worker() {
 
 ## 12. Appendix
 
-### 12.1 Complete EBNF Grammar *(revised in 0.3.0)*
+### 12.1 Complete EBNF Grammar *(revised in 0.3.0, reclassified in 0.3.3)*
 
+> **[0.3.3 · final state]** The productions below reflect the **final state** after reclassifying `mod`, `unmod`, `move`, `clone` as **builtin function calls** (§7.0.3 + §11.0.1) rather than operators. `move_to_thread` likewise becomes a builtin function call. The `unary_expression` / `rvalue` productions below no longer list these keywords; instead they are emitted under `builtin_function_call`. Five new productions are appended at the end of this section: `builtin_function_call`, `intrinsic_call`, `preprocessor_directive`, `asm_block`, `qualified_call`. This is the final state per runtime-architecture §5 and spec-text-changes §6.2.
+>
 > **[0.3.0]** Additions and changes relative to 0.2.0 (preserves all 0.2.0 productions; adds mod/unmod/move_to_thread/__thread/shared):
 > 1. The keyword list adds `mod`, `unmod`, `shared`, `__thread`, `move_to_thread`.
 > 2. `unary_expression` adds `'mod' '(' expression ')'` and `'unmod' '(' expression ')'` (Rule 24).
@@ -2374,11 +2816,8 @@ rvalue            ::= literal                                        // integer 
                     | postfix_expression '--'                        // postfix decrement
                     | '(' rvalue ')'                                 // parenthesized rvalue
                     | '&' unary_expression                           // address-of result (pointer rvalue)
-                    | 'move' '(' expression ')'
-                    | 'clone' '(' expression ')'
-                    | 'mod' '(' expression ')'                       // [0.3.0 Rule 24]
-                    | 'unmod' '(' expression ')'                     // [0.3.0 Rule 24]
-                    | 'move_to_thread' '(' expression ',' expression ')'
+                    | builtin_function_call                          // [0.3.3] alloc/free/move/clone/mod/unmod
+                    | 'move_to_thread' '(' expression ',' expression ')'  // [0.3.3] kept here as builtin (per plan §3.7 conservative)
 
 conditional_expression
                    ::= logical_or_expression ('?' expression ':' conditional_expression)?
@@ -2417,12 +2856,8 @@ unary_expression   ::= postfix_expression
                     | '(' type ')' unary_expression                 // C-style cast [0.3.2]
                     | 'cast' '(' type ',' expression ')'              // explicit cast builtin [0.3.2]
                     | ('+' | '-' | '!' | '~' | '*' | '&') unary_expression
-                    | 'sizeof' '(' type ')'
-                    | 'move' '(' expression ')'
-                    | 'clone' '(' expression ')'
-                    | 'mod' '(' expression ')'                       // [0.3.0 Rule 24] acquire mod-right
-                    | 'unmod' '(' expression ')'                     // [0.3.0 Rule 24] release mod-right
-                    | 'move_to_thread' '(' expression ',' expression ')'  // [0.3.0 Rule 26]
+                    | 'sizeof' '(' type ')'                           // [0.3.3] intrinsic_call (codegen-special, not in BUILTIN_SIGS[])
+                    // [0.3.3] removed: 'move' / 'clone' / 'mod' / 'unmod' / 'move_to_thread' — reclassified as builtin_function_call (§7.0.3)
 
 postfix_expression ::= primary_expression
                     | postfix_expression '[' expression ']'
@@ -2436,6 +2871,10 @@ primary_expression ::= identifier
                     | literal
                     | '(' expression ')'
                     | 'null'
+                    | builtin_function_call                          // [0.3.3] alloc/free/move/clone/mod/unmod
+                    | intrinsic_call                                 // [0.3.3] null/is_null/sizeof/alignof (codegen-handled)
+                    | asm_block                                      // [0.3.3] 'asm' '{' ... '}'
+                    | qualified_call                                 // [0.3.3] identifier '::' identifier '(' ... ')'
 
 argument_list      ::= expression (',' expression)*
 
@@ -2463,6 +2902,45 @@ string_literal     ::= '"' (character | escape)* '"'
 identifier         ::= letter (letter | digit)*
 letter             ::= 'a'..'z' | 'A'..'Z' | '_'                      // '__thread' uses '_'_'t'...
 digit              ::= '0'..'9'
+
+// === [0.3.3] Reclassification as builtin functions (final state) ===
+// mod / unmod / move / clone are NO LONGER operators; they are builtin function
+// calls dispatched by codegen. alloc / free remain builtin function calls (they
+// were already function-call form in 0.3.2). See §7.0.3 Reclassification as
+// builtin functions and §11.0.1 builtin language primitives.
+builtin_function_call ::= 'alloc' '(' type ')'
+                       |  'free' '(' expression ')'
+                       |  'move' '(' expression ')'
+                       |  'clone' '(' expression ')'
+                       |  'mod' '(' expression ')'                       // [0.3.3] acquires mod-right (was operator in 0.3.0/0.3.1/0.3.2)
+                       |  'unmod' '(' expression ')'                     // [0.3.3] releases mod-right (was operator in 0.3.0/0.3.1/0.3.2)
+
+// === [0.3.3] Intrinsic calls (codegen-special; NOT in BUILTIN_SIGS[]) ===
+// See runtime-architecture §5.2 and §11.0.1 (intrinsics are 4 entries).
+intrinsic_call     ::= 'null' '(' ')'
+                    |  'is_null' '(' expression ')'
+                    |  'sizeof' '(' type ')'
+                    |  'alignof' '(' type ')'
+
+// === [0.3.3] Preprocessor directives (C-style, @-prefixed) ===
+// See §10.2 Preprocessor Macros.
+preprocessor_directive ::= '@ifdef' '(' identifier ')' directive_body_list '@end'
+                       |  '@ifndef' '(' identifier ')' directive_body_list '@end'
+                       |  '@if' preprocessor_expr directive_body_list '@end'
+                       |  '@elif' preprocessor_expr
+                       |  '@else' directive_body_list '@end'
+                       |  '@define' '(' identifier ',' preprocessor_expr ')'
+                       |  '@error' '(' string_literal ')'
+                       |  '@warning' '(' string_literal ')'
+
+// === [0.3.3] Inline assembly (GCC constraint style) ===
+// See §10.3 Inline Assembly.
+asm_block          ::= 'asm' '{' asm_template '}'
+                    |  'asm' 'volatile' '{' asm_template '}'
+
+// === [0.3.3] Qualified (namespaced) call ===
+// See §10.4 sys:: System Call Namespace.
+qualified_call     ::= identifier '::' identifier '(' argument_list? ')'
 ```
 
 #### 12.1.1 Note on Parsing `&` *(revised in 0.3.0)*
@@ -2492,13 +2970,15 @@ mod        unmod      shared     __thread   move_to_thread
 
 > **[new in 0.3.0]** `mod`, `unmod`, `shared`, `__thread`, `move_to_thread`. **0.3.0 removes** `mut` (it existed only as a component of the `&mut` token; no longer needed once `T&mut` was removed). See §4.9, §4.10, §13 for details.
 
-### 12.3 Operator Precedence Table *(revised in 0.3.0; level 2.5 added in 0.3.1)*
+### 12.3 Operator Precedence Table *(revised in 0.3.0; level 2.5 added in 0.3.1; reclassified in 0.3.3)*
+
+> **[0.3.3 · final state]** 0.3.3 reclassifies `move`, `clone`, `mod`, `unmod` from **operators** to **builtin function calls** (§7.0.3 Reclassification as builtin functions + §11.0.1 builtin language primitives). Level 15 is therefore **removed**. The level 2.5 prefix row likewise drops `mod` / `unmod`. These four names are still reserved keywords (§12.2), but they no longer occupy any operator-precedence level. `move_to_thread` likewise becomes a builtin function call (per §13.2 cross-thread ownership).
 
 | Level | Operator | Description |
 |------|--------|------|
 | 1 | `::` | Scope resolution |
 | 2 | `()` `[]` `.` `->` `++` `--` | Postfix |
-| 2.5 | `*` `&` `+` `-` `!` `~` `mod` `unmod` `++` `--` (prefix) | Unary *(added in 0.3.1)* |
+| 2.5 | `*` `&` `+` `-` `!` `~` `++` `--` (prefix) | Unary *(added in 0.3.1; 0.3.3 removed `mod` / `unmod`)* |
 | 2.5 | `(`*type*`)` | **C-style cast** *(added in 0.3.2)* |
 | 3 | `*` `/` `%` | Multiplicative |
 | 4 | `+` `-` | Additive |
@@ -2512,7 +2992,8 @@ mod        unmod      shared     __thread   move_to_thread
 | 12 | `\|\|` | Logical OR |
 | 13 | `?:` | Ternary conditional |
 | 14 | `=` `+=` `-=` `*=` `/=` `%=` `&=` `\|=` `^=` `<<=` `>>=` | Assignment |
-| 15 | `move` `clone` `move_to_thread` *(new in 0.3.0)* | Ownership operations |
+
+> *[0.3.3 removed]* Level 15 (`move` / `clone` / `move_to_thread`) — these names are no longer operators. They are dispatched as builtin function calls via `builtin_function_call` (§12.1 EBNF; §7.0.3 Reclassification).
 
 **Unary operators** (higher precedence than every binary operator above; right-to-left associativity):
 
@@ -2521,9 +3002,10 @@ mod        unmod      shared     __thread   move_to_thread
 | `+` `-` | Unary plus / negation |
 | `!` | Logical NOT |
 | `~` | Bitwise NOT |
-| `*` | Dereference |
+| `*` | Dereference (§4.13.5) |
 | `&` | **Reference** (§3.3) |
-| `mod` `unmod` *(new in 0.3.0)* | Acquire / release modification right (Rule 24) |
+
+> *[0.3.3 removed]* `mod` / `unmod` from the unary-operators sub-table — they are now `builtin_function_call` (§7.0.3 Reclassification as builtin functions), not operators.
 
 ### 12.4 Appendix X: Impact on Future Work *(revised in 0.3.0)*
 
@@ -2560,6 +3042,23 @@ The C host (`src-c/`) is the production compiler; this specification's semantics
 | Precise definition of non-lexical lifetimes | Only described as "until last use" | To be backfilled after algorithm implementation |
 | Concrete syntax for `__thread` at declaration sites | `__thread T x;` form already supported | Implementation details pending |
 | Runtime switching of `#modlaw` | Not implemented | 0.3.0 is compile-time policy only; runtime switching deferred |
+
+**12.4.3 0.3.3-Specific Items Not Yet Implemented *(new in 0.3.3)***
+
+> **[0.3.3]** 0.3.3 is **spec clarification only** — no new syntax, no bug fixes, no semantic changes. The new sections (§4.13.5 deref Semantics, §7.0 Concept Clarification, §10.2 / §10.3 / §10.4 preprocessor / inline assembly / `sys::`, §11.0.1 / §11.0.2 builtin language primitives vs stdlib split) are documentation additions and future-proofing. This subsection records items that the 0.3.3 clarification explicitly defers to later versions. The 0.3.4–0.3.8 consolidated plan (`.dev/plans/0.3.4-0.3.8-plan.md`) provides the implementation roadmap.
+
+| Item | Status | Destination |
+|------|------|------|
+| Full codegen for §10.2 `@if` / `@elif` preprocessor expressions with non-trivial `preprocessor_expr` | Spec only | 0.3.4+ plan |
+| §10.3 `asm` block constraint mapping for non-x86_64 architectures (aarch64, riscv64) | Only x86_64 codegen path verified | 0.3.5+ plan |
+| §10.4 `sys::` syscall namespace for non-Linux platforms (macOS, Windows) | Only Linux implemented | 0.3.5+ plan |
+| §11.0.2 UltraCPP stdlib `lib/*.uc` paths (print / string / memory / math / alloc / sync / sys) | Stub implementations only | 0.3.6+ plan, full stdlib coverage |
+| §11.0.1 builtin function-call codegen for all 6 entries (`alloc` / `free` / `move` / `clone` / `mod` / `unmod`) on non-x86_64 | Verified for x86_64 only | 0.3.5+ plan |
+| §4.13.5.4 positional-overloading rule (compiler distinguishes `*` deref vs `*` mul by operand context) | Documentation only; current codegen uses 0.3.2 logic | Tracked for 0.3.4 review |
+| §7.0.3 Reclassification as builtin functions: codegen path that emits `@uc_borrow_mod_{enter,exit}` IR markers for `mod` / `unmod` | Spec-defined; codegen follow-up | 0.3.4 implementation |
+| `move_to_thread` reclassification as `builtin_function_call` (currently kept in `rvalue` per plan §3.7 conservative) | Spec stable; pending cleanup | 0.3.4 EBNF review |
+
+> **Note**: All items in §12.4.3 are **clarification-driven** — the 0.3.3 spec makes the language model explicit but does not commit to a specific implementation schedule. The unified 0.3.4–0.3.8 plan (`.dev/plans/0.3.4-0.3.8-plan.md`) is the canonical roadmap for these items.
 
 ---
 
@@ -2782,7 +3281,9 @@ __thread int local = 42;  // per-thread independent
 | 0.2.0 | 2026-08-07 | Implemented the 8 design decisions D-1 .. D-8: `unique` generalized, `&` immutable borrow, `&mut` enters the language, `move` as a builtin primitive, explicit assignment move rules, `alloc`/`free` not enforced pairing, `DanglingReference` trigger conditions, C-host-first decision. *(Note: 0.3.0 reverses D-3 and removes `&mut`; D-2's `&` semantics are superseded by the Q3 reversal.)* |
 | **0.3.0** | **2026-08-07** | **This version**: complete split of the two permissions (Rule 22); added the `#modlaw` directive (Rule 23); added `mod()` / `unmod()` expressions (Rule 24); added the threading model chapter §13 (Rules 25–28); rewrote §3.3 reference types as **a single `T&`** (Q3 reversal, **removing `T&mut`**); rewrote §3.8 pointer modifiers to the Q6 custom semantics "opposite to C++"; rewrote §7.1 assignment as "implicit `mod()` + no ownership transfer" (Q4=a); rewrote §3.2 to distinguish owning vs non-owning pointers (Rule 2B); §11.5.1 added the `mutex<T>` / `atomic<T>` standard-library types (revisions #5, #6). Status: draft. |
 | **0.3.1** | **2026-08-12** | **This version (lvalue / rvalue concept clarification, S2)**: added the full §4.13 "Expression classification: lvalue and rvalue" chapter (§4.13.1 definition + §4.13.2 lvalue classification table + §4.13.3 assignment-context constraints + §4.13.4 codegen implementation constraints + §4.13.5 cross-references); §4.1 precedence table gains level 2.5 unary ops (`*` `&` `+` `-` `!` `~` `mod` `unmod` prefix `++` `--`, right-to-left); §4.6 assignment-operator table's 11 rows uniformly gain the "LHS must be an lvalue (§4.13.2)" constraint + header note + associativity + lvalue context note; §7.8 reference-creation rule 1 references §4.13.2 and adds 5 valid + 4 invalid examples; §12.1 EBNF adds the `lvalue` / `rvalue` non-terminals and updates the `assignment_expression` LHS annotation; §12.3 appendix precedence table synchronously adds level 2.5. **Fixed the m0_42 deref-assign bug** (`*view = payload` from compile_failed → PASS). Introduces no new syntax, no semantic changes, fully backward compatible. Status: draft. |
+| **0.3.2** | **2026-08-12** | **This version (C-style cast + function return type + §11.0 builtin signature table, S4+S5)**: added C-style cast `(T)expr` (§4.8.1) and the `cast(T, x)` builtin (§4.8.2); added §6.2.1 "Function Return Type" with the `UCExprCall.return_type` field type-parameterization mechanism; added the §11.0 "Builtin Signature Master Table" (single category, 16 rows: print/print_num/print_float + strlen/strcpy/strcmp + memcpy/memmove/memset + sizeof_impl/alignof_impl/is_null/clone_impl + move/alloc + abs_int); §12.1 EBNF adds the `cast_expression` production and `cast` builtin call. **Fixed the m0_41 abs_int link error and the second part of m0_42 deref-assign**. Status: draft. |
+| **0.3.3** | **2026-08-18** | **This version (spec clarification, S1+S3+Reclassification as builtin functions)**: added §4.13.5 "deref Semantics" full sub-chapter (§4.13.5.1 basic deref + §4.13.5.2 compound forms + §4.13.5.3 relation with §3.5 + §4.13.5.4 precedence (positional overloading between `*` and `*` mul) + §4.13.5.5 error cases + §4.13.5.6 cross-references; `*` and `&` are now positional overloading between deref/addr-of prefix and mul/bitwise-AND infix); added §7.0 "Concept Clarification" full sub-chapter (§7.0.1 operators + §7.0.2 builtin functions + §7.0.3 Reclassification as builtin functions for mod/unmod/move/clone + §7.0.4 historical retrospective + §7.0.5 cross-references); §4.1 precedence table adds level 2.5 unary prefix row (right-to-left) and removes level 15 `move clone` (now builtin functions); §4.9/§4.10 mod/unmod annotations updated to call out builtin-function classification + IR marker codegen; §7.8 reference section adds cross-reference to §4.13.5; §11.0 dual classification per runtime-architecture §5: §11.0.1 builtin language primitives (6 entries: alloc/free/move/clone/mod/unmod, all codegen-emit); §11.0.2 UltraCPP stdlib paths (`lib/print.uc` / `lib/string.uc` / `lib/memory.uc` / `lib/math.uc` / `lib/alloc.uc` / `lib/sync.uc` / `lib/sys.uc`, replacing the 0.3.2 14-row stdlib table — stdlib no longer backed by libc); §11.0.3 codegen integration: `BUILTIN_SIGS[]` simplified to 6 entries (mod/unmod promoted from intrinsic to builtin emit IR marker `@uc_borrow_mod_{enter,exit}`; `free` promoted from FFI to builtin emit `call @free` + mark freed); §10 FFI gains 4 new sub-sections (§10.2 C-style `@ifdef` preprocessor / §10.3 GCC-style `asm { ... }` inline assembly / §10.4 `sys::` syscall namespace / §10.5 cross-references + errno mapping); §10.2/§10.3/§10.4 inserted; §10.6 (was 10.2 C Type Mapping) / §10.7 (was 10.3 unsafe Block) / §10.8 (was 10.4 Inline Assembly legacy) renumbered. **This is spec clarification only — no bug fixes, no new syntax; mod/unmod/move/clone call syntax unchanged.** Status: draft. |
 
 ---
 
-*UltraCPP 0.3.1 Language Specification (draft)*
+*UltraCPP 0.3.3 Language Specification (draft)*
