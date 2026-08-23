@@ -18,22 +18,22 @@ typedef struct {
     const char* llvm_ret;
 } builtin_sig_t;
 static const builtin_sig_t builtin_sigs[] = {
-    /* [0.3.3 commit 7b] Removed print/print_num/print_float. Per spec
-     * §11.0.1 + plan §3, these 3 functions move to UltraCPP lib/print.uc
-     * (DEFERRED to 0.3.4 per D2 decision); 0.3.3 keeps no inline IR
-     * stubs for them. The m0 suite has 0 tests using bare `print` (verified
+    /* [0.3.3 commit 7c] Removed sizeof_impl / alignof_impl / is_null.
+     * Per spec §11.0.1 + plan §3, these three names are now UltraCPP
+     * intrinsic primitives, dispatched by commit 3's emit_*_intrinsic()
+     * in the case UC_EXPR_CALL is_builtin=1 path (which runs BEFORE
+     * lookup_builtin_ret). No codegen path looks them up in the table
+     * form anymore. The m0 suite has 0 tests using these names (verified
      * by grep), so removal is safe in this commit. */
     {"strlen", "i32"}, {"strcpy", "i8*"}, {"strcmp", "i32"},
     {"memcpy", "i8*"}, {"memmove", "i8*"}, {"memset", "i8*"},
-    {"sizeof_impl", "i32"}, {"alignof_impl", "i32"}, {"is_null", "i1"},
     {"abs_int", "i32"},
     /* [0.3.3 commit 6] 6 primitives per spec §11.0.1. `clone_impl` was a
      * pre-0.3.3 placeholder that emitted `i32*`; it is replaced here by
      * `clone` (returns i8*) since commit 6 introduces a real @clone
-     * inline def. `sizeof_impl`/`alignof_impl`/`is_null` are retained
-     * for now (commit 7c removes them). `mod`/`unmod` already route via
-     * the is_builtin=1 intrinsic dispatch in UC_EXPR_CALL (commit 5);
-     * their BUILTIN_SIGS entries exist for spec-table consistency. */
+     * inline def. `mod`/`unmod` route via the is_builtin=1 intrinsic
+     * dispatch in UC_EXPR_CALL (commit 5); their BUILTIN_SIGS entries
+     * exist for spec-table consistency. */
     {"alloc", "i8*"}, {"free", "void"}, {"move", "i8*"},
     {"clone", "i8*"}, {"mod", "void"}, {"unmod", "void"},
     {NULL, NULL}
