@@ -18,7 +18,11 @@ typedef struct {
     const char* llvm_ret;
 } builtin_sig_t;
 static const builtin_sig_t builtin_sigs[] = {
-    {"print", "void"}, {"print_num", "void"}, {"print_float", "void"},
+    /* [0.3.3 commit 7b] Removed print/print_num/print_float. Per spec
+     * §11.0.1 + plan §3, these 3 functions move to UltraCPP lib/print.uc
+     * (DEFERRED to 0.3.4 per D2 decision); 0.3.3 keeps no inline IR
+     * stubs for them. The m0 suite has 0 tests using bare `print` (verified
+     * by grep), so removal is safe in this commit. */
     {"strlen", "i32"}, {"strcpy", "i8*"}, {"strcmp", "i32"},
     {"memcpy", "i8*"}, {"memmove", "i8*"}, {"memset", "i8*"},
     {"sizeof_impl", "i32"}, {"alignof_impl", "i32"}, {"is_null", "i1"},
@@ -324,18 +328,13 @@ static const char* get_builtins_defs(void) {
         "    %abs_ret = select i1 %abs_pos, i32 %x, i32 %abs_neg\n"
         "    ret i32 %abs_ret\n"
         "}\n"
-        "define void @builtin_print(i8* %s) {\n"
-        "entry:\n"
-        "    ret void\n"
-        "}\n"
-        "define void @builtin_print_num(i32 %x) {\n"
-        "entry:\n"
-        "    ret void\n"
-        "}\n"
-        "define void @builtin_print_float(double %x) {\n"
-        "entry:\n"
-        "    ret void\n"
-        "}\n"
+        /* [0.3.3 commit 7b] Removed @builtin_print / @builtin_print_num /
+         * @builtin_print_float inline IR defs — the signatures and bodies
+         * now live in UltraCPP lib/print.uc (DEFERRED to 0.3.4 per D2).
+         * Until 0.3.4 lands, calling bare `print(s)` etc. will fail at
+         * link time (no external definition), which is acceptable: m0 has
+         * 0 such tests and the existing `io.print(...)` method path is
+         * completely independent. */
         /* [0.3.3 commit 6] Move / clone / free-mark IR markers per
          * runtime-architecture §3.2 + §5.1. All three are PARSE-ONLY
          * stubs in this commit: @uc_own_move and @clone are passthrough
