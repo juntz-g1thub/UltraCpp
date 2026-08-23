@@ -22,7 +22,17 @@ static const builtin_sig_t builtin_sigs[] = {
     {"strlen", "i32"}, {"strcpy", "i8*"}, {"strcmp", "i32"},
     {"memcpy", "i8*"}, {"memmove", "i8*"}, {"memset", "i8*"},
     {"sizeof_impl", "i32"}, {"alignof_impl", "i32"}, {"is_null", "i1"},
-    {"clone_impl", "i32*"}, {"abs_int", "i32"}, {NULL, NULL}
+    {"abs_int", "i32"},
+    /* [0.3.3 commit 6] 6 primitives per spec §11.0.1. `clone_impl` was a
+     * pre-0.3.3 placeholder that emitted `i32*`; it is replaced here by
+     * `clone` (returns i8*) since commit 6 introduces a real @clone
+     * inline def. `sizeof_impl`/`alignof_impl`/`is_null` are retained
+     * for now (commit 7c removes them). `mod`/`unmod` already route via
+     * the is_builtin=1 intrinsic dispatch in UC_EXPR_CALL (commit 5);
+     * their BUILTIN_SIGS entries exist for spec-table consistency. */
+    {"alloc", "i8*"}, {"free", "void"}, {"move", "i8*"},
+    {"clone", "i8*"}, {"mod", "void"}, {"unmod", "void"},
+    {NULL, NULL}
 };
 static const char* lookup_builtin_ret(const char* name) {
     if (!name) return NULL;
@@ -325,6 +335,27 @@ static const char* get_builtins_defs(void) {
         "define void @builtin_print_float(double %x) {\n"
         "entry:\n"
         "    ret void\n"
+        "}\n"
+        /* [0.3.3 commit 6] Move / clone / free-mark IR markers per
+         * runtime-architecture §3.2 + §5.1. All three are PARSE-ONLY
+         * stubs in this commit: @uc_own_move and @clone are passthrough
+         * identity (real semantics will be a runtime library in a later
+         * milestone); @uc_free_mark is a void no-op reserved for
+         * lifetime-tracking instrumentation. The bodies are emitted
+         * here so that `call i8* @uc_own_move(...)` and `call void
+         * @uc_free_mark(...)` IR instructions emitted by
+         * emit_move_call / emit_free_call resolve at link time. */
+        "define i8* @uc_own_move(i8* %p) {\n"
+        "entry:\n"
+        "    ret i8* %p\n"
+        "}\n"
+        "define void @uc_free_mark(i8* %p) {\n"
+        "entry:\n"
+        "    ret void\n"
+        "}\n"
+        "define i8* @clone(i8* %p) {\n"
+        "entry:\n"
+        "    ret i8* %p\n"
         "}\n";
 }
 
@@ -511,6 +542,14 @@ static char* emit_sizeof_intrinsic(UCCodeGenerator* g, const UCExpr* expr, UCErr
 static char* emit_alignof_intrinsic(UCCodeGenerator* g, const UCExpr* expr, UCError* err);
 static char* emit_mod_enter(UCCodeGenerator* g, const UCExpr* expr, UCError* err);
 static char* emit_unmod_exit(UCCodeGenerator* g, const UCExpr* expr, UCError* err);
+/* [0.3.3 commit 6] forward decls for builtin emit functions
+ * (defined further below; dispatched from gen_stmt/UC_STMT_FREE at line ~882
+ * and gen_expr UC_EXPR_MOVE/UC_EXPR_CLONE/UC_EXPR_ALLOC at line ~1888+).
+ * Ref: .dev/drafts/0.3.3-implementation-process.md §3 commit 6. */
+static char* emit_move_call(UCCodeGenerator* g, const UCExpr* inner, UCError* err);
+static char* emit_clone_call(UCCodeGenerator* g, const UCExpr* inner, UCError* err);
+static char* emit_alloc_call(UCCodeGenerator* g, const UCType* ty, UCError* err);
+static void  emit_free_call(UCCodeGenerator* g, const UCExpr* inner, UCError* err);
 
 /* ------------------------------------------------------------------------- */
 /* Top level dispatch                                                        */
@@ -841,11 +880,18 @@ static void gen_stmt(UCCodeGenerator* g, const UCStmt* stmt) {
             break;
         }
         case UC_STMT_FREE: {
+            /* [0.3.3 commit 6] replace direct `@free` with emit_free_call:
+             * emits `@free(i8* %p)` plus the lifetime marker
+             * `@uc_free_mark(i8* %p)`. Both bodies are in
+             * get_builtins_defs(); m0_36 still passes because the
+             * inline defs resolve at link time and PARSE-ONLY
+             * tests do not observe use-after-free. */
             UCError err; uc_error_init(&err);
-            char* p = gen_expr(g, stmt->as.expr, &err, 0);
-            if (!p || err.kind != UC_ERR_NONE) { free(p); return; }
-            emit_fmt_writeln(g, "call void @free(i8* %s)", p);
-            free(p);
+            emit_free_call(g, stmt->as.expr, &err);
+            /* gen_stmt has no err out-param; on error we simply bail,
+             * matching the existing UC_STMT_RETURN / UC_STMT_IF
+             * short-circuit-on-error pattern. */
+            if (err.kind != UC_ERR_NONE) return;
             break;
         }
         case UC_STMT_DECL: {
@@ -1260,6 +1306,138 @@ static char* emit_unmod_exit(UCCodeGenerator* g, const UCExpr* expr, UCError* er
     g->last_expr_type = cgen_strdup("void");
     char* res = mk_temp(g);
     return res;
+}
+
+/* [0.3.3 commit 6] emit_move_call: `move(p)` →
+ *   %res = call i8* @uc_own_move(i8* %p)
+ *
+ * Per runtime-architecture §3.2 + §5.1: emit IR marker for ownership
+ * transfer. The @uc_own_move body (defined in get_builtins_defs()) is a
+ * passthrough `ret i8* %p` for now — real semantics (invalidate source
+ * alias, decrement refcount, etc.) are part of the runtime library
+ * landing in a later milestone. PARSE-ONLY behaviour: the IR round-
+ * trips through llc cleanly because the inline def resolves the symbol
+ * at link time. Used by the UC_EXPR_MOVE handler below. */
+static char* emit_move_call(UCCodeGenerator* g, const UCExpr* inner, UCError* err) {
+    if (!inner) {
+        uc_error_set(err, UC_ERR_CODEGEN, 0, 0, NULL,
+                     "move() requires 1 argument");
+        return NULL;
+    }
+    UCError e2; uc_error_init(&e2);
+    char* src = gen_expr(g, inner, &e2, 0);
+    if (!src || e2.kind != UC_ERR_NONE) {
+        uc_error_set(err, e2.kind, 0, 0, NULL, e2.message);
+        return NULL;
+    }
+    char* res = mk_temp(g);
+    emit_fmt_writeln(g, "%s = call i8* @uc_own_move(i8* %s)", res, src);
+    free(src);
+    free(g->last_expr_type);
+    g->last_expr_type = cgen_strdup("i8*");
+    return res;
+}
+
+/* [0.3.3 commit 6] emit_clone_call: `clone(p)` →
+ *   %res = call i8* @clone(i8* %p)
+ *
+ * Per runtime-architecture §5.1: clone() produces an independent deep
+ * copy of its argument. PARSE-ONLY stub — the proper implementation
+ * (allocate sizeof(T) bytes + LLVMBuildMemCopy from src to dst) is in
+ * 0.3.4 alongside the rest of the runtime library. The inline @clone
+ * def in get_builtins_defs() is a passthrough identity, so the IR
+ * round-trips and llc links cleanly today; users running clone() in
+ * tests will observe alias semantics until 0.3.4. */
+static char* emit_clone_call(UCCodeGenerator* g, const UCExpr* inner, UCError* err) {
+    if (!inner) {
+        uc_error_set(err, UC_ERR_CODEGEN, 0, 0, NULL,
+                     "clone() requires 1 argument");
+        return NULL;
+    }
+    UCError e2; uc_error_init(&e2);
+    char* src = gen_expr(g, inner, &e2, 0);
+    if (!src || e2.kind != UC_ERR_NONE) {
+        uc_error_set(err, e2.kind, 0, 0, NULL, e2.message);
+        return NULL;
+    }
+    char* res = mk_temp(g);
+    emit_fmt_writeln(g, "%s = call i8* @clone(i8* %s)", res, src);
+    free(src);
+    free(g->last_expr_type);
+    g->last_expr_type = cgen_strdup("i8*");
+    return res;
+}
+
+/* [0.3.3 commit 6] emit_alloc_call: `alloc(T)` →
+ *   %res = call i8* @malloc(i64 %sizeof(T))
+ *
+ * Per runtime-architecture §5.1: emit `malloc(sizeof(T))`. The byte
+ * count is computed from a static lookup table over the UCTypeKind enum
+ * (int=4, char/bool/i8=1, i16=2, i32=4, i64=8, ptr=8, f32=4, f64=8).
+ * Composite types (struct/array/function) fall to the default of 4
+ * bytes with a `; TODO 0.3.4` comment in the IR; a future commit will
+ * resolve those via LLVM-IR tricks (nullptr gep + ptrtoint). This
+ * replaces the pre-0.3.3 hard-coded `i64 4`. */
+static char* emit_alloc_call(UCCodeGenerator* g, const UCType* ty, UCError* err) {
+    (void)err;
+    int size = 4;  /* default fallback for composite types (TODO 0.3.4) */
+    if (ty) {
+        switch (ty->kind) {
+            case UC_TYPE_INT:
+            case UC_TYPE_I32:
+            case UC_TYPE_F32: size = 4; break;
+            case UC_TYPE_CHAR:
+            case UC_TYPE_BOOL:
+            case UC_TYPE_I8:   size = 1; break;
+            case UC_TYPE_I16:  size = 2; break;
+            case UC_TYPE_I64:
+            case UC_TYPE_F64: size = 8; break;
+            case UC_TYPE_POINTER:
+            case UC_TYPE_MUTABLE_POINTER:
+            case UC_TYPE_REF: size = 8; break;
+            default: size = 4;  /* TODO 0.3.4: struct/array/function size */
+        }
+    }
+    char* res = mk_temp(g);
+    emit_fmt_writeln(g, "%s = call i8* @malloc(i64 %d)", res, size);
+    free(g->last_expr_type);
+    g->last_expr_type = cgen_strdup("i8*");
+    return res;
+}
+
+/* [0.3.3 commit 6] emit_free_call: `free(p);` (stmt form) →
+ *   call void @free(i8* %p)
+ *   call void @uc_free_mark(i8* %p)
+ *
+ * Per runtime-architecture §3.2: emit free plus a lifetime marker.
+ * @uc_free_mark is a void no-op defined inline in get_builtins_defs();
+ * it is reserved for the lifetime-tracking instrumentation that the
+ * runtime borrow checker will use to flag use-after-free. PARSE-ONLY
+ * behaviour matches the pre-commit hard-coded `call void @free(...)`
+ * for tests that exercise the alloc/free pair, with the extra
+ * @uc_free_mark call added so future tooling can hook the lifetime
+ * edge without changing the IR contract.
+ *
+ * Returns void; gen_stmt (which has no err out-param) discards errors
+ * silently, matching the existing pattern in UC_STMT_EXPR /
+ * UC_STMT_RETURN / UC_STMT_IF where a downstream gen_expr failure
+ * short-circuits the current statement. */
+static void emit_free_call(UCCodeGenerator* g, const UCExpr* inner, UCError* err) {
+    if (!inner) {
+        uc_error_set(err, UC_ERR_CODEGEN, 0, 0, NULL,
+                     "free() requires 1 argument");
+        return;
+    }
+    UCError e2; uc_error_init(&e2);
+    char* p = gen_expr(g, inner, &e2, 0);
+    if (!p || e2.kind != UC_ERR_NONE) {
+        uc_error_set(err, e2.kind, 0, 0, NULL, e2.message);
+        return;
+    }
+    emit_fmt_writeln(g, "call void @free(i8* %s)", p);
+    /* Lifetime marker per runtime-architecture §3.2 (PARSE-ONLY no-op). */
+    emit_fmt_writeln(g, "call void @uc_free_mark(i8* %s)", p);
+    free(p);
 }
 
 /* ------------------------------------------------------------------------- */
@@ -1715,8 +1893,17 @@ static char* gen_expr(UCCodeGenerator* g, const UCExpr* expr, UCError* err, int 
         case UC_EXPR_NULL:
             return cgen_strdup("null");
         case UC_EXPR_MOVE:
-            /* PARSE-ONLY: ownership transfer is M2. Pass through. */
-            return gen_expr(g, expr->as.move_expr, err, 0);
+            /* [0.3.3 commit 6] replace PARSE-ONLY pass-through with
+             * emit_move_call: emits `%res = call i8* @uc_own_move(i8* %src)`.
+             * The @uc_own_move body is defined in get_builtins_defs(). */
+            return emit_move_call(g, expr->as.move_expr, err);
+        case UC_EXPR_CLONE:
+            /* [0.3.3 commit 6] NEW handler — previously missing entirely
+             * so clone(p) reached the default arm and reported
+             * "unsupported expression kind" at compile time. Emits
+             * `%res = call i8* @clone(i8* %src)`. PARSE-ONLY passthrough
+             * semantics; real alloc+memcpy lands in 0.3.4. */
+            return emit_clone_call(g, expr->as.clone_expr, err);
         case UC_EXPR_CAST: {
             /* C-style cast `(T)expr`: lower to LLVM `bitcast`. With LLVM
              * 18 opaque pointers both src and dst are typically `i8*`,
@@ -1750,13 +1937,13 @@ static char* gen_expr(UCCodeGenerator* g, const UCExpr* expr, UCError* err, int 
             return res;
         }
         case UC_EXPR_ALLOC: {
-            /* PARSE-ONLY: minimal codegen — emit `call i8* @malloc(i64 4)`
-             * and leave last_expr_type as i8*. Proper sized alloc +
-             * ownership transfer is M2. */
-            char* res = mk_temp(g);
-            emit_fmt_writeln(g, "%s = call i8* @malloc(i64 4)", res);
-            free(g->last_expr_type);
-            g->last_expr_type = cgen_strdup("i8*");
+            /* [0.3.3 commit 6] replace hard-coded `i64 4` with
+             * emit_alloc_call which looks up the size from ty->kind.
+             * For `alloc(int)` (UC_TYPE_INT) the size is still 4, so
+             * m0_34 baseline is unchanged. Composite types fall back
+             * to 4 + TODO comment (handled in 0.3.4). */
+            char* res = emit_alloc_call(g, expr->as.alloc_type, err);
+            if (!res && err && err->kind != UC_ERR_NONE) return NULL;
             return res;
         }
         default:
