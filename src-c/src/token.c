@@ -61,6 +61,10 @@ const char* uc_token_kind_name(UCTokenKind kind) {
         case UC_TOK_KW_ASM:      return "KwAsm";
         case UC_TOK_KW_BREAK:    return "KwBreak";
         case UC_TOK_KW_CONTINUE: return "KwContinue";
+        case UC_TOK_KW_IS_NULL:  return "KwIsNull";   /* 0.3.3 §11.0.1 (commit 4) */
+        case UC_TOK_KW_SIZEOF:   return "KwSizeof";   /* 0.3.3 §11.0.1 (commit 4) */
+        case UC_TOK_KW_ALIGNOF:  return "KwAlignof";  /* 0.3.3 §11.0.1 (commit 4) */
+        case UC_TOK_KW_VOLATILE: return "KwVolatile"; /* 0.3.3 §10.3  (commit 4) */
 
         case UC_TOK_OP_PLUS:     return "OpPlus";
         case UC_TOK_OP_MINUS:    return "OpMinus";
@@ -149,6 +153,10 @@ UCTokenKind uc_keyword_lookup(const char* ident, size_t len) {
     KW("asm",      UC_TOK_KW_ASM);
     KW("break",    UC_TOK_KW_BREAK);
     KW("continue", UC_TOK_KW_CONTINUE);
+    KW("is_null",  UC_TOK_KW_IS_NULL);   /* 0.3.3 §11.0.1 (commit 4) — intrinsic name */
+    KW("sizeof",   UC_TOK_KW_SIZEOF);    /* 0.3.3 §11.0.1 (commit 4) — intrinsic name */
+    KW("alignof",  UC_TOK_KW_ALIGNOF);   /* 0.3.3 §11.0.1 (commit 4) — intrinsic name */
+    KW("volatile", UC_TOK_KW_VOLATILE);  /* 0.3.3 §10.3  (commit 4) — asm {} qualifier; usage wired in commit 8 */
 
     #undef KW
     return UC_TOK_IDENT;

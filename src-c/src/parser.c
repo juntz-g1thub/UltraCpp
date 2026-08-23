@@ -1206,6 +1206,28 @@ static UCExpr* expr_ident(UCString name) {
     return e;
 }
 
+/* [0.3.3 commit 4 revised] Per spec §11.0.1, the four keywords is_null /
+ * sizeof / alignof / volatile can be used as identifiers in call context
+ * (e.g. `sizeof(int)`, `is_null(p)`, `alignof(T)`). Wrap them as
+ * UCExprIdent so parse_postfix's UCExprCall flow keeps dispatching via
+ * `is_intrinsic_name(callee->as.ident.data)` exactly as it does for the
+ * pre-keyword ident case (commit 2's intrinsic dispatch stays valid).
+ *
+ * mod / unmod are *not* in this wrapper: they are deferred to commit 5
+ * per Option A (see .dev/drafts/0.3.3-implementation-process.md §3
+ * commit 4 boundary case #4). Adding them here would collide with
+ * `m0_02_int_arithmetic.uc`, which uses `mod` as a variable name on
+ * lines 9-10. commit 5 will add their KW entries *and* the parser /
+ * codegen paths in one coordinated commit.
+ *
+ * Per .dev/drafts/0.3.3-implementation-process.md §3 commit 4 (revised). */
+static UCExpr* wrap_kw_as_ident(UCParser* p) {
+    UCString s = uc_string_new(p->current.lexeme,
+                                p->current.lexeme_len);
+    advance(p);
+    return expr_ident(s);
+}
+
 /* ------------------------------------------------------------------------- */
 /* Expressions (Phase 2.4: binary operators)                                */
 /*                                                                           */
@@ -1769,6 +1791,16 @@ static UCExpr* parse_primary(UCParser* p) {
         case UC_TOK_KW_NULL:
             advance(p);
             return uc_expr_null();
+        /* [0.3.3 commit 4 revised] These four keywords are usable as
+         * identifiers in call context (sizeof(int), is_null(p), ...).
+         * Wrap as UCExprIdent so parse_postfix's UCExprCall +
+         * is_intrinsic_name() dispatch (commit 2) stays unchanged.
+         * mod/unmod deferred to commit 5 — see wrap_kw_as_ident comment. */
+        case UC_TOK_KW_IS_NULL:
+        case UC_TOK_KW_SIZEOF:
+        case UC_TOK_KW_ALIGNOF:
+        case UC_TOK_KW_VOLATILE:
+            return wrap_kw_as_ident(p);
         case UC_TOK_IDENT: {
             UCString s = uc_string_new(p->current.lexeme,
                                        p->current.lexeme_len);

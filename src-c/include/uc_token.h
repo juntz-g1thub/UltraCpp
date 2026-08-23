@@ -38,6 +38,10 @@ typedef enum {
     UC_TOK_KW_ASM,
     UC_TOK_KW_BREAK,
     UC_TOK_KW_CONTINUE,
+    UC_TOK_KW_IS_NULL,     /* is_null(x) intrinsic — 0.3.3 §11.0.1 (commit 3 codegen handler) */
+    UC_TOK_KW_SIZEOF,      /* sizeof(T) intrinsic — 0.3.3 §11.0.1 */
+    UC_TOK_KW_ALIGNOF,     /* alignof(T) intrinsic — 0.3.3 §11.0.1 */
+    UC_TOK_KW_VOLATILE,    /* 'volatile' qualifier for asm {} block — 0.3.3 §10.3 */
 
     /* operators */
     UC_TOK_OP_PLUS,
