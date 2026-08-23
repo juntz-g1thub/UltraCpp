@@ -6,6 +6,6 @@ int main() {
     int diff = a - b;    // 7
     int prod = a * b;    // 30
     int div = a / b;     // 3
-    int mod = a % b;     // 1
-    return sum + diff + prod + div + mod;
+    int mod_op = a % b;     // 1
+    return sum + diff + prod + div + mod_op;
 }

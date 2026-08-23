@@ -1206,21 +1206,24 @@ static UCExpr* expr_ident(UCString name) {
     return e;
 }
 
-/* [0.3.3 commit 4 revised] Per spec §11.0.1, the four keywords is_null /
- * sizeof / alignof / volatile can be used as identifiers in call context
- * (e.g. `sizeof(int)`, `is_null(p)`, `alignof(T)`). Wrap them as
- * UCExprIdent so parse_postfix's UCExprCall flow keeps dispatching via
- * `is_intrinsic_name(callee->as.ident.data)` exactly as it does for the
- * pre-keyword ident case (commit 2's intrinsic dispatch stays valid).
+/* [0.3.3 commit 5] Per spec §11.0.1, the six keywords is_null /
+ * sizeof / alignof / volatile / mod / unmod can be used as identifiers
+ * in call context (e.g. `sizeof(int)`, `is_null(p)`, `mod(ref)`). Wrap
+ * them as UCExprIdent so parse_postfix's UCExprCall flow keeps
+ * dispatching via `is_intrinsic_name(callee->as.ident.data)` exactly as
+ * it does for the pre-keyword ident case (commit 2's intrinsic dispatch
+ * stays valid).
  *
- * mod / unmod are *not* in this wrapper: they are deferred to commit 5
- * per Option A (see .dev/drafts/0.3.3-implementation-process.md §3
- * commit 4 boundary case #4). Adding them here would collide with
- * `m0_02_int_arithmetic.uc`, which uses `mod` as a variable name on
- * lines 9-10. commit 5 will add their KW entries *and* the parser /
- * codegen paths in one coordinated commit.
+ * Option A note (commit 4 boundary case #4): commit 4 deliberately
+ * excluded `mod` / `unmod` to avoid colliding with
+ * `m0_02_int_arithmetic.uc` (lines 9-10 used `mod` as a variable name).
+ * commit 5 adds the KW entries *and* the parser / codegen paths in one
+ * coordinated commit, and the baseline test is renamed to `mod_op` in
+ * the same commit (so commit 5 is the singular transition point for
+ * keyword reservation).
  *
- * Per .dev/drafts/0.3.3-implementation-process.md §3 commit 4 (revised). */
+ * Per .dev/drafts/0.3.3-implementation-process.md §3 commit 4 (revised)
+ * + commit 5. */
 static UCExpr* wrap_kw_as_ident(UCParser* p) {
     UCString s = uc_string_new(p->current.lexeme,
                                 p->current.lexeme_len);
@@ -1563,10 +1566,12 @@ static UCExpr* parse_unary(UCParser* p) {
 
 /* Returns 1 when `name` is one of the UltraCPP intrinsic-call names that
  * must be emitted as UCExprCall with is_builtin=1 (handled by dedicated
- * codegen emitters in commit 3). Per 0.3.3 §11.0.1 (intrinsic codegen);
- * spec'd in .dev/drafts/0.3.3-implementation-process.md §3 commit 2.
+ * codegen emitters in commit 3 + commit 5). Per 0.3.3 §11.0.1 (intrinsic
+ * codegen); spec'd in .dev/drafts/0.3.3-implementation-process.md §3
+ * commit 2 + commit 5.
  *
- * Currently recognised: is_null(x), sizeof(T), alignof(T).
+ * Currently recognised: is_null(x), sizeof(T), alignof(T) (commit 2/3/4),
+ *                      mod(ref), unmod(ref)                     (commit 5).
  *
  * NULL-safe: a NULL `name` (defensive against any future ident constructed
  * with an empty UCString) returns 0 so callers fall back to the default
@@ -1575,7 +1580,9 @@ static int is_intrinsic_name(const char* name) {
     if (!name) return 0;
     return strcmp(name, "is_null") == 0
         || strcmp(name, "sizeof")  == 0
-        || strcmp(name, "alignof") == 0;
+        || strcmp(name, "alignof") == 0
+        || strcmp(name, "mod")     == 0
+        || strcmp(name, "unmod")   == 0;
 }
 
 static UCExpr* parse_postfix(UCParser* p) {
@@ -1791,15 +1798,17 @@ static UCExpr* parse_primary(UCParser* p) {
         case UC_TOK_KW_NULL:
             advance(p);
             return uc_expr_null();
-        /* [0.3.3 commit 4 revised] These four keywords are usable as
-         * identifiers in call context (sizeof(int), is_null(p), ...).
-         * Wrap as UCExprIdent so parse_postfix's UCExprCall +
-         * is_intrinsic_name() dispatch (commit 2) stays unchanged.
-         * mod/unmod deferred to commit 5 — see wrap_kw_as_ident comment. */
+        /* [0.3.3 commit 4 + commit 5] These keywords are usable as
+         * identifiers in call context (sizeof(int), is_null(p), mod(ref),
+         * unmod(ref), ...). Wrap as UCExprIdent so parse_postfix's
+         * UCExprCall + is_intrinsic_name() dispatch (commit 2 + commit 5)
+         * stays unchanged. mod/unmod added in commit 5 per Option A. */
         case UC_TOK_KW_IS_NULL:
         case UC_TOK_KW_SIZEOF:
         case UC_TOK_KW_ALIGNOF:
         case UC_TOK_KW_VOLATILE:
+        case UC_TOK_KW_MOD:
+        case UC_TOK_KW_UNMOD:
             return wrap_kw_as_ident(p);
         case UC_TOK_IDENT: {
             UCString s = uc_string_new(p->current.lexeme,

@@ -509,6 +509,8 @@ static void gen_syscall_call(UCCodeGenerator* g, const char* symbol,
 static char* emit_is_null_intrinsic(UCCodeGenerator* g, const UCExpr* expr, UCError* err);
 static char* emit_sizeof_intrinsic(UCCodeGenerator* g, const UCExpr* expr, UCError* err);
 static char* emit_alignof_intrinsic(UCCodeGenerator* g, const UCExpr* expr, UCError* err);
+static char* emit_mod_enter(UCCodeGenerator* g, const UCExpr* expr, UCError* err);
+static char* emit_unmod_exit(UCCodeGenerator* g, const UCExpr* expr, UCError* err);
 
 /* ------------------------------------------------------------------------- */
 /* Top level dispatch                                                        */
@@ -1189,6 +1191,77 @@ static char* emit_alignof_intrinsic(UCCodeGenerator* g, const UCExpr* expr, UCEr
     return res;
 }
 
+/* [0.3.3 commit 5] emit_mod_enter: `mod(ref)` →
+ *   call void @uc_borrow_mod_enter(i8* %ref)
+ * Per runtime-architecture §3.2 (modification-right borrow checker):
+ * mod() emits the IR marker that announces the caller is acquiring the
+ * right to *modify* the referent. The runtime's borrow checker uses
+ * this to refuse concurrent immutable borrows; the marker itself has no
+ * IR-side effect (no value produced, no alloca touched).
+ *
+ * mod() returns void, mirroring the codegen.c:1356 void-call pattern:
+ * the function emits the call as a side effect, sets g->last_expr_type
+ * to "void", and returns a fresh mk_temp() placeholder. The caller in
+ * the UCExprCall dispatch (gen_expr UC_EXPR_CALL) never reads the value
+ * when the result is discarded by a UC_STMT_EXPR statement, so the
+ * placeholder temp stays unused — matching the existing behaviour of
+ * `print_int(x);` and other void-returning syscalls.
+ *
+ * Reference argument is expected to already be i8* (pointer) per
+ * runtime-architecture §3.2 IR contract. If the user passes a non-
+ * pointer expression, the emitted IR will type-mismatch in llc — the
+ * borrow checker (separate runtime pass) is what enforces mod()'s
+ * argument contract at the language level. */
+static char* emit_mod_enter(UCCodeGenerator* g, const UCExpr* expr, UCError* err) {
+    if (uc_vec_len(expr->as.call.args) != 1) {
+        uc_error_set(err, UC_ERR_CODEGEN, 0, 0, NULL,
+                     "mod() takes exactly 1 argument");
+        return NULL;
+    }
+    UCExpr* a0 = (UCExpr*)uc_vec_at(expr->as.call.args, 0);
+    UCError e2; uc_error_init(&e2);
+    char* ref = gen_expr(g, a0, &e2, 0);
+    if (!ref || e2.kind != UC_ERR_NONE) {
+        uc_error_set(err, e2.kind, 0, 0, NULL, e2.message);
+        return NULL;
+    }
+    emit_fmt_writeln(g, "call void @uc_borrow_mod_enter(i8* %s)", ref);
+    free(ref);
+    free(g->last_expr_type);
+    g->last_expr_type = cgen_strdup("void");
+    /* codegen.c:1356 void-return pattern — placeholder temp; the result
+     * is discarded by the statement-level caller. */
+    char* res = mk_temp(g);
+    return res;
+}
+
+/* [0.3.3 commit 5] emit_unmod_exit: `unmod(ref)` →
+ *   call void @uc_borrow_mod_exit(i8* %ref)
+ * Per runtime-architecture §3.2: paired with emit_mod_enter; announces
+ * the caller is releasing the modification right previously acquired
+ * by a corresponding mod() on the same referent. Same void-return
+ * semantics as emit_mod_enter (placeholder mk_temp, value discarded). */
+static char* emit_unmod_exit(UCCodeGenerator* g, const UCExpr* expr, UCError* err) {
+    if (uc_vec_len(expr->as.call.args) != 1) {
+        uc_error_set(err, UC_ERR_CODEGEN, 0, 0, NULL,
+                     "unmod() takes exactly 1 argument");
+        return NULL;
+    }
+    UCExpr* a0 = (UCExpr*)uc_vec_at(expr->as.call.args, 0);
+    UCError e2; uc_error_init(&e2);
+    char* ref = gen_expr(g, a0, &e2, 0);
+    if (!ref || e2.kind != UC_ERR_NONE) {
+        uc_error_set(err, e2.kind, 0, 0, NULL, e2.message);
+        return NULL;
+    }
+    emit_fmt_writeln(g, "call void @uc_borrow_mod_exit(i8* %s)", ref);
+    free(ref);
+    free(g->last_expr_type);
+    g->last_expr_type = cgen_strdup("void");
+    char* res = mk_temp(g);
+    return res;
+}
+
 /* ------------------------------------------------------------------------- */
 /* Expressions                                                               */
 /* ------------------------------------------------------------------------- */
@@ -1435,12 +1508,12 @@ static char* gen_expr(UCCodeGenerator* g, const UCExpr* expr, UCError* err, int 
         }
         case UC_EXPR_CALL: {
             UCExpr* callee = expr->as.call.callee;
-            /* [0.3.3 commit 3] Intrinsic dispatch — runs BEFORE the regular
+            /* [0.3.3 commit 5] Intrinsic dispatch — runs BEFORE the regular
              * call-resolution path (mangle_name / @sys$ / lookup_builtin_ret
              * → @builtin_<name>) so that intrinsic calls parsed with
-             * is_builtin=1 by commit 2's parser never reach that path.
-             * Only the three names in {is_null, sizeof, alignof} are caught
-             * here; future builtin names (mod/unmod/move/clone/alloc/free)
+             * is_builtin=1 by commit 2 + commit 5's parser never reach that
+             * path. The five names in {is_null, sizeof, alignof, mod, unmod}
+             * are caught here; future builtin names (move/clone/alloc/free)
              * fall through to existing logic and end up at @builtin_<name>
              * via lookup_builtin_ret() just like abs_int() today. */
             if (expr->as.call.is_builtin
@@ -1453,6 +1526,14 @@ static char* gen_expr(UCCodeGenerator* g, const UCExpr* expr, UCError* err, int 
                     return emit_sizeof_intrinsic(g, expr, err);
                 if (strcmp(iname, "alignof") == 0)
                     return emit_alignof_intrinsic(g, expr, err);
+                /* [0.3.3 commit 5] mod/unmod — emit @uc_borrow_mod_{enter,exit}
+                 * IR markers per runtime-architecture §3.2. Both return
+                 * void; placeholder mk_temp per the codegen.c:1356
+                 * void-return pattern (see emit_mod_enter comment). */
+                if (strcmp(iname, "mod") == 0)
+                    return emit_mod_enter(g, expr, err);
+                if (strcmp(iname, "unmod") == 0)
+                    return emit_unmod_exit(g, expr, err);
                 /* other is_builtin=1 names: fall through */
             }
             char* symbol = NULL;

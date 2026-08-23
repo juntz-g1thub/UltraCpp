@@ -65,6 +65,8 @@ const char* uc_token_kind_name(UCTokenKind kind) {
         case UC_TOK_KW_SIZEOF:   return "KwSizeof";   /* 0.3.3 §11.0.1 (commit 4) */
         case UC_TOK_KW_ALIGNOF:  return "KwAlignof";  /* 0.3.3 §11.0.1 (commit 4) */
         case UC_TOK_KW_VOLATILE: return "KwVolatile"; /* 0.3.3 §10.3  (commit 4) */
+        case UC_TOK_KW_MOD:      return "KwMod";      /* 0.3.3 §4.9 + §11.0.1 (commit 5) — emits @uc_borrow_mod_enter  */
+        case UC_TOK_KW_UNMOD:    return "KwUnmod";    /* 0.3.3 §4.10 + §11.0.1 (commit 5) — emits @uc_borrow_mod_exit */
 
         case UC_TOK_OP_PLUS:     return "OpPlus";
         case UC_TOK_OP_MINUS:    return "OpMinus";
@@ -157,6 +159,8 @@ UCTokenKind uc_keyword_lookup(const char* ident, size_t len) {
     KW("sizeof",   UC_TOK_KW_SIZEOF);    /* 0.3.3 §11.0.1 (commit 4) — intrinsic name */
     KW("alignof",  UC_TOK_KW_ALIGNOF);   /* 0.3.3 §11.0.1 (commit 4) — intrinsic name */
     KW("volatile", UC_TOK_KW_VOLATILE);  /* 0.3.3 §10.3  (commit 4) — asm {} qualifier; usage wired in commit 8 */
+    KW("mod",      UC_TOK_KW_MOD);       /* 0.3.3 §4.9 + §11.0.1 (commit 5) — intrinsic, emits @uc_borrow_mod_enter  */
+    KW("unmod",    UC_TOK_KW_UNMOD);     /* 0.3.3 §4.10 + §11.0.1 (commit 5) — intrinsic, emits @uc_borrow_mod_exit */
 
     #undef KW
     return UC_TOK_IDENT;

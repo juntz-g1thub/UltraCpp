@@ -42,6 +42,8 @@ typedef enum {
     UC_TOK_KW_SIZEOF,      /* sizeof(T) intrinsic — 0.3.3 §11.0.1 */
     UC_TOK_KW_ALIGNOF,     /* alignof(T) intrinsic — 0.3.3 §11.0.1 */
     UC_TOK_KW_VOLATILE,    /* 'volatile' qualifier for asm {} block — 0.3.3 §10.3 */
+    UC_TOK_KW_MOD,         /* mod(ref) builtin — 0.3.3 §4.9 + §11.0.1; emits @uc_borrow_mod_enter */
+    UC_TOK_KW_UNMOD,       /* unmod(ref) builtin — 0.3.3 §4.10 + §11.0.1; emits @uc_borrow_mod_exit */
 
     /* operators */
     UC_TOK_OP_PLUS,
