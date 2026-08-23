@@ -504,6 +504,11 @@ static void gen_stmt(UCCodeGenerator* g, const UCStmt* stmt);
 static char* gen_expr(UCCodeGenerator* g, const UCExpr* expr, UCError* err, int in_lvalue_ctx);
 static void gen_syscall_call(UCCodeGenerator* g, const char* symbol,
                              const UCVec* args, const char* res, UCError* err);
+/* [0.3.3 commit 3] Intrinsic-call emitters (defined below, dispatched
+ * from case UC_EXPR_CALL when expr->as.call.is_builtin == 1). */
+static char* emit_is_null_intrinsic(UCCodeGenerator* g, const UCExpr* expr, UCError* err);
+static char* emit_sizeof_intrinsic(UCCodeGenerator* g, const UCExpr* expr, UCError* err);
+static char* emit_alignof_intrinsic(UCCodeGenerator* g, const UCExpr* expr, UCError* err);
 
 /* ------------------------------------------------------------------------- */
 /* Top level dispatch                                                        */
@@ -1034,6 +1039,157 @@ static void gen_syscall_call(UCCodeGenerator* g, const char* symbol,
 }
 
 /* ------------------------------------------------------------------------- */
+/* [0.3.3 commit 3] Intrinsic-call emitters                                   */
+/* -------------------------------------------------------------------------
+ * Per .dev/drafts/0.3.3-implementation-process.md §3 commit 3 and spec §11.0.1
+ * (intrinsic codegen). Three UltraCPP intrinsic calls — is_null(p), sizeof(T),
+ * alignof(T) — are written as UCExprCall nodes with is_builtin=1 by the
+ * parser (commit 2). When gen_expr() sees such a call it dispatches here,
+ * BEFORE the regular call-resolution path, so we never emit a `call
+ * @is_null(...)` (which would link-fail) and never try to lower an opaque
+ * type argument through lookup_builtin_ret() (which only handles LLVM
+ * return types, not sizeof-of-type).
+ *
+ * codegen.c is string-based LLVM IR emission (no LLVM C API), so all three
+ * functions below use emit_fmt_writeln() with hand-written IR — matching
+ * the get_builtins_defs() / @builtin_abs_int style elsewhere in this file.
+ * They all return the temp-var name (caller-owned, must be free()d) and set
+ * g->last_expr_type to the LLVM type of that temp (i1 for is_null, i32 for
+ * sizeof/alignof — matches the builtin_sigs[] table).
+ *
+ * Other builtin calls (mod/unmod/move/clone/alloc/free — future commits)
+ * are NOT handled here; they fall through to the standard call logic
+ * below, where they end up routed via lookup_builtin_ret() →
+ * @builtin_<name> just like the abs_int() case. */
+
+/* emit_is_null_intrinsic: `is_null(p)` → `%res = icmp eq i8* %p, null`
+ * Pointer compare with the null literal; result is i1 (LLVM boolean). */
+static char* emit_is_null_intrinsic(UCCodeGenerator* g, const UCExpr* expr, UCError* err) {
+    if (uc_vec_len(expr->as.call.args) != 1) {
+        uc_error_set(err, UC_ERR_CODEGEN, 0, 0, NULL,
+                     "is_null() takes exactly 1 argument");
+        return NULL;
+    }
+    UCExpr* a0 = (UCExpr*)uc_vec_at(expr->as.call.args, 0);
+    UCError e2; uc_error_init(&e2);
+    char* p = gen_expr(g, a0, &e2, 0);
+    if (!p) { free(p); return NULL; }
+    char* res = mk_temp(g);
+    emit_fmt_writeln(g, "%s = icmp eq i8* %s, null", res, p);
+    free(p);
+    free(g->last_expr_type);
+    g->last_expr_type = cgen_strdup("i1");
+    return res;
+}
+
+/* Compile-time size/alignment lookup for the small set of basic types we
+ * recognise in sizeof/alignof. Returns 0 (with *out_ty = NULL) when the
+ * argument is not a bare identifier OR the name is not in the table —
+ * callers then fall back to a `; TODO` marker emission.
+ *
+ * Kept as a shared helper because sizeof and alignof are table-shaped
+ * identically; only the value column (size vs alignment) differs. */
+static int basic_type_size_or_align(const char* name, int* out_value, const char** out_ty) {
+    if (!name) return 0;
+    /* name : size (bytes), ty : LLVM IR spelling. alignof uses the same
+     * table for scalar types — int/char/etc. have size == alignment. The
+     * caller (emit_alignof_intrinsic) passes a parallel alignment value
+     * via the same lookup result by mapping name to a separate array. */
+    if (strcmp(name, "int")  == 0 || strcmp(name, "i32") == 0) { *out_value = 4;  *out_ty = "i32";   return 1; }
+    if (strcmp(name, "char") == 0)                              { *out_value = 1;  *out_ty = "i8";    return 1; }
+    if (strcmp(name, "i8")   == 0)                              { *out_value = 1;  *out_ty = "i8";    return 1; }
+    if (strcmp(name, "i16")  == 0)                              { *out_value = 2;  *out_ty = "i16";   return 1; }
+    if (strcmp(name, "i64")  == 0)                              { *out_value = 8;  *out_ty = "i64";   return 1; }
+    if (strcmp(name, "bool") == 0)                              { *out_value = 1;  *out_ty = "i1";    return 1; }
+    if (strcmp(name, "f32")  == 0)                              { *out_value = 4;  *out_ty = "float"; return 1; }
+    if (strcmp(name, "f64")  == 0)                              { *out_value = 8;  *out_ty = "double";return 1; }
+    if (strcmp(name, "void") == 0)                              { *out_value = 0;  *out_ty = "void";  return 1; }
+    /* pointer: 8 bytes on every 64-bit platform UltraCPP targets. */
+    if (strcmp(name, "int_ptr") == 0 || strcmp(name, "ptr") == 0) { *out_value = 8; *out_ty = "i8*"; return 1; }
+    return 0;
+}
+
+/* emit_sizeof_intrinsic: `sizeof(T)` → constant byte-count for known
+ * scalars; TODO-marker fallback for unknown types (extended in follow-up
+ * commits to handle pointer/struct/array via LLVM-IR-level tricks). */
+static char* emit_sizeof_intrinsic(UCCodeGenerator* g, const UCExpr* expr, UCError* err) {
+    if (uc_vec_len(expr->as.call.args) != 1) {
+        uc_error_set(err, UC_ERR_CODEGEN, 0, 0, NULL,
+                     "sizeof() takes exactly 1 argument");
+        return NULL;
+    }
+    UCExpr* a0 = (UCExpr*)uc_vec_at(expr->as.call.args, 0);
+    int size = 0;
+    const char* ty_str = NULL;
+    if (a0->kind == UC_EXPR_IDENT) {
+        (void)basic_type_size_or_align(a0->as.ident.data, &size, &ty_str);
+    }
+    char* res = mk_temp(g);
+    if (size > 0 && ty_str) {
+        /* Emit the constant byte-count directly via the existing
+         * `add i32 0, N` convention used by UC_LIT_FALSE /
+         * UC_LIT_CHAR (see gen_expr UC_EXPR_LITERAL case). */
+        emit_fmt_writeln(g, "%s = add i32 0, %d", res, size);
+    } else {
+        /* TODO 0.3.3 commit 3+: extend for pointer / struct / array.
+         * Emitting 0 keeps the compile successful so downstream callers
+         * still pass type checks, but the size is wrong — a follow-up
+         * commit will resolve these via LLVM-IR tricks (nullptr gep,
+         * ptrtoint, target-data). */
+        emit_fmt_writeln(g, "%s = add i32 0, 0  ; TODO sizeof for non-basic type", res);
+    }
+    free(g->last_expr_type);
+    g->last_expr_type = cgen_strdup("i32");
+    return res;
+}
+
+/* emit_alignof_intrinsic: `alignof(T)` → constant alignment. Same shape
+ * as emit_sizeof_intrinsic but maps to a parallel alignment table (a
+ * pointer's size is 8, but its alignment is also 8 on 64-bit — equal
+ * for the basic types; the function is kept distinct so a future
+ * follow-up can split sizes from alignments without rewriting callers). */
+static int basic_type_alignment(const char* name, int* out_value) {
+    if (!name) return 0;
+    if (strcmp(name, "int")  == 0 || strcmp(name, "i32") == 0) { *out_value = 4; return 1; }
+    if (strcmp(name, "char") == 0)                              { *out_value = 1; return 1; }
+    if (strcmp(name, "i8")   == 0)                              { *out_value = 1; return 1; }
+    if (strcmp(name, "i16")  == 0)                              { *out_value = 2; return 1; }
+    if (strcmp(name, "i64")  == 0)                              { *out_value = 8; return 1; }
+    if (strcmp(name, "bool") == 0)                              { *out_value = 1; return 1; }
+    if (strcmp(name, "f32")  == 0)                              { *out_value = 4; return 1; }
+    if (strcmp(name, "f64")  == 0)                              { *out_value = 8; return 1; }
+    if (strcmp(name, "void") == 0)                              { *out_value = 1; return 1; }
+    if (strcmp(name, "int_ptr") == 0 || strcmp(name, "ptr") == 0) { *out_value = 8; return 1; }
+    return 0;
+}
+
+static char* emit_alignof_intrinsic(UCCodeGenerator* g, const UCExpr* expr, UCError* err) {
+    if (uc_vec_len(expr->as.call.args) != 1) {
+        uc_error_set(err, UC_ERR_CODEGEN, 0, 0, NULL,
+                     "alignof() takes exactly 1 argument");
+        return NULL;
+    }
+    UCExpr* a0 = (UCExpr*)uc_vec_at(expr->as.call.args, 0);
+    int align = 0;
+    const char* unused_ty = NULL;
+    /* For basic scalars size == alignment so we can reuse the same
+     * table; pointer keeps its own 8. */
+    if (a0->kind == UC_EXPR_IDENT) {
+        (void)basic_type_size_or_align(a0->as.ident.data, &align, &unused_ty);
+        if (!align) (void)basic_type_alignment(a0->as.ident.data, &align);
+    }
+    char* res = mk_temp(g);
+    if (align > 0) {
+        emit_fmt_writeln(g, "%s = add i32 0, %d", res, align);
+    } else {
+        emit_fmt_writeln(g, "%s = add i32 0, 0  ; TODO alignof for non-basic type", res);
+    }
+    free(g->last_expr_type);
+    g->last_expr_type = cgen_strdup("i32");
+    return res;
+}
+
+/* ------------------------------------------------------------------------- */
 /* Expressions                                                               */
 /* ------------------------------------------------------------------------- */
 
@@ -1279,6 +1435,26 @@ static char* gen_expr(UCCodeGenerator* g, const UCExpr* expr, UCError* err, int 
         }
         case UC_EXPR_CALL: {
             UCExpr* callee = expr->as.call.callee;
+            /* [0.3.3 commit 3] Intrinsic dispatch — runs BEFORE the regular
+             * call-resolution path (mangle_name / @sys$ / lookup_builtin_ret
+             * → @builtin_<name>) so that intrinsic calls parsed with
+             * is_builtin=1 by commit 2's parser never reach that path.
+             * Only the three names in {is_null, sizeof, alignof} are caught
+             * here; future builtin names (mod/unmod/move/clone/alloc/free)
+             * fall through to existing logic and end up at @builtin_<name>
+             * via lookup_builtin_ret() just like abs_int() today. */
+            if (expr->as.call.is_builtin
+                && callee && callee->kind == UC_EXPR_IDENT
+                && callee->as.ident.data) {
+                const char* iname = callee->as.ident.data;
+                if (strcmp(iname, "is_null") == 0)
+                    return emit_is_null_intrinsic(g, expr, err);
+                if (strcmp(iname, "sizeof") == 0)
+                    return emit_sizeof_intrinsic(g, expr, err);
+                if (strcmp(iname, "alignof") == 0)
+                    return emit_alignof_intrinsic(g, expr, err);
+                /* other is_builtin=1 names: fall through */
+            }
             char* symbol = NULL;
             if (callee->kind == UC_EXPR_IDENT) {
                 const char* name = callee->as.ident.data;
