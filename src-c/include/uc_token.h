@@ -45,6 +45,19 @@ typedef enum {
     UC_TOK_KW_MOD,         /* mod(ref) builtin — 0.3.3 §4.9 + §11.0.1; emits @uc_borrow_mod_enter */
     UC_TOK_KW_UNMOD,       /* unmod(ref) builtin — 0.3.3 §4.10 + §11.0.1; emits @uc_borrow_mod_exit */
 
+    /* [0.3.3 commit 8a] @-prefixed preprocessor directive tokens.
+     * Distinct from UC_TOK_KW_IF / UC_TOK_KW_ELSE (which represent the
+     * language-level if/else statements used in parse_if_stmt) and from
+     * the UC_TOK_PP_* family (which represents '#'-prefixed directives).
+     * Spec: .dev/drafts/0.3.3-implementation-process.md §10.2; design:
+     * runtime-architecture §7 (per-platform macro injection +
+     * @ifdef/@end conditional compilation). */
+    UC_TOK_KW_AT_IFDEF,    /* @ifdef(NAME)  — conditional compilation */
+    UC_TOK_KW_AT_IF,       /* @if defined(NAME) — alias for @ifdef */
+    UC_TOK_KW_AT_ELSE,     /* @else — alternative branch */
+    UC_TOK_KW_AT_ELIF,     /* @elif defined(NAME) — chained condition */
+    UC_TOK_KW_AT_END,      /* @end — close conditional block */
+
     /* operators */
     UC_TOK_OP_PLUS,
     UC_TOK_OP_MINUS,
@@ -119,5 +132,12 @@ void uc_token_free(UCToken* tok);
 void uc_token_reset(UCToken* tok);
 const char* uc_token_kind_name(UCTokenKind kind);
 UCTokenKind uc_keyword_lookup(const char* ident, size_t len);
+/* [0.3.3 commit 8a] Lookup for @-prefixed preprocessor directive names.
+ * The lexer strips the leading '@' before calling this; ident is the
+ * tail (e.g. "ifdef", "if", "else", "elif", "end"). Returns one of
+ * UC_TOK_KW_AT_IFDEF / _IF / _ELSE / _ELIF / _END on match, or
+ * UC_TOK_IDENT (NOT UC_TOK_ERROR) so the lexer can emit a contextual
+ * error message including the lexeme. */
+UCTokenKind uc_keyword_at_lookup(const char* ident, size_t len);
 
 #endif /* UC_TOKEN_H */

@@ -42,6 +42,15 @@ static void struct_field_free_local(void* p) {
     free(f);
 }
 
+/* [0.3.3 commit 8a] Free a UCMacro entry. */
+static void macro_free_local(void* p) {
+    UCMacro* m = (UCMacro*)p;
+    if (!m) return;
+    free(m->name);
+    free(m->value);
+    free(m);
+}
+
 /* ------------------------------------------------------------------------- */
 /* Token helpers                                                             */
 /* ------------------------------------------------------------------------- */
@@ -95,6 +104,79 @@ static int expect(UCParser* p, UCTokenKind k, const char* what) {
 
 static const char* cur_lex(const UCParser* p) {
     return p->current.lexeme ? p->current.lexeme : "";
+}
+
+/* ------------------------------------------------------------------------- */
+/* [0.3.3 commit 8a] Preprocessor macro table (predefined only; @define /  */
+/* @undef are deferred). Used by @ifdef(NAME) / @if defined(NAME) /       */
+/* @elif defined(NAME) to gate conditional compilation at parse time.       */
+/* Spec: 0.3.3 §10.2 + runtime-architecture §7.                              */
+/* ------------------------------------------------------------------------- */
+
+static void define_macro(UCParser* p, const char* name, const char* value) {
+    if (!p || !name || !value) return;
+    if (!p->macros) p->macros = uc_vec_new();
+    UCMacro* m = (UCMacro*)calloc(1, sizeof(UCMacro));
+    if (!m) { fprintf(stderr, "uc_parser: out of memory\n"); abort(); }
+    size_t nlen = strlen(name);
+    size_t vlen = strlen(value);
+    m->name = (char*)malloc(nlen + 1);
+    m->value = (char*)malloc(vlen + 1);
+    if (!m->name || !m->value) { fprintf(stderr, "uc_parser: out of memory\n"); abort(); }
+    memcpy(m->name, name, nlen + 1);
+    memcpy(m->value, value, vlen + 1);
+    p->macros = uc_vec_push(p->macros, m);
+}
+
+/* [0.3.3 commit 8a] @define / @undef are out of scope for commit 8a, so
+ * this is the only "definition" site. Detection uses compile-time host
+ * macros (not uname()) per the task's commit-8a spec ("uname() or
+ * compile-time fallback; compile-time chosen for simplicity & C99
+ * portability"). */
+static void init_predefined_macros(UCParser* p) {
+    /* OS detection — single define per host so @ifdef sees the right one. */
+#if defined(__linux__)
+    define_macro(p, "TARGET_OS_LINUX",   "1");
+    define_macro(p, "TARGET_OS_DARWIN",  "0");
+    define_macro(p, "TARGET_OS_WINDOWS", "0");
+#elif defined(__APPLE__)
+    define_macro(p, "TARGET_OS_LINUX",   "0");
+    define_macro(p, "TARGET_OS_DARWIN",  "1");
+    define_macro(p, "TARGET_OS_WINDOWS", "0");
+#elif defined(_WIN32) || defined(_WIN64)
+    define_macro(p, "TARGET_OS_LINUX",   "0");
+    define_macro(p, "TARGET_OS_DARWIN",  "0");
+    define_macro(p, "TARGET_OS_WINDOWS", "1");
+#else
+    define_macro(p, "TARGET_OS_LINUX",   "0");
+    define_macro(p, "TARGET_OS_DARWIN",  "0");
+    define_macro(p, "TARGET_OS_WINDOWS", "0");
+#endif
+
+    /* Architecture detection. */
+#if defined(__x86_64__) || defined(_M_X64)
+    define_macro(p, "TARGET_ARCH_X86_64", "1");
+    define_macro(p, "TARGET_ARCH_ARM64",  "0");
+#elif defined(__aarch64__) || defined(_M_ARM64)
+    define_macro(p, "TARGET_ARCH_X86_64", "0");
+    define_macro(p, "TARGET_ARCH_ARM64",  "1");
+#else
+    define_macro(p, "TARGET_ARCH_X86_64", "0");
+    define_macro(p, "TARGET_ARCH_ARM64",  "0");
+#endif
+
+    /* Spec version (hardcoded for now; bumped per release). */
+    define_macro(p, "TARGET_ULTRA_VERSION", "003003");
+}
+
+static int macro_is_defined(const UCParser* p, const char* name) {
+    if (!p || !name || !p->macros) return 0;
+    size_t n = uc_vec_len(p->macros);
+    for (size_t i = 0; i < n; i++) {
+        UCMacro* m = (UCMacro*)uc_vec_at(p->macros, i);
+        if (m && m->name && strcmp(m->name, name) == 0) return 1;
+    }
+    return 0;
 }
 
 /* ------------------------------------------------------------------------- */
@@ -228,11 +310,29 @@ static UCParam* parse_one_param(UCParser* p);
 static int looks_like_type_start(const UCParser* p);
 static int looks_like_type_start_peek(const UCParser* p);
 
+/* [0.3.3 commit 8a] Preprocessor directive parsing. */
+static UCTopLevel* parse_top_level_at_directive(UCParser* p);
+static void skip_pp_branch(UCParser* p);
+static int  pp_condition_true(UCParser* p);
+
 /* ------------------------------------------------------------------------- */
 /* Top-level dispatch                                                        */
 /* ------------------------------------------------------------------------- */
 
 static UCTopLevel* parse_top_level(UCParser* p) {
+    /* [0.3.3 commit 8a] Dispatch @-prefixed preprocessor directives
+     * (@ifdef / @if / @else / @elif / @end). The directive machinery
+     * consumes its tokens and returns NULL with no TopLevel produced,
+     * mirroring the '#import' convention used below for the '#'-prefix
+     * family. parse_top_level is then re-entered for the next construct. */
+    if (check(p, UC_TOK_KW_AT_IFDEF)
+        || check(p, UC_TOK_KW_AT_IF)
+        || check(p, UC_TOK_KW_AT_ELSE)
+        || check(p, UC_TOK_KW_AT_ELIF)
+        || check(p, UC_TOK_KW_AT_END)) {
+        return parse_top_level_at_directive(p);
+    }
+
     if (match(p, UC_TOK_KW_EXPORT)) {
         UCTopLevel* inner = parse_top_level(p);
         if (is_err(p)) { uc_top_level_free(inner); return NULL; }
@@ -427,6 +527,319 @@ static UCTopLevel* parse_pound_import(UCParser* p) {
     }
     match(p, UC_TOK_SEMICOLON);  /* optional */
     return NULL;  /* no top-level emitted */
+}
+
+/* ------------------------------------------------------------------------- */
+/* [0.3.3 commit 8a] @-prefixed preprocessor directive handling.            */
+/*                                                                           */
+/* Implements:                                                               */
+/*   @ifdef(NAME) ... [@else ... | @elif defined(NAME) ...]* @end            */
+/*   @if defined(NAME) ... [@else ... | @elif defined(NAME) ...]* @end       */
+/*                                                                           */
+/* The directive family produces no AST node; it only consumes tokens to   */
+/* gate what the surrounding parse_top_level() call sees. Nested @ifdef /  */
+/* @if are tracked via an explicit depth counter so skip mode can match    */
+/* the correct @end.                                                        */
+/*                                                                           */
+/* Deferred to later commits (out of scope here):                            */
+/*   @if EXPR          (expression conditions; needs full expr parser)      */
+/*   @define / @undef  (user-defined macros)                                */
+/*   @error / @warning (diagnostic directives)                              */
+/*   @ifndef           (negation; users can nest !@ifdef instead)           */
+/* ------------------------------------------------------------------------- */
+
+/* Try to parse the condition of an @if / @ifdef / @elif header and return
+ * its truth value. The caller has already consumed the directive keyword
+ * (IF / IFDEF / ELIF). On syntax error, sets p->error and returns 0.
+ *
+ * Accepted shapes (commit 8a scope):
+ *   @ifdef(NAME)
+ *   @if defined(NAME)
+ *   @elif defined(NAME)              (when called from an @elif header)
+ */
+static int pp_condition_true(UCParser* p) {
+    /* Reached here after the caller consumed the directive keyword. For
+     * @ifdef and @elif, the next token must be '('; for @if, the next
+     * token must be the literal "defined". */
+    UCTokenKind k = p->current.kind;
+
+    if (k == UC_TOK_KW_AT_IFDEF) {
+        advance(p);  /* consume IFDEF */
+    } else if (k == UC_TOK_KW_AT_IF || k == UC_TOK_KW_AT_ELIF) {
+        advance(p);  /* consume IF / ELIF */
+    } else {
+        err_here(p, "expected @ifdef / @if / @elif before condition");
+        return 0;
+    }
+
+    if (!expect(p, UC_TOK_LPAREN, "'(' after @ifdef/@if/@elif")) return 0;
+
+    /* Inside the parentheses we accept either an identifier directly
+     * (so `@ifdef(NAME)` works as a shorthand), or `defined(NAME)` (the
+     * C-preprocessor-style explicit form). */
+    int truthy = 0;
+    if (check(p, UC_TOK_KW_AT_IFDEF)) {
+        /* `defined(NAME)` */
+        advance(p);  /* consume 'defined' */
+        if (!expect(p, UC_TOK_LPAREN, "'(' after 'defined'")) return 0;
+        if (!check(p, UC_TOK_IDENT)) {
+            err_here(p, "expected identifier inside defined(...)");
+            return 0;
+        }
+        truthy = macro_is_defined(p, p->current.lexeme);
+        advance(p);
+        if (!expect(p, UC_TOK_RPAREN, "')' to close defined(...)")) return 0;
+    } else if (check(p, UC_TOK_IDENT)) {
+        truthy = macro_is_defined(p, p->current.lexeme);
+        advance(p);
+    } else {
+        err_here(p,
+                 "expected identifier or 'defined(NAME)' inside "
+                 "@ifdef / @if / @elif");
+        return 0;
+    }
+
+    if (!expect(p, UC_TOK_RPAREN,
+                "')' to close @ifdef / @if / @elif")) return 0;
+    return truthy;
+}
+
+/* Skip tokens until we are no longer inside the active @ifdef / @if /
+ * @elif branch — that is, until we hit the matching @end (depth==0), or
+ * an @else / @elif at depth==1 that would belong to the same chain.
+ *
+ * While skipping we still parse nested @ifdef / @if / @end so the depth
+ * counter stays balanced; we also need to skip any @else / @elif that
+ * belongs to a NESTED chain (those are at depth > 1). The two stop
+ * signals at depth 1 are:
+ *   - @else   : switch to parsing the alternate branch
+ *   - @elif   : re-evaluate condition
+ *   - @end    : close the chain
+ *
+ * After returning, p->current is the @else / @elif / @end token (already
+ * advanced past), so the caller can decide what to do next.
+ */
+static void skip_pp_branch(UCParser* p) {
+    int depth = 1;  /* we are already inside the @ifdef / @if chain */
+    for (;;) {
+        if (check(p, UC_TOK_EOF) || check(p, UC_TOK_ERROR)) {
+            err_here(p, "unexpected end of file inside @ifdef / @if branch");
+            return;
+        }
+        if (depth == 1) {
+            if (check(p, UC_TOK_KW_AT_END)) {
+                advance(p);
+                return;
+            }
+            if (check(p, UC_TOK_KW_AT_ELSE) || check(p, UC_TOK_KW_AT_ELIF)) {
+                /* Leave the token in p->current so the caller can handle
+                 * it (switch to alt / re-evaluate). */
+                return;
+            }
+        }
+        if (check(p, UC_TOK_KW_AT_IFDEF) || check(p, UC_TOK_KW_AT_IF)) {
+            depth++;
+            advance(p);
+            continue;
+        }
+        if (check(p, UC_TOK_KW_AT_END)) {
+            /* depth > 1: this @end closes a nested conditional. */
+            depth--;
+            advance(p);
+            continue;
+        }
+        advance(p);
+    }
+}
+
+/* Entry point for all @-directives at top level. Dispatches based on
+ * the current token:
+ *   @ifdef / @if : start a conditional chain
+ *   @else        : stray (no matching @ifdef); error
+ *   @elif        : stray (no matching @ifdef); error
+ *   @end         : stray (no matching @ifdef); error
+ * Always returns NULL (no TopLevel). */
+static UCTopLevel* parse_top_level_at_directive(UCParser* p) {
+    if (check(p, UC_TOK_KW_AT_ELSE)
+        || check(p, UC_TOK_KW_AT_ELIF)
+        || check(p, UC_TOK_KW_AT_END)) {
+        const char* what = check(p, UC_TOK_KW_AT_ELSE) ? "@else"
+                         : check(p, UC_TOK_KW_AT_ELIF) ? "@elif"
+                         : "@end";
+        err_here(p, "stray '%s' without matching @ifdef / @if", what);
+        return NULL;
+    }
+
+    /* @ifdef / @if : consume the header, decide which branch to take. */
+    int cond_true = pp_condition_true(p);
+    if (is_err(p)) return NULL;
+
+    int taken = 0;  /* whether any branch in this chain has been taken */
+
+    /* Active branch: TRUE branch first (taken == 0 && cond_true). */
+    if (cond_true) {
+        taken = 1;
+        /* Parse the active branch as ordinary top-level constructs
+         * until we hit @else / @elif / @end (at depth 1). */
+        for (;;) {
+            if (is_err(p)) return NULL;
+            if (check(p, UC_TOK_EOF) || check(p, UC_TOK_ERROR)) {
+                err_here(p, "unexpected end of file inside @ifdef / @if branch");
+                return NULL;
+            }
+            if (check(p, UC_TOK_KW_AT_ELSE)
+                || check(p, UC_TOK_KW_AT_ELIF)
+                || check(p, UC_TOK_KW_AT_END)) {
+                break;  /* hand control to the chain-tail block below */
+            }
+            /* Handle nested @ifdef / @if explicitly so we can recurse
+             * with the proper entry point (which does NOT enter the
+             * chain-tail block at the inner @end). */
+            if (check(p, UC_TOK_KW_AT_IFDEF)
+                || check(p, UC_TOK_KW_AT_IF)) {
+                if (parse_top_level_at_directive(p) == NULL && is_err(p)) {
+                    return NULL;
+                }
+                continue;
+            }
+            UCTopLevel* tl = parse_top_level(p);
+            if (is_err(p)) {
+                uc_top_level_free(tl);
+                return NULL;
+            }
+            /* tl may legitimately be NULL (e.g. '#import' directive);
+             * either way the top-level loop has advanced past it. */
+        }
+    } else {
+        /* FALSE branch: skip until @else / @elif / @end at depth 1. */
+        skip_pp_branch(p);
+        if (is_err(p)) return NULL;
+    }
+
+    /* Chain tail: handle @else and @elif until @end. */
+    while (!check(p, UC_TOK_KW_AT_END)) {
+        if (is_err(p)) return NULL;
+        if (check(p, UC_TOK_EOF) || check(p, UC_TOK_ERROR)) {
+            err_here(p, "unexpected end of file inside @ifdef / @if chain");
+            return NULL;
+        }
+        if (check(p, UC_TOK_KW_AT_ELSE)) {
+            advance(p);  /* consume @else */
+            if (taken) {
+                skip_pp_branch(p);
+                if (is_err(p)) return NULL;
+            } else {
+                /* Parse this branch as ordinary top-level until the
+                 * chain ends. */
+                for (;;) {
+                    if (is_err(p)) return NULL;
+                    if (check(p, UC_TOK_EOF) || check(p, UC_TOK_ERROR)) {
+                        err_here(p,
+                                 "unexpected end of file inside @else branch");
+                        return NULL;
+                    }
+                    if (check(p, UC_TOK_KW_AT_ELSE)
+                        || check(p, UC_TOK_KW_AT_ELIF)
+                        || check(p, UC_TOK_KW_AT_END)) {
+                        break;
+                    }
+                    if (check(p, UC_TOK_KW_AT_IFDEF)
+                        || check(p, UC_TOK_KW_AT_IF)) {
+                        if (parse_top_level_at_directive(p) == NULL
+                            && is_err(p)) {
+                            return NULL;
+                        }
+                        continue;
+                    }
+                    UCTopLevel* tl = parse_top_level(p);
+                    if (is_err(p)) {
+                        uc_top_level_free(tl);
+                        return NULL;
+                    }
+                }
+                taken = 1;
+            }
+            continue;
+        }
+        if (check(p, UC_TOK_KW_AT_ELIF)) {
+            advance(p);  /* consume @elif — pp_condition_true expects
+                          * the directive keyword to be the CURRENT
+                          * token at entry. We already consumed it, so
+                          * we re-feed by reading the *next* token kind
+                          * as if it were the directive keyword. We do
+                          * this by inlining the conditional parse for
+                          * the @elif shape here. */
+            /* Inline conditional parse for @elif defined(NAME). */
+            if (!expect(p, UC_TOK_LPAREN, "'(' after @elif")) return NULL;
+            int truthy = 0;
+            if (check(p, UC_TOK_KW_AT_IFDEF)) {
+                advance(p);  /* defined */
+                if (!expect(p, UC_TOK_LPAREN,
+                            "'(' after 'defined'")) return NULL;
+                if (!check(p, UC_TOK_IDENT)) {
+                    err_here(p,
+                             "expected identifier inside defined(...)");
+                    return NULL;
+                }
+                truthy = macro_is_defined(p, p->current.lexeme);
+                advance(p);
+                if (!expect(p, UC_TOK_RPAREN,
+                            "')' to close defined(...)")) return NULL;
+            } else if (check(p, UC_TOK_IDENT)) {
+                truthy = macro_is_defined(p, p->current.lexeme);
+                advance(p);
+            } else {
+                err_here(p,
+                         "expected identifier or 'defined(NAME)' "
+                         "after @elif");
+                return NULL;
+            }
+            if (!expect(p, UC_TOK_RPAREN,
+                        "')' to close @elif")) return NULL;
+
+            if (truthy && !taken) {
+                taken = 1;
+                for (;;) {
+                    if (is_err(p)) return NULL;
+                    if (check(p, UC_TOK_EOF) || check(p, UC_TOK_ERROR)) {
+                        err_here(p,
+                                 "unexpected end of file inside "
+                                 "@elif branch");
+                        return NULL;
+                    }
+                    if (check(p, UC_TOK_KW_AT_ELSE)
+                        || check(p, UC_TOK_KW_AT_ELIF)
+                        || check(p, UC_TOK_KW_AT_END)) {
+                        break;
+                    }
+                    if (check(p, UC_TOK_KW_AT_IFDEF)
+                        || check(p, UC_TOK_KW_AT_IF)) {
+                        if (parse_top_level_at_directive(p) == NULL
+                            && is_err(p)) {
+                            return NULL;
+                        }
+                        continue;
+                    }
+                    UCTopLevel* tl = parse_top_level(p);
+                    if (is_err(p)) {
+                        uc_top_level_free(tl);
+                        return NULL;
+                    }
+                }
+            } else {
+                skip_pp_branch(p);
+                if (is_err(p)) return NULL;
+            }
+            continue;
+        }
+        /* Should be unreachable: loop guard checks @end above. */
+        err_here(p, "expected @else / @elif / @end inside @ifdef / @if chain");
+        return NULL;
+    }
+
+    /* Consume the closing @end. */
+    advance(p);  /* consume @end */
+    return NULL;  /* directives never emit a TopLevel */
 }
 
 /* ------------------------------------------------------------------------- */
@@ -1834,6 +2247,12 @@ void uc_parser_init(UCParser* p, UCLexer* lexer, UCError* error) {
     p->current.kind = UC_TOK_EOF;
     p->peek.kind = UC_TOK_EOF;
     p->error = error;
+    p->macros = NULL;
+
+    /* [0.3.3 commit 8a] Populate the predefined macro table BEFORE the
+     * first token is consumed, so parse_top_level can resolve @ifdef
+     * from the very first directive. */
+    init_predefined_macros(p);
 
     /* Prime two-token lookahead. */
     p->peek = uc_lexer_next(lexer);
@@ -1845,6 +2264,10 @@ void uc_parser_reset(UCParser* p) {
     uc_token_free(&p->peek);
     uc_token_init(&p->current);
     uc_token_init(&p->peek);
+    if (p->macros) {
+        uc_vec_free(p->macros, macro_free_local);
+        p->macros = NULL;
+    }
     p->lexer = NULL;
     p->error = NULL;
 }

@@ -68,6 +68,13 @@ const char* uc_token_kind_name(UCTokenKind kind) {
         case UC_TOK_KW_MOD:      return "KwMod";      /* 0.3.3 §4.9 + §11.0.1 (commit 5) — emits @uc_borrow_mod_enter  */
         case UC_TOK_KW_UNMOD:    return "KwUnmod";    /* 0.3.3 §4.10 + §11.0.1 (commit 5) — emits @uc_borrow_mod_exit */
 
+        /* [0.3.3 commit 8a] @-prefixed preprocessor directive tokens. */
+        case UC_TOK_KW_AT_IFDEF: return "KwAtIfdef";
+        case UC_TOK_KW_AT_IF:    return "KwAtIf";
+        case UC_TOK_KW_AT_ELSE:  return "KwAtElse";
+        case UC_TOK_KW_AT_ELIF:  return "KwAtElif";
+        case UC_TOK_KW_AT_END:   return "KwAtEnd";
+
         case UC_TOK_OP_PLUS:     return "OpPlus";
         case UC_TOK_OP_MINUS:    return "OpMinus";
         case UC_TOK_OP_STAR:     return "OpStar";
@@ -163,5 +170,34 @@ UCTokenKind uc_keyword_lookup(const char* ident, size_t len) {
     KW("unmod",    UC_TOK_KW_UNMOD);     /* 0.3.3 §4.10 + §11.0.1 (commit 5) — intrinsic, emits @uc_borrow_mod_exit */
 
     #undef KW
+    return UC_TOK_IDENT;
+}
+
+/* [0.3.3 commit 8a] Lookup for @-prefixed preprocessor directive names.
+ *
+ * Used by the lexer after consuming the '@' character and reading the
+ * following identifier tail. The lexer reports a contextual error when
+ * this function returns UC_TOK_IDENT (i.e. unknown directive), so we
+ * never produce UC_TOK_ERROR here — that keeps the error message
+ * generation in one place (the lexer).
+ *
+ * Spec: .dev/drafts/0.3.3-implementation-process.md §10.2 (preprocessor)
+ * + runtime-architecture §7 (@ifdef/@end conditional compilation). */
+UCTokenKind uc_keyword_at_lookup(const char* ident, size_t len) {
+    if (!ident) return UC_TOK_IDENT;
+
+    #define KW_AT(s, k) do { \
+        static const char _kw[] = s; \
+        if (len == (sizeof(_kw) - 1) && memcmp(ident, _kw, sizeof(_kw) - 1) == 0) \
+            return k; \
+    } while (0)
+
+    KW_AT("ifdef", UC_TOK_KW_AT_IFDEF);
+    KW_AT("if",    UC_TOK_KW_AT_IF);
+    KW_AT("else",  UC_TOK_KW_AT_ELSE);
+    KW_AT("elif",  UC_TOK_KW_AT_ELIF);
+    KW_AT("end",   UC_TOK_KW_AT_END);
+
+    #undef KW_AT
     return UC_TOK_IDENT;
 }

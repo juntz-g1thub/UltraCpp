@@ -25,11 +25,26 @@
 #include "uc_error.h"
 #include "uc_lexer.h"
 
+/* [0.3.3 commit 8a] Single entry in the preprocessor macro table.
+ * Each @ifdef(NAME) / @if defined(NAME) / @elif defined(NAME) check is
+ * resolved by linear search through UCParser.macros (the volume is
+ * tiny — only the predefined set; user-defined macros via @define are
+ * deferred to a later commit). */
+typedef struct UCMacro {
+    char* name;            /* owned, NUL-terminated */
+    char* value;           /* owned, NUL-terminated; presence implies
+                            * "defined" — value is metadata only for
+                            * future @if EXPR support. */
+} UCMacro;
+
 typedef struct UCParser {
     UCLexer* lexer;        /* borrowed */
     UCToken current;       /* owned, freed by uc_parser_reset */
     UCToken peek;          /* owned, freed by uc_parser_reset */
     UCError* error;        /* borrowed; populated on parse error */
+    UCVec* macros;         /* owned; each item is UCMacro*; NULL until
+                            * init_predefined_macros() runs in
+                            * uc_parser_init. Freed by uc_parser_reset. */
 } UCParser;
 
 /* Initialize parser `p` to consume tokens from `lexer`.  On error,

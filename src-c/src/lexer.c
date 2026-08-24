@@ -161,6 +161,59 @@ static void skip_whitespace_and_comments(UCLexer* l) {
 }
 
 /* ------------------------------------------------------------------------- */
+/* [0.3.3 commit 8a] @-prefixed preprocessor directive (@ifdef/@if/@else/   */
+/* @elif/@end). Returns UC_TOK_ERROR with a contextual message when the   */
+/* '@' is not followed by a recognised directive identifier.                */
+/* ------------------------------------------------------------------------- */
+
+static UCToken scan_at_directive(UCLexer* l) {
+    /* The leading '@' has already been consumed by uc_lexer_next; the
+     * captured lexeme_start points at it so the lexeme includes it. */
+    const char* lexeme_start = l->source + l->pos - 1;
+    int start_line = l->line;
+    int start_col = l->column - 1;
+
+    /* If the next char is not an identifier-start char, the bare '@' is
+     * not a supported token (per spec §10.2 every @-directive requires
+     * an identifier). Report the error at the '@' position. */
+    if (l->pos >= l->source_len || !is_ident_start(l->source[l->pos])) {
+        UCToken err = make_error(l, lexeme_start, 1,
+            "'@' must be followed by a directive keyword "
+            "(ifdef / if / else / elif / end)");
+        advance_one(l);
+        return err;
+    }
+
+    size_t id_start = l->pos;
+    while (l->pos < l->source_len && is_ident_cont(l->source[l->pos])) {
+        advance_one(l);
+    }
+    size_t id_len = (size_t)(l->source + l->pos - (lexeme_start + 1));
+    UCTokenKind kind = uc_keyword_at_lookup(l->source + id_start, id_len);
+    if (kind == UC_TOK_IDENT) {
+        /* Recognised shape but unknown name. Reuse the same contextual
+         * message format as the bare-@ case. */
+        char buf[160];
+        snprintf(buf, sizeof(buf),
+                 "unknown @-directive '@%.*s' "
+                 "(expected @ifdef / @if / @else / @elif / @end)",
+                 (int)id_len, l->source + id_start);
+        size_t lex_len = 1 + id_len;
+        return make_error(l, lexeme_start, lex_len, buf);
+    }
+
+    size_t lex_len = 1 + id_len;
+    UCToken tok;
+    uc_token_init(&tok);
+    tok.kind = kind;
+    tok.line = start_line;
+    tok.column = start_col;
+    tok.lexeme = strndup_safe(lexeme_start, lex_len);
+    tok.lexeme_len = lex_len;
+    return tok;
+}
+
+/* ------------------------------------------------------------------------- */
 /* preprocessor directive (#import, #include, etc.)                           */
 /* ------------------------------------------------------------------------- */
 
@@ -581,6 +634,14 @@ UCToken uc_lexer_next(UCLexer* l) {
     if (c == '#') {
         advance_one(l); /* # */
         return scan_preprocessor(l);
+    }
+
+    /* [0.3.3 commit 8a] '@' starts an @-prefixed preprocessor directive
+     * (@ifdef/@if/@else/@elif/@end). scan_at_directive consumes the '@'
+     * itself and the trailing identifier (or reports an error). */
+    if (c == '@') {
+        advance_one(l); /* @ */
+        return scan_at_directive(l);
     }
 
     if (c == '"') return scan_string(l);
