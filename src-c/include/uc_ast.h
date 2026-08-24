@@ -297,8 +297,51 @@ typedef enum UCStmtKind {
     UC_STMT_CONTINUE,
     UC_STMT_EXPR,
     UC_STMT_FREE,
-    UC_STMT_DECL
+    UC_STMT_DECL,
+    /* [0.3.3 commit 8b] asm { ... } inline assembly block per spec §10.3 +
+     * runtime-architecture §8 (C/GCC-style 4-segment form). The block is a
+     * statement-level construct; see UCASTAsmBlock for the data shape. */
+    UC_STMT_ASM_BLOCK
 } UCStmtKind;
+
+/* [0.3.3 commit 8b] One operand in a UCASTAsmBlock output/input segment.
+ * Per spec §10.3 + runtime-architecture §8.1: each operand is a constraint
+ * string (e.g. "=a", "0", "r", "=r") paired with a single identifier that
+ * names the C-side variable used as the operand. The constraint char grammar
+ * (a/D/S/d/c/b/r/m/i/.../=r/+r/0..7/~{...}/memory) is opaquely passed
+ * through to LLVM (which validates against the target machine's official
+ * constraint table); the parser does NOT re-validate per the
+ * commit 8b PARSE-ONLY scope. */
+typedef struct {
+    char* constraint;      /* owned; e.g. "=a" / "0" / "r" */
+    char* var_name;        /* owned; NUL-terminated ident */
+} UCAsmOperand;
+
+/* [0.3.3 commit 8b] Inline assembly AST node per spec §10.3 +
+ * runtime-architecture §8.1 (4-segment GCC-style asm block).
+ *
+ *   asm [volatile] { "template" : outputs : inputs : clobbers }
+ *
+ * Segments (after template):
+ *   outputs  ::= <operand> (, <operand>)*
+ *   inputs   ::= <operand> (, <operand>)*
+ *   clobbers ::= <string> (, <string>)*
+ * Each <operand> is `"constraint"(var_name)`; clobbers are bare strings
+ * ("rcx", "memory"). All four vectors may be empty (e.g. `asm { "nop" }`
+ * has all three operand segments absent). is_volatile is set when the
+ * `volatile` qualifier follows the `asm` keyword; emit-only metadata in
+ * this commit (LLVM inline asm always emits `sideeffect`).
+ *
+ * Constraints per runtime-architecture §8.2 are passed verbatim to LLVM.
+ * No constraint-char validation in commit 8b (per plan §3 commit 8b —
+ * PARSE-ONLY scope: "constraint chars: 收集 string verbatim, LLVM validates"). */
+typedef struct {
+    char* template_str;    /* owned; e.g. "syscall" — the asm body */
+    UCVec* outputs;        /* owned; each item is UCAsmOperand*; NULL = none */
+    UCVec* inputs;         /* owned; each item is UCAsmOperand*; NULL = none */
+    UCVec* clobbers;       /* owned; each item is char* (clobber name); NULL = none */
+    int is_volatile;       /* 1 = "asm volatile { ... }" qualifier present */
+} UCASTAsmBlock;
 
 struct UCStmt {
     UCStmtKind kind;
@@ -322,6 +365,7 @@ struct UCStmt {
         UCExpr* ret;              /* NULL = None (bare `return;`) */
         UCExpr* expr;             /* expression-stmt or free-stmt */
         UCVarDecl* decl;
+        UCASTAsmBlock* asm_block;  /* [0.3.3 commit 8b] owned */
     } as;
 };
 
@@ -335,6 +379,15 @@ UCStmt* uc_stmt_continue(void);
 UCStmt* uc_stmt_expr(UCExpr* e);                        /* NULL = bare `;` */
 UCStmt* uc_stmt_kw_free(UCExpr* e);  /* 'free' is a UC keyword */
 UCStmt* uc_stmt_decl(UCVarDecl* d);
+/* [0.3.3 commit 8b] Constructors for UCAsmOperand (per-segment operand)
+ * and UCASTAsmBlock (the whole asm {} AST node). Both take ownership of
+ * the supplied heap allocations; passing NULL for outputs/inputs/clobbers
+ * denotes the segment was omitted (e.g. `asm { "nop" }`). */
+UCAsmOperand* uc_asm_operand_new(char* constraint, char* var_name);
+UCASTAsmBlock* uc_ast_asm_block_new(char* template_str, UCVec* outputs,
+                                    UCVec* inputs, UCVec* clobbers,
+                                    int is_volatile);
+UCStmt* uc_stmt_asm_block(UCASTAsmBlock* b);
 
 void uc_stmt_free(UCStmt* s);
 

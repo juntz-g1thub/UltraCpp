@@ -1019,6 +1019,14 @@ static void gen_stmt(UCCodeGenerator* g, const UCStmt* stmt) {
             emit_fmt_writeln(g, "br label %s", s->continue_lbl);
             break;
         }
+        case UC_STMT_ASM_BLOCK:
+            /* [0.3.3 commit 8b] inline asm — implementation deferred to follow-up
+             * commit (this is stub to satisfy -Wswitch). For now, emit a no-op
+             * comment so codegen doesn't choke. Full LLVM InlineAsm emit
+             * arrives in commit 8b-final. */
+            emit_fmt_writeln(g, "; asm { %s }  ; commit 8b: codegen stub",
+                             stmt->as.asm_block ? stmt->as.asm_block->template_str : "");
+            break;
     }
 }
 

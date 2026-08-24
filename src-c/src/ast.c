@@ -573,6 +573,82 @@ UCStmt* uc_stmt_decl(UCVarDecl* d) {
     return s;
 }
 
+/* ------------------------------------------------------------------------- */
+/* [0.3.3 commit 8b] Inline-assembly AST node (UCAsmOperand / UCASTAsmBlock) */
+/* ------------------------------------------------------------------------- */
+
+/* Construct one operand of an asm block. Takes ownership of `constraint`
+ * and `var_name` (both NUL-terminated, heap-allocated by the parser).
+ * Per spec §10.3 + runtime-architecture §8: constraint is e.g. "=a",
+ * "0", "r", "=r", "+r", "~{dir}", "memory"; var_name is a single C
+ * identifier used for the operand position. PARSE-ONLY: we don't
+ * re-validate the constraint grammar here — the parser already
+ * verified the literal-shape (string) and LLVM validates the
+ * inline-asm constraints at IR lowering time. */
+UCAsmOperand* uc_asm_operand_new(char* constraint, char* var_name) {
+    UCAsmOperand* op = (UCAsmOperand*)xcalloc(1, sizeof(UCAsmOperand));
+    op->constraint = constraint;
+    op->var_name = var_name;
+    return op;
+}
+
+/* Construct the asm-block AST node. Takes ownership of template_str,
+ * outputs (UCVec* of UCAsmOperand*), inputs, clobbers (UCVec* of char*);
+ * each Vec may be NULL to denote the segment was omitted (the parser
+ * leaves them NULL when `:` does not appear after the template / previous
+ * segment). is_volatile is 1 when the `volatile` qualifier was present
+ * (i.e. `asm volatile { ... }`). */
+UCASTAsmBlock* uc_ast_asm_block_new(char* template_str,
+                                    UCVec* outputs, UCVec* inputs,
+                                    UCVec* clobbers, int is_volatile) {
+    UCASTAsmBlock* b = (UCASTAsmBlock*)xcalloc(1, sizeof(UCASTAsmBlock));
+    b->template_str = template_str;
+    b->outputs = outputs;
+    b->inputs = inputs;
+    b->clobbers = clobbers;
+    b->is_volatile = is_volatile;
+    return b;
+}
+
+/* Construct a UCStmt wrapping a UCASTAsmBlock. */
+UCStmt* uc_stmt_asm_block(UCASTAsmBlock* b) {
+    UCStmt* s = (UCStmt*)xcalloc(1, sizeof(UCStmt));
+    s->kind = UC_STMT_ASM_BLOCK;
+    s->as.asm_block = b;
+    return s;
+}
+
+/* Free the operand structs inside an outputs/inputs UCVec. Used as the
+ * uc_vec_free item-free callback so the helper at the call site stays a
+ * one-liner. Mirrors the param_free_local / macro_free_local pattern
+ * used elsewhere in parser.c. */
+static void asm_operand_free_local(void* p) {
+    UCAsmOperand* op = (UCAsmOperand*)p;
+    if (!op) return;
+    free(op->constraint);
+    free(op->var_name);
+    free(op);
+}
+
+/* Deep-free a UCASTAsmBlock. The three vectors are independent — only
+ * the present ones are walked — and each entry is freed by its own
+ * item-destructor (operands for outputs/inputs, raw strings for
+ * clobbers). Used by stmt_free() in the UC_STMT_ASM_BLOCK branch. */
+static void asm_block_free_local(UCASTAsmBlock* b) {
+    if (!b) return;
+    free(b->template_str);
+    if (b->outputs) uc_vec_free(b->outputs, asm_operand_free_local);
+    if (b->inputs)  uc_vec_free(b->inputs,  asm_operand_free_local);
+    if (b->clobbers) {
+        for (size_t i = 0; i < uc_vec_len(b->clobbers); i++) {
+            char* c = (char*)uc_vec_at(b->clobbers, i);
+            free(c);
+        }
+        uc_vec_free(b->clobbers, NULL);
+    }
+    free(b);
+}
+
 static void stmt_free(void* p) {
     UCStmt* s = (UCStmt*)p;
     if (!s) return;
@@ -599,6 +675,10 @@ static void stmt_free(void* p) {
         case UC_STMT_EXPR:     expr_free(s->as.expr); break;
         case UC_STMT_FREE:     expr_free(s->as.expr); break;
         case UC_STMT_DECL:     uc_var_decl_free(s->as.decl); break;
+        /* [0.3.3 commit 8b] asm block: deep-free all four segments
+         * (template_str, outputs UCVec of UCAsmOperand*, inputs UCVec
+         * of UCAsmOperand*, clobbers UCVec of char*). */
+        case UC_STMT_ASM_BLOCK: asm_block_free_local(s->as.asm_block); break;
     }
     free(s);
 }
@@ -1109,6 +1189,13 @@ static void stmt_dump(const UCStmt* s, FILE* out, int indent) {
                         s->as.decl->name.data ? s->as.decl->name.data : "");
                 type_dump(s->as.decl->ty, out, indent + 4);
                 if (s->as.decl->init) expr_dump(s->as.decl->init, out, indent + 4);
+            }
+            break;
+        case UC_STMT_ASM_BLOCK:
+            fputs("AsmBlock\n", out);
+            if (s->as.asm_block && s->as.asm_block->is_volatile) {
+                dump_indent(out, indent + 2);
+                fputs("Volatile\n", out);
             }
             break;
     }
