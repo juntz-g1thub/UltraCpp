@@ -18,7 +18,7 @@
 
 > **[0.3.1]** 本版本在 0.3.0 的基础上，**新增 §4.13「表达式分类：lvalue 与 rvalue」** 完整章节，并在 §4.1 优先级表新增 2.5 级一元运算符优先级行、§4.6 赋值运算符表 11 行统一补「LHS 必须是 lvalue」约束、§7.8 引用规则 1 改写并交叉引用 §4.13.2、§12.1 EBNF 增加 `lvalue` / `rvalue` 非终结符、§12.3 附录优先级表同步 §4.1 加 2.5 级。**不引入新语法、不修改现有语义**，仅补 lvalue 概念术语并修 m0_42 deref-assign bug。详见变更日志中 0.3.1 行。
 
-> **[0.3.4 修订重点]** 在 0.3.3 的基础上，**完成 spec gap 收尾 + stdlib bootstrap 路径实化**：S6 FFI extern body 来源策略（§6 extern "C" 块体符号统一从 §11.0.2 `lib/sys.uc` 解析，规避与 §S8 deref-assign 边界冲突）；S8 deref-assign 类型安全（§4.13.5 deref 边界 + §4.13.2 lvalue 分类明确禁止 unsafe coerce）；S9 main exit code 8-bit 截断（§6.1 main 返回类型 infer + §11.0.1 builtin 表 `exit` 仅 low 8 bits 生效）；§11.0.2 UltraCPP stdlib 路径实化（`lib/*.uc` 6 文件落地：`print` / `string` / `memory` / `math` / `alloc` / `sys`）；§11.0.3 codegen 集成重写（`abs_int` 从 builtin 迁移到 `lib/math.uc`，走 LLVMBuildMemcpy + IR 标记）；§11.0.4 新增（UltraCPP stdlib 自举路径：`lib/print.uc` 等 6 文件自举 + bootstrap 脚本 + §11.0.2 双向引用）。详见变更日志中 0.3.4 行。
+> **[0.3.4 修订重点]** 在 0.3.3 的基础上，**完成 spec gap 收尾 + stdlib bootstrap 路径实化**：S6 FFI extern body 来源策略（§6 extern "C" 块体符号统一从 §11.0.2 `lib/sys.uc` 解析，规避与 §S8 deref-assign 边界冲突）；S8 deref-assign 类型安全（§4.13.5 deref 边界 + §4.13.2 lvalue 分类明确禁止 unsafe coerce）；S9 main exit code 8-bit 截断（§6.1 main 返回类型 infer + §11.0.1 builtin 表 `exit` 仅 low 8 bits 生效）；§11.0.2 UltraCPP stdlib 路径实化（`lib/*.uc` 6 文件落地：`print` / `string` / `memory` / `math` / `alloc` / `sys`）；§11.0.3 codegen 集成重写（`abs_int` 从 builtin 迁移到 `lib/math.uc`，走 LLVMBuildMemcpy + IR 标记）；§11.0.5 新增（UltraCPP stdlib 自举路径：`lib/print.uc` 等 6 文件自举 + bootstrap 脚本 + §11.0.2 双向引用；§11.0.4 "添加新 builtin 的流程"已存在，故 §11.0.5 编号因 §11.0.4 占用改用）。详见变更日志中 0.3.4 行。
 
 | 主题 | 决策编号 | 一句话摘要 |
 |------|---------|-----------|
@@ -47,7 +47,7 @@
 
 | 决策 | 章节 | 描述 |
 |------|------|------|
-| **0.3.4 本版本** | §S6, §S8, §S9, §11.0.2, §11.0.3, §11.0.4 | **本版本要点 (2026-08-21)** — spec gap 收尾 + stdlib bootstrap 路径实化：S6 FFI extern body 来源策略（§6 extern "C" 块体符号统一从 §11.0.2 `lib/sys.uc` 解析）；S8 deref-assign 类型安全（§4.13.5 + §4.13.2 明确禁止 unsafe coerce）；S9 main exit code 8-bit 截断（§6.1 + §11.0.1 `exit` 仅 low 8 bits 生效）；§11.0.2 UltraCPP stdlib 路径实化（`lib/*.uc` 6 文件落地：`print` / `string` / `memory` / `math` / `alloc` / `sys`）；§11.0.3 codegen 集成重写（`abs_int` 从 builtin 迁移到 `lib/math.uc`，走 LLVMBuildMemcpy + IR 标记）；§11.0.4 新增（UltraCPP stdlib 自举路径 + bootstrap 脚本 + §11.0.2 双向引用）。详见本 spec 各章节修订 + 变更日志后续行。 |
+| **0.3.4 本版本** | §S6, §S8, §S9, §11.0.2, §11.0.3, §11.0.5 | **本版本要点 (2026-08-21)** — spec gap 收尾 + stdlib bootstrap 路径实化：S6 FFI extern body 来源策略（§6 extern "C" 块体符号统一从 §11.0.2 `lib/sys.uc` 解析）；S8 deref-assign 类型安全（§4.13.5 + §4.13.2 明确禁止 unsafe coerce）；S9 main exit code 8-bit 截断（§6.1 + §11.0.1 `exit` 仅 low 8 bits 生效）；§11.0.2 UltraCPP stdlib 路径实化（`lib/*.uc` 6 文件落地：`print` / `string` / `memory` / `math` / `alloc` / `sys`）；§11.0.3 codegen 集成重写（`abs_int` 从 builtin 迁移到 `lib/math.uc`，走 LLVMBuildMemcpy + IR 标记）；§11.0.5 新增（UltraCPP stdlib 自举路径 + bootstrap 脚本 + §11.0.2 双向引用；§11.0.4 "添加新 builtin 的流程"已存在，故 stdlib 自举路径落到 §11.0.5）。详见本 spec 各章节修订 + 变更日志后续行。 |
 | **S4 (0.3.2 新增)** | §4.1, §4.8 (修订), §4.8.1 (新增), §12.1, §12.3 | **C-style 显式类型转换 `(T)expr`**：新增 §4.8.1 完整子节（5 小节：语义 8 行类型转换表；与函数式 `T(expr)` 完全等价；4 类示例：整数↔指针 / 宽度 / FFI / 类型断言；编译期检查；交叉引用）。§4.8 加注提示 `(T)` 中 T 是类型名时为 cast；§4.1 主表 + §12.3 附录表第 2.5 级同步加 C-style cast 行；§12.1 EBNF 新增 `cast_expression` 产生式并把 `'cast' '(' type ',' expression ')'` 加入 `unary_expression`。**修复 m0_42 deref-assign** 中 `*((int*)malloc(8))` 编译失败，向后兼容。 |
 | **S5 (0.3.2 新增)** | §6.1 (修订), §6.2 (修订), §6.2.1 (新增) | **函数返回类型 infer 规则**：新增 §6.2.1 完整子节（5 小节：3 级优先级 builtin > 用户 > extern；7 上下文传播表；void 函数约束；codegen 集成伪代码；交叉引用）。§6.1 加返回类型编译期检查（3 条）；§6.2 加 §6.2.1 引用 + §11.0 引用。**修复 m0_41 abs_int 链接**：extern 符号表由 parser 解析 `extern "C"` 块时填充（commit b45f851），codegen 通过 `lookup_extern_func` 查得返回类型，规避硬编码 i32 错位。 |
 | **§11.0 (0.3.2 新增)** | §11 (修订), §11.0 (新增), §11.1-§11.6 (跨引用) | **builtin 签名总表**：新增 §11.0（4 小节：16 行 builtin 表覆盖 I/O / 字符串 / 内存 / 工具 / 数学；LLVM IR 类型映射 12 行；codegen 集成 `builtin_sigs[]` 数组伪代码；添加新 builtin 流程；交叉引用）。§11 标题加 0.3.2 修订注 + §11.0 总览引用；§11.1-§11.6 各子节加 §11.0 双向引用注。`move` / `alloc` 标记为类型参数化 builtin。 |
@@ -2256,7 +2256,7 @@ UltraCPP 采用 **C 风格的预编译宏语法**，不采用 Rust 的 `#[cfg(..
 | `@warning("msg")` | ✅ 已实现 | 8a |
 | 预定义宏自动检测（`TARGET_OS_*` / `TARGET_ARCH_*`）| ✅ 已实现（per runtime-arch §11）| 8a |
 
-**0.3.4 确认**：0.3.4 commit 11b 确认 0.3.3 commit 8a 全部落地，无未实现项。0.4.0+ Stage 1 自举阶段需用本机制跨平台分发 `lib/sys/raw.uc`（per §11.0.4）。
+**0.3.4 确认**：0.3.4 commit 11b 确认 0.3.3 commit 8a 全部落地，无未实现项。0.4.0+ Stage 1 自举阶段需用本机制跨平台分发 `lib/sys/raw.uc`（per §11.0.5）。
 
 ### 10.3 内联汇编机制 *(0.3.3 新增, per runtime-architecture §8)*
 
@@ -2614,7 +2614,7 @@ UltraCPP 提供以下 **builtin 函数**。builtin 函数由编译器**内置识
 
 **与 0.3.3 文本的关系**：0.3.3 spec §11.0.2 描述「14 项 stdlib 删除 + `lib/uc_runtime.c` 临时 bootstrap」规划，0.3.4 把该规划实化为 6 文件落地。`BUILTIN_SIGS[]` **不再** 含 `abs_int` / `print` / `strlen` / `memcpy` 等历史 builtin，全部走 extern lookup（per §11.0.3）。
 
-详见 §11.0.4 UltraCPP stdlib 自举路径（Stage 1 设计，0.4.0+ 启动）。
+详见 §11.0.5 UltraCPP stdlib 自举路径（Stage 1 设计，0.4.0+ 启动）。
 
 #### 11.0.3 codegen 集成（0.3.4 修订） *(0.3.2 §11.0.2 改, 0.3.3 §11.0.3 改, 0.3.4 重写, runtime-architecture 集成)*
 
@@ -2626,7 +2626,7 @@ UltraCPP 提供以下 **builtin 函数**。builtin 函数由编译器**内置识
 - 调用方仍可写 `abs_int(x)`，codegen 通过 extern function lookup 链接到 lib/math.o::uc_abs
 - 其他历史 builtin（print / strlen / memcpy 等）随 stdlib 引导（`lib/*.uc`）走 extern 路径
 
-**C bootstrap 不存在**：原计划假设的 `lib/uc_runtime.c` C bootstrap 已被证伪（per 0.3.3 process §2.5）。UltraCPP 直接 bootstrap `lib/*.uc`，详见 §11.0.4。
+**C bootstrap 不存在**：原计划假设的 `lib/uc_runtime.c` C bootstrap 已被证伪（per 0.3.3 process §2.5）。UltraCPP 直接 bootstrap `lib/*.uc`，详见 §11.0.5。
 
 `src-c/src/codegen.c` 中，builtin 签名表用 `static const struct` 数组维护：
 
@@ -2723,7 +2723,22 @@ static LLVMValueRef gen_call(CodeGen* g, UCExprCall* call) {
 4. **stdlib 函数**（print / strlen / memcpy / abs_int 等）**不进 BUILTIN_SIGS[]** — 在 `lib/*.uc` 用 UltraCPP 自己实现（per runtime-architecture §3.1 + §5.3）；用户通过 `import "lib/print.uc"` 或类似机制使用
 5. **intrinsic 函数**（null / is_null / sizeof / alignof）不进 BUILTIN_SIGS[] — codegen 直接翻译（per runtime-architecture §5.2）；在 AST / parser 用关键字 + codegen 用 `UC_EXPR_IS_NULL` / `UC_EXPR_SIZEOF` / `UC_EXPR_ALIGNOF` / `UC_EXPR_NULL` 特殊节点
 
-#### 11.0.5 与其他章节的交叉引用 *(0.3.2 §11.0.4 改, 0.3.3 §11.0.5 改, runtime-architecture 集成)*
+#### 11.0.5 UltraCPP stdlib 自举路径（0.3.4+）
+
+UltraCPP 编译器采用分阶段自举路径：
+
+- **Stage 0（0.3.3，**已废弃**）**：C bootstrap（`lib/uc_runtime.c`）作为临时 stdlib。该路径已被证伪——实测 src-c/ 当前无 lib/uc_runtime.c，采用 inline LLVM IR + libc 链接的混合方案（per `.dev/drafts/0.3.3-implementation-process.md` §2.5）。
+
+- **Stage 1（0.3.4，当前阶段）**：UltraCPP 编译 `lib/*.uc`，输出 LLVM IR，与 src-c/ 编译器 IR 链接。
+  - **编译路径**：`uc_compiler` (src-c/build/uc_lexer → uc_compiler) 读 lib/*.uc → emit LLVM IR → `llc` → lib.o
+  - **链接路径**：用户 .uc 编译 → emit LLVM IR → `llc` → user.o → 链接 lib.o + libc (for sys$*) → exe
+  - **启动约束**：`lib/*.uc` 必须先于用户代码编译；用 `bootstrap=stage1` 标志区分
+
+- **Stage 2（0.4.0+，**未来**）**：UltraCPP 编译自身 src-uc/。
+
+详见 runtime-architecture §9。
+
+#### 11.0.6 与其他章节的交叉引用 *(0.3.2 §11.0.4 改, 0.3.3 §11.0.5 改, 0.3.4 §11.0.5 → §11.0.6 改, runtime-architecture 集成)*
 
 | 章节 | 关系 |
 |------|------|
@@ -3417,6 +3432,74 @@ __thread int local = 42;  // 每线程独立
 
 ---
 
+## 14. Spec Gap Index *(0.3.4 新增, per `.dev/drafts/0.3.0-m0-priority.md` §9.x)*
+
+> **[0.3.4 新增]** 本章集中列出 0.3.x 阶段 M0 baseline 中尚未在主章节里覆盖、但已在 spec 修订中明确定义的 spec gap 缺口。每节均按 m0-priority §9.x 原始编号（S6 / S8 / S9）保留编号，便于跨 spec gap 文档交叉引用。
+
+### §S6 FFI extern body 来源策略（0.3.4 新增）
+
+`extern "C" { int abs_int(int x); }` body 应来自哪里？
+
+**三级查找路径**（按优先级）：
+1. **链接的 UltraCPP stdlib**（`lib/*.uc` 编译产物）— 例：abs_int → lib/math.o::uc_abs
+2. **链接的 UltraCPP 用户代码**（同一进程其他 .o）— 例：用户自定义 extern 函数
+3. **libc**（作为 fallback）— 仅 Stage 1 自举需求保留
+
+**codegen 实现**：
+- emit `declare external fn <name>`（LLVM IR）
+- 链接时由 linker 解析（按上述三级顺序）
+- 运行时不需运行时代价（extern 是编译期 binding）
+
+**m0 测试影响**：m0_41_extern_c 已 PASS（per commit 7d），但失败原因是 test runner exit code 提取 bug（per §S9 解决），非 §S6 路径问题。
+
+**关联**：详见 §10.1 extern "C" 块；详见 runtime-architecture §3.1。
+
+### §S8 deref-assign 类型安全（0.3.4 新增）
+
+`*p = X` 中 `*p` 应满足 lvalue 分类 + pointee type 匹配：
+
+**lvalue 分类**（per §4.13.5 deref 语义）：
+- `*p` 是 lvalue（type = pointee type T）
+- 赋值 `*p = X` 中 `*p` 是 lvalue（与 §4.13.3 赋值上下文约束一致）
+
+**codegen emit 流程**：
+- `*p` → 计算 `p` 的 SSA 值（type `T*`）
+- emit `store T X, T* %p`（type 匹配）
+- 当前 codegen UC_UN_DEREF emit `store i32 X, i8* %p`（类型不匹配）— **需修订为 commit 11c**
+
+**实现细节**：
+- codegen.c UC_UN_DEREF case 需检查 `*p` 的 pointee type（来自 `p->as.unary_expr` 类型推断）
+- pointee type 推断：`p` 是 `int*` → pointee `int`；`p` 是 `MyStruct*` → pointee `%struct.MyStruct`
+- store 指令 emit：`store <pointee_type> X, <pointee_type>* %p`
+
+**m0 测试影响**：m0_30 + m0_34 + m0_36 + m0_42 deref-assign 翻 PASS（commit 11c）。
+
+**关联**：详见 §4.13.5 deref 语义（deref 永远 lvalue）；详见 commit 11c 实施计划。
+
+### §S9 main exit code 8-bit 截断语义（0.3.4 新增）
+
+`int main()` 的返回值通过 OS exit 调用传递。8-bit 截断是 OS-level 行为（bash `$?` 取低 8 bit），不是 UltraCPP 行为。
+
+**UltraCPP 编译器约束**：
+- 不做截断；保留 main 返回完整 int 值
+- 调用 `exit(return_value)` 系统调用传递完整 int
+
+**测试 runner 约束**：
+- 跑 main 进程 → `wait` 子进程 → 捕获 `wstatus` → `WEXITSTATUS(wstatus)` 取出**完整** exit code
+- 不要取低 8 bit（OS/shell 行为）作为预期 exit code
+
+**示例**：
+- `int main() { return 720; }` — UltraCPP 调用 `exit(720)`
+- bash `$?` 取低 8 bit → 720 % 256 = 208
+- runner 应捕获 720（而非 208）
+
+**m0 测试影响**：
+- m0_19（factorial = 720）：当前 FAIL 因 runner 取低 8 bit；§S9 修复后 PASS
+
+**关联**：详见 runtime-architecture §11 OS 集成；详见 commit 11b 实施计划。
+
+---
+
 ## 文档历史
 
 | 版本 | 日期 | 描述 |
@@ -3426,6 +3509,7 @@ __thread int local = 42;  // 每线程独立
 | 0.1.0 | 2026-04-18 | 0.1.0 定版 |
 | 0.2.0 | 2026-08-07 | 落实 8 条设计决策 D-1 .. D-8：`unique` 泛型化、`&` 不可变借用、`&mut` 入语言、`move` 内建 primitive、显式化赋值 move 规则、`alloc`/`free` 不强制配对、`DanglingReference` 触发条件、C 主机优先决策。*（注：0.3.0 反转 D-3，删除 `&mut`；D-2 关于 `&` 语义被 Q3 反转覆盖。）* |
 | **0.3.0** | **2026-08-07** | **本版本**：两条权限彻底拆分（Rule 22）；新增 `#modlaw` 指令（Rule 23）；新增 `mod()` / `unmod()` 表达式（Rule 24）；新增线程模型章节 §13（Rule 25–28）；改写 §3.3 引用类型为**单一 `T&`**（Q3 反转，**删除 `T&mut`**）；改写 §3.8 指针修饰符为「与 C++ 相反」的 Q6 自定义语义；改写 §7.1 赋值为「隐式 `mod()` + 不转所有权」（Q4=a）；重写 §3.2 区分 owning 与 non-owning 指针（Rule 2B）；§11.5.1 新增 `mutex<T>` / `atomic<T>` 标准库类型（修订 #5、#6）。状态：草稿。 |
+| 0.3.4 | 2026-08-21 | 本版本（S6/S8/S9 spec gap + stdlib bootstrap 路径 + §11.0.2 实化 + abs_int → uc_abs 迁移） |
 | **0.3.1** | **2026-08-12** | **本版本（lvalue / rvalue 概念明确化，S2）**：新增 §4.13 「表达式分类：lvalue 与 rvalue」完整章节（§4.13.1 定义 + §4.13.2 lvalue 分类表 + §4.13.3 赋值上下文约束 + §4.13.4 codegen 实现约束 + §4.13.5 交叉引用）；§4.1 优先级表补 2.5 级一元 op（`*` `&` `+` `-` `!` `~` `mod` `unmod` 前缀 `++` `--`，右到左）；§4.6 赋值运算符表 11 行统一加「LHS 必须是 lvalue (§4.13.2)」约束 + 头注 + 结合性 + lvalue 上下文说明；§7.8 引用创建规则 1 引用 §4.13.2 并加 5 合法 + 4 非法示例；§12.1 EBNF 加 `lvalue` / `rvalue` 非终结符并改 `assignment_expression` LHS 标注；§12.3 附录优先级表同步加 2.5 级。**修复 m0_42 deref-assign bug**（`*view = payload` 从 compile_failed → PASS）。不引入新语法、不修改现有语义、向后兼容。状态：草稿。 |
 
 ---
