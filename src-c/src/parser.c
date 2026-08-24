@@ -289,6 +289,9 @@ static UCStmt* parse_expr_stmt(UCParser* p);
 static UCStmt* parse_decl_stmt(UCParser* p, UCType* ty);
 static UCStmt* parse_free_stmt(UCParser* p);
 static UCStmt* parse_unsafe_stmt(UCParser* p);
+static UCStmt* parse_asm_block_statement(UCParser* p);
+static UCVec* parse_asm_operand_list(UCParser* p);
+static UCVec* parse_asm_clobber_list(UCParser* p);
 static UCExpr* parse_expression(UCParser* p);
 static UCExpr* parse_ternary(UCParser* p);
 static UCExpr* parse_assignment(UCParser* p);
@@ -1316,6 +1319,7 @@ static UCStmt* parse_statement(UCParser* p) {
         case UC_TOK_KW_CONTINUE:   return parse_continue_stmt(p);
         case UC_TOK_KW_FREE:       return parse_free_stmt(p);
         case UC_TOK_KW_UNSAFE:     return parse_unsafe_stmt(p);
+        case UC_TOK_KW_ASM:        return parse_asm_block_statement(p);
         case UC_TOK_KW_STRUCT:
         case UC_TOK_KW_EXPORT:
         case UC_TOK_KW_IMPORT:
@@ -2327,4 +2331,98 @@ UCModule* uc_parser_parse(UCParser* p) {
     }
 
     return uc_module_new(decls);
+}
+
+/* ------------------------------------------------------------------------- */
+/* [0.3.3 commit 8b] parse asm { ... } inline assembly block.               */
+/* Forms supported:                                                         */
+/*   asm { "template" }                                                     */
+/*   asm { "template" : "=r"(out_var) }                                     */
+/*   asm { "template" : "=r"(out_var) : "r"(in_var) }                       */
+/*   asm { "template" : "=r"(out_var) : "r"(in_var) : "clobber1", ... }     */
+/*   asm volatile { ... }                                                   */
+/* Per 0.3.3 §10.3 + runtime-architecture §8.                               */
+/* ------------------------------------------------------------------------- */
+static UCStmt* parse_asm_block_statement(UCParser* p) {
+    advance(p);  /* consume 'asm' */
+    int is_volatile = 0;
+    if (match(p, UC_TOK_KW_VOLATILE)) {
+        is_volatile = 1;
+    }
+    if (!expect(p, UC_TOK_LBRACE, "'{' after 'asm'")) return NULL;
+    if (!check(p, UC_TOK_STRING)) {
+        err_here(p, "expected string literal for asm template");
+        return NULL;
+    }
+    char* template_str = (char*)malloc(p->current.lexeme_len + 1);
+    memcpy(template_str, p->current.lexeme, p->current.lexeme_len);
+    template_str[p->current.lexeme_len] = '\0';
+    advance(p);
+    UCVec* outputs = NULL;
+    UCVec* inputs = NULL;
+    UCVec* clobbers = NULL;
+    if (match(p, UC_TOK_COLON)) {
+        outputs = parse_asm_operand_list(p);
+        if (!outputs) return NULL;
+        if (match(p, UC_TOK_COLON)) {
+            inputs = parse_asm_operand_list(p);
+            if (!inputs) return NULL;
+            if (match(p, UC_TOK_COLON)) {
+                clobbers = parse_asm_clobber_list(p);
+                if (!clobbers) return NULL;
+            }
+        }
+    }
+    if (!expect(p, UC_TOK_RBRACE, "'}' to close asm block")) return NULL;
+    UCASTAsmBlock* block = uc_ast_asm_block_new(template_str, outputs, inputs, clobbers, is_volatile);
+    return uc_stmt_asm_block(block);
+}
+
+static UCVec* parse_asm_operand_list(UCParser* p) {
+    UCVec* ops = uc_vec_new();
+    if (check(p, UC_TOK_COLON) || check(p, UC_TOK_RBRACE)) return ops;
+    for (;;) {
+        if (!check(p, UC_TOK_STRING)) {
+            err_here(p, "expected string literal for asm operand constraint");
+            return NULL;
+        }
+        char* constraint = (char*)malloc(p->current.lexeme_len + 1);
+        memcpy(constraint, p->current.lexeme, p->current.lexeme_len);
+        constraint[p->current.lexeme_len] = '\0';
+        advance(p);
+        if (!expect(p, UC_TOK_LPAREN, "'(' after asm constraint")) return NULL;
+        if (!check(p, UC_TOK_IDENT)) {
+            err_here(p, "expected identifier inside asm operand");
+            return NULL;
+        }
+        char* var_name = (char*)malloc(p->current.lexeme_len + 1);
+        memcpy(var_name, p->current.lexeme, p->current.lexeme_len);
+        var_name[p->current.lexeme_len] = '\0';
+        advance(p);
+        if (!expect(p, UC_TOK_RPAREN, "')' after asm operand")) return NULL;
+        UCAsmOperand* op = (UCAsmOperand*)calloc(1, sizeof(UCAsmOperand));
+        op->constraint = constraint;
+        op->var_name = var_name;
+        uc_vec_push(ops, op);
+        if (!match(p, UC_TOK_COMMA)) break;
+    }
+    return ops;
+}
+
+static UCVec* parse_asm_clobber_list(UCParser* p) {
+    UCVec* clobs = uc_vec_new();
+    if (check(p, UC_TOK_RBRACE)) return clobs;
+    for (;;) {
+        if (!check(p, UC_TOK_STRING)) {
+            err_here(p, "expected string literal for asm clobber");
+            return NULL;
+        }
+        char* c = (char*)malloc(p->current.lexeme_len + 1);
+        memcpy(c, p->current.lexeme, p->current.lexeme_len);
+        c[p->current.lexeme_len] = '\0';
+        advance(p);
+        uc_vec_push(clobs, c);
+        if (!match(p, UC_TOK_COMMA)) break;
+    }
+    return clobs;
 }
