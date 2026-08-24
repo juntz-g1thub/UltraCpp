@@ -550,6 +550,7 @@ static char* emit_move_call(UCCodeGenerator* g, const UCExpr* inner, UCError* er
 static char* emit_clone_call(UCCodeGenerator* g, const UCExpr* inner, UCError* err);
 static char* emit_alloc_call(UCCodeGenerator* g, const UCType* ty, UCError* err);
 static void  emit_free_call(UCCodeGenerator* g, const UCExpr* inner, UCError* err);
+static void  emit_asm_block(UCCodeGenerator* g, const UCASTAsmBlock* block, UCError* err);
 
 /* ------------------------------------------------------------------------- */
 /* Top level dispatch                                                        */
@@ -1019,14 +1020,22 @@ static void gen_stmt(UCCodeGenerator* g, const UCStmt* stmt) {
             emit_fmt_writeln(g, "br label %s", s->continue_lbl);
             break;
         }
-        case UC_STMT_ASM_BLOCK:
-            /* [0.3.3 commit 8b] inline asm — implementation deferred to follow-up
-             * commit (this is stub to satisfy -Wswitch). For now, emit a no-op
-             * comment so codegen doesn't choke. Full LLVM InlineAsm emit
-             * arrives in commit 8b-final. */
-            emit_fmt_writeln(g, "; asm { %s }  ; commit 8b: codegen stub",
-                             stmt->as.asm_block ? stmt->as.asm_block->template_str : "");
+        case UC_STMT_ASM_BLOCK: {
+            /* [0.3.3 commit 8b step 3] replace stub with real LLVM
+             * InlineAsm emission. Per runtime-architecture §8:
+             * 'call void asm sideeffect "template", "constraints"()'.
+             * See emit_asm_block() above for full rationale.
+             *
+             * gen_stmt has no err out-param (matches the existing
+             * UC_STMT_FREE / UC_STMT_EXPR / UC_STMT_RETURN pattern
+             * noted at emit_free_call()), so errors here are simply
+             * discarded — a malformed asm block still produces IR,
+             * but the parser/AST layer should never let a bad block
+             * reach codegen. */
+            UCError err2; uc_error_init(&err2);
+            emit_asm_block(g, stmt->as.asm_block, &err2);
             break;
+        }
     }
 }
 
@@ -1446,6 +1455,88 @@ static void emit_free_call(UCCodeGenerator* g, const UCExpr* inner, UCError* err
     /* Lifetime marker per runtime-architecture §3.2 (PARSE-ONLY no-op). */
     emit_fmt_writeln(g, "call void @uc_free_mark(i8* %s)", p);
     free(p);
+}
+
+/* [0.3.3 commit 8b step 3] emit_asm_block: emit `asm { ... }` as LLVM
+ * 'call void asm sideeffect "template", "constraints"()'.
+ *
+ * Per runtime-architecture §8 (Inline Assembly) + spec §10.3: GCC
+ * constraint style, 4-segment form. The constraint string passed to
+ * LLVM is built by concatenating:
+ *   outputs:  "=r,=r,..."   (one slot per output operand)
+ *   inputs:   ",r,r,..."    (comma-prefixed)
+ *   clobbers: ",~{rcx},~{memory},..." (wrapped in ~{...})
+ *
+ * PARSE-ONLY per plan §3 commit 8b: constraint chars are forwarded
+ * verbatim and LLVM validates the grammar at IR level. The parser
+ * does not pre-validate (consistent with the rest of the commit).
+ *
+ * Approach: string-based IR emission (matching codegen.c's existing
+ * emit_fmt_writeln() pattern) rather than LLVM C API calls
+ * (LLVMInlineAsm / LLVMCreateInlineAsm). String mode keeps codegen
+ * uniform with all other statements in this file.
+ *
+ * Result: a void-returning call (sideeffect is required by LLVM for
+ * asm without a return value), bound to a fresh temp for syntactic
+ * symmetry with the other statements in this file. */
+static void emit_asm_block(UCCodeGenerator* g, const UCASTAsmBlock* block, UCError* err) {
+    if (!block || !block->template_str) {
+        uc_error_set(err, UC_ERR_CODEGEN, 0, 0, NULL, "invalid asm block");
+        return;
+    }
+    /* Build constraint string: concatenate operand constraints + clobbers */
+    /* Format: "=r,=r,r,r,~{clobber},~{clobber}" */
+    size_t cap = 64;
+    char* constraint = (char*)malloc(cap);
+    constraint[0] = '\0';
+    size_t len = 0;
+
+    /* Outputs: "=r,=r" */
+    if (block->outputs) {
+        for (size_t i = 0; i < uc_vec_len(block->outputs); i++) {
+            UCAsmOperand* op = (UCAsmOperand*)uc_vec_at(block->outputs, i);
+            size_t need = strlen(op->constraint) + 2;
+            while (len + need >= cap) { cap *= 2; constraint = (char*)realloc(constraint, cap); }
+            if (i > 0) { strcat(constraint, ","); len++; }
+            strcat(constraint, op->constraint);
+            len += strlen(op->constraint);
+        }
+    }
+    /* Inputs: ",r,r" */
+    if (block->inputs) {
+        for (size_t i = 0; i < uc_vec_len(block->inputs); i++) {
+            UCAsmOperand* op = (UCAsmOperand*)uc_vec_at(block->inputs, i);
+            size_t need = strlen(op->constraint) + 2;
+            while (len + need >= cap) { cap *= 2; constraint = (char*)realloc(constraint, cap); }
+            strcat(constraint, ","); len++;
+            strcat(constraint, op->constraint);
+            len += strlen(op->constraint);
+        }
+    }
+    /* Clobbers: ",~{clobber},~{clobber}" */
+    if (block->clobbers) {
+        for (size_t i = 0; i < uc_vec_len(block->clobbers); i++) {
+            char* c = (char*)uc_vec_at(block->clobbers, i);
+            size_t need = strlen(c) + 5;
+            while (len + need >= cap) { cap *= 2; constraint = (char*)realloc(constraint, cap); }
+            strcat(constraint, ",~{");
+            strcat(constraint, c);
+            strcat(constraint, "}");
+            len += need - 1;
+        }
+    }
+
+    /* Emit LLVM IR: 'call void asm sideeffect "template", "constraints"()' */
+    char* res = mk_temp(g);
+    if (strlen(constraint) == 0) {
+        emit_fmt_writeln(g, "%s = call void asm sideeffect \"%s\", \"\"()",
+                         res, block->template_str);
+    } else {
+        emit_fmt_writeln(g, "%s = call void asm sideeffect \"%s\", \"%s\"()",
+                         res, block->template_str, constraint);
+    }
+    free(res);
+    free(constraint);
 }
 
 /* ------------------------------------------------------------------------- */
