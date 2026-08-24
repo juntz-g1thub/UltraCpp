@@ -1503,6 +1503,26 @@ UltraCPP 中「语言原语」分两类：
 | §12.1 EBNF | `builtin_function_call` 产生式见 §12.1（0.3.3 新增） — 仅含 6 项语言原语；stdlib 走 `import "lib/*.uc"`，不在 builtin_function_call |
 | §12.3 附录优先级表 | 同步 §4.1 修订 |
 
+#### 7.0.6 abs_int → uc_abs 迁移说明 *(0.3.4 新增)*
+
+> **[0.3.4 修订]** abs_int 已从 `BUILTIN_SIGS[]`（src-c/src/codegen.c）移除，由 UltraCPP 自实现的 `lib/math.uc::uc_abs` 提供（per commit 11a）。调用方仍可写 `abs_int(x)` 形式，codegen 通过 extern function lookup 链接到 lib/math.o::uc_abs。spec §11.0.3 codegen 集成相应修订。
+
+**历史**：0.3.2 起 `abs_int` 收录 `BUILTIN_SIGS[]` 第 1 项，并以 `@builtin_abs_int` inline IR 实现（21 行）；0.3.3 阶段随 stdlib 整体移出 BUILTIN_SIGS[]，0.3.4 commit 11a 完全移除 inline IR 实现。
+
+**0.3.4 迁移路径**：
+
+1. `abs_int` 从 `BUILTIN_SIGS[]` **完全移除**（commit 11a）
+2. codegen 在 `UCExprCall` 主流水中走 **P3 extern function lookup**（per §11.0.3 修订）：emit `declare external i32 @abs_int(i32)` + `call i32 @abs_int(i32 %x)`
+3. 链接时由 linker 解析到 `lib/math.o::uc_abs`（来自 `lib/math.uc`）
+4. `lib/math.uc` 提供 `uc_abs(n: int) -> int` 实现：`n < 0 ? -n : n`
+
+**回归保证**：`uc_abs` 行为必须与原 inline IR 字节一致（`uc_abs(-7) == 7` / `uc_abs(0) == 0` / `uc_abs(7) == 7`），m0_41_extern_c 测试在 commit 11a 后仍 PASS（per 0.3.4 plan §6 R2）。
+
+**关联章节**：
+- §11.0.3 codegen 集成 — 6 primitives 不再含 abs_int；走 P3 extern function lookup 路径
+- §11.0.2 UltraCPP stdlib 路径 — `lib/math.uc` 提供 `uc_abs`
+- §S6 FFI extern body 来源策略（新增）— extern lookup 三层优先级（stdlib → 用户代码 → libc fallback）
+
 ### 7.1 所有权语义（**两条权限拆分**） *(0.3.0 重写：Rule 22, Q4, Q5)*
 
 > **[0.3.0 · Rule 22]** 0.3.0 把 0.2.0 的「所有权」拆成两个独立的权限：
@@ -2154,6 +2174,20 @@ extern "C" {
 
 > **[0.3.3 修订]** `extern "C"` 块**仅用于用户自己声明外部 C 函数**（少见场景，如调用系统库、遗留 C 代码）。**不用于 stdlib** — stdlib 由 UltraCPP 自己写在 `lib/*.uc`（per runtime-architecture §3.1 "UltraCPP 不使用 libc 作为 runtime"）。当 stdlib 已使用 `lib/*.uc` 后，`extern "C"` 仅用于 0.3.x 阶段临时 bootstrap 遗留调用。
 
+#### 10.1.1 实现状态 *(0.3.4 新增, per 0.3.4 plan §1 + 0.3.4 spec-text-changes §3.2)*
+
+> **[0.3.4 新增]** §10.1 描述的 `extern "C"` 块机制在 **0.3.4 commit 11b** 确认完成。
+
+| 语法子集 | 实现状态 | 关联 commit |
+|----------|----------|-------------|
+| `extern "C" { fn_decl; }` 基本语法 | ✅ 已实现（per 0.3.3 commit 7d）| 7d |
+| 块内多函数声明 | ✅ 已实现 | 7d |
+| 函数声明跳过已声明 builtin（UC_TL_EXTERN 跳过）| ✅ 已实现（per 0.3.3 commit `42d75f7`）| `42d75f7` |
+| 函数 body 来源（extern 三层查找）| ✅ 已实现（per 0.3.3 + 0.3.4 commit 11a）| 11a |
+| body 来源策略完整规范 | ⚠️ partial（详见新增 §S6，0.3.4 Phase 3 落地）| 推 0.3.4 Phase 3 |
+
+**0.3.4 修订**：规则不变；body 来源策略（extern 三层查找：UltraCPP stdlib → 用户代码 → libc fallback）由 0.3.4 commit 11b + 新增 §S6 章节明确定义。
+
 ### 10.2 预编译宏机制 *(0.3.3 新增, per runtime-architecture §7)*
 
 UltraCPP 采用 **C 风格的预编译宏语法**，不采用 Rust 的 `#[cfg(...)]` 风格。理由：与 C 生态工具链兼容；与 `src-c/` 现有的 C 实现无缝；学习曲线友好。`@` 前缀避免与用户代码标识符冲突。
@@ -2205,6 +2239,24 @@ UltraCPP 采用 **C 风格的预编译宏语法**，不采用 Rust 的 `#[cfg(..
 
 - **预定义宏来源**（per runtime-architecture §11）：uc compiler 启动时根据 `uname` 自动检测；可被 `-D NAME=VALUE` 显式覆盖
 - **检测时机**：lexer / parser 阶段；解析 `@ifdef` / `@if defined()` 时立即求值，不进入 AST
+
+#### 10.2.3 实现状态 *(0.3.4 新增, per 0.3.4 plan §1 + 0.3.3 process §3.1 commit 8a)*
+
+> **[0.3.4 新增]** §10.2 描述的预编译宏机制在 **0.3.3 commit 8a** 完成 codegen 实现（per `.dev/drafts/0.3.3-implementation-process.md` §3.1）。
+
+| 语法子集 | 实现状态 | 关联 commit |
+|----------|----------|-------------|
+| `@ifdef(MACRO) ... @end` | ✅ 已实现（per 0.3.3 commit 8a）| 8a |
+| `@ifndef(MACRO) ... @end` | ✅ 已实现 | 8a |
+| `@if defined(MACRO) && defined(MACRO2) ... @end` | ✅ 已实现 | 8a |
+| `@if !defined(MACRO) ... @end` | ✅ 已实现 | 8a |
+| `@else` / `@elif(EXPR)` | ✅ 已实现 | 8a |
+| `@define(NAME, VALUE)` | ✅ 已实现 | 8a |
+| `@error("msg")` | ✅ 已实现 | 8a |
+| `@warning("msg")` | ✅ 已实现 | 8a |
+| 预定义宏自动检测（`TARGET_OS_*` / `TARGET_ARCH_*`）| ✅ 已实现（per runtime-arch §11）| 8a |
+
+**0.3.4 确认**：0.3.4 commit 11b 确认 0.3.3 commit 8a 全部落地，无未实现项。0.4.0+ Stage 1 自举阶段需用本机制跨平台分发 `lib/sys/raw.uc`（per §11.0.4）。
 
 ### 10.3 内联汇编机制 *(0.3.3 新增, per runtime-architecture §8)*
 
@@ -2262,6 +2314,21 @@ UltraCPP 选择 C 风格，不采用 Rust `asm!` 宏：
 | Clobber list 第四段 | `lateout(...)` / `options(...)` |
 | `"0"` 复用前操作数 | 直接传同名变量 |
 | `asm volatile { ... }` | `options(preserves_flags, nostack)` 等 |
+
+#### 10.3.4 实现状态 *(0.3.4 新增, per 0.3.3 process §3.1 commit 8b)*
+
+> **[0.3.4 新增]** §10.3 描述的内联汇编机制在 **0.3.3 commit 8b** 完成 codegen 实现（基本 GCC 约束子集）。
+
+| 语法子集 | 实现状态 | 关联 commit |
+|----------|----------|-------------|
+| `asm { "syscall" : ... }` 基本格式 | ✅ 已实现（per 0.3.3 commit 8b）| 8b |
+| 约束字符 `r` / `a` / `D` / `S` / `d` / `c` / `b` / `=r` | ✅ 已实现 | 8b |
+| 约束字符 `+r` / `0`-`7`（寄存器复用）| ✅ 已实现 | 8b |
+| 约束字符 `m` / `i` / `cc` / `memory` | ✅ 已实现 | 8b |
+| `asm volatile { ... }` | ✅ 已实现 | 8b |
+| 约束字符 `r0`-`r7`（ARM / RISC-V 寄存器编号）| ⚠️ 未实现（0.3.3 阶段 x86_64 only）| 推 0.3.5+ |
+
+**0.3.4 确认**：基本 GCC 约束子集完整实施（通过 `@builtin_asm_*` 转发 LLVM IR），完整约束集留 0.4.0+。0.3.4 commit 10e `lib/sys/raw.uc` 用本机制实现 `sys::raw_syscall`（x86_64 only）。
 
 ### 10.4 `sys::` 系统调用 namespace *(0.3.3 新增, per runtime-architecture §6)*
 
@@ -2329,6 +2396,25 @@ LLVM IR 层
 - `sys::` 是 **UltraCPP 自带 stdlib**（写在 `lib/sys/*.uc`），**不**是 builtin（§11.0.1 不收录）
 - 用户通过 `import "lib/sys/sys.uc"` 使用；不需要 `BUILTIN_SIGS[]` 表（per runtime-architecture §5.3）
 - **raw_syscall**：`sys::raw_syscall` 接受 syscall number + args，由 `lib/sys/raw.uc` 用 `asm { "syscall" ... }`（x86_64） / `asm { "svc #0" ... }`（aarch64） / `asm { "ecall" ... }`（riscv64）实现（per §10.3 + runtime-architecture §6.1）
+
+#### 10.4.5 实现状态 *(0.3.4 新增, per 0.3.3 process §3.1 commit 8c)*
+
+> **[0.3.4 新增]** §10.4 描述的 `sys::` namespace 在 **0.3.3 commit 8c** 完成 codegen 实现（基本 `sys$*` 前缀映射）。
+
+| API | 实现状态 | 关联 commit |
+|-----|----------|-------------|
+| `sys$write(1, s, len)`（`sys::write` 前缀形式）| ✅ 已实现（per 0.3.3 commit 8c）| 8c |
+| `sys$read(fd, buf, len)` | ✅ 已实现 | 8c |
+| `sys::write(fd, buf, len)` 完整形式 | ⚠️ partial（0.3.3 阶段为 `sys$*` 前缀映射）| 推 0.3.4 commit 10e |
+| `sys::read(fd, buf, len)` 完整形式 | ⚠️ partial | 推 0.3.4 commit 10e |
+| `sys::open(path, flags)` | ❌ 未实现（0.3.3 阶段无此函数调用）| 推 commit 10e |
+| `sys::close(fd)` | ❌ 未实现 | 推 commit 10e |
+| `sys::exit(code)` | ❌ 未实现（main 仍走 libc exit）| 推 commit 10e |
+| `sys::raw_syscall(num, ...)` | ❌ 未实现 | 推 commit 10e |
+| `sys::` 命名空间语法解析（`sys::name(...)` 形式）| ⚠️ partial（0.3.3 阶段为 `sys$*` 前缀而非 `sys::*`）| 推 0.3.5+ |
+| 跨平台统一分发（`@ifdef(TARGET_OS_*)`）| ✅ 已实现（preprocessor 支持）| 8c |
+
+**0.3.4 确认**：0.3.4 commit 11b 确认 0.3.3 commit 8c 全部落地。`sys::name(args)` 与 `sys$name(args)` 共存；底层走 `gen_syscall_call` 直接 emit libc `@syscall`。完整 `sys::*` 全 namespace 语法 + 6-8 个 `sys::*` 函数完整实现由 0.3.4 commit 10e（`lib/sys/sys.uc` + `lib/sys/raw.uc`）推进。
 
 ### 10.5 与其他章节的交叉引用 *(0.3.3 新增)*
 
@@ -2504,33 +2590,43 @@ UltraCPP 提供以下 **builtin 函数**。builtin 函数由编译器**内置识
 - 0.3.2 / 0.3.3 原计划中 `mod` / `unmod` 是「编译期决策、无 runtime 函数」；现在提升为 builtin
 - 理由：它们是 borrow-checker 状态入口 / 出口，编译器必须在 IR 中显式记录（emit `@uc_borrow_mod_enter` / `@uc_borrow_mod_exit` intrinsic）；不再需要专门的 `UC_INTRINSIC_MOD` / `UC_INTRINSIC_UNMOD` 间接路径
 
-#### 11.0.2 UltraCPP stdlib 路径 *(0.3.3 新分类, runtime-architecture §3.1 + §9.2 集成)*
+#### 11.0.2 UltraCPP stdlib 路径（0.3.4+ 实化） *(0.3.3 新分类, 0.3.4 实化, per runtime-architecture §3.1 + §9.2)*
 
-> **[0.3.3 重大修订 — runtime-architecture 集成]** 0.3.2 §11.0 原"stdlib 约定（14 项）"表中所有项目（`print` / `strlen` / `strcpy` / `strcmp` / `memcpy` / `memmove` / `memset` / `sizeof_impl` / `alignof_impl` / `is_null` / `clone_impl` / `print_num` / `print_float` / `abs_int`）**全部删除**，**不进 BUILTIN_SIGS[]**，**不接 libc**。这些 stdlib 函数全部由 UltraCPP 自己写在 `lib/*.uc`，**自举路径见 .dev/drafts/0.3.0-runtime-architecture.md §9.2**。
+> **[0.3.4 实化 — per D1 + 0.3.4 plan §3.1 commits 10a-10e]** 0.3.3 spec 把 §11.0.2 描述为「未来 UltraCPP stdlib 路径」 + 「0.3.x 阶段 `lib/uc_runtime.c` 是 C 临时 bootstrap」。0.3.4 调研（per 0.3.3 process §2.5）发现 **`lib/uc_runtime.c` 从未存在**；0.3.4 直接 bootstrap `lib/*.uc`，**不创建** C 临时 bootstrap。
 
-**path**：
+**0.3.4 当前状态**（per commits 10a-10e）：
 
-| 文件 | 提供函数 | 备注 |
-|------|----------|------|
-| `lib/print.uc` | `uc_print(s)` / `uc_print_num(n)` / `uc_print_float(f)` | 替代原 builtin `print` / `print_num` / `print_float` |
-| `lib/string.uc` | `uc_strlen` / `uc_strcpy` / `uc_strcmp` | UltraCPP 实现，不接 libc |
-| `lib/memory.uc` | `uc_memcpy` / `uc_memmove` / `uc_memset` | UltraCPP 实现 |
-| `lib/math.uc` | `uc_abs`（替代 `abs_int`） | UltraCPP 实现 |
-| `lib/alloc.uc` | `uc_alloc` / `uc_free` thin wrapper | 备用（测试用）；主路径走 §11.0.1 builtin |
-| `lib/sync.uc` | （远期）`uc_mutex` / `uc_atomic` | Stage 1 后落地 |
-| `lib/sys.uc` + `lib/sys/raw.uc` | `sys::` namespace 完整实现 | §10.4 |
-| `lib/test/test_runtime.uc` | runtime 单元测试 | Stage 1 后 |
+| 文件 | 内容 | 0.3.4 commit | LOC |
+|---|---|---|---|
+| `lib/print.uc` | `uc_print` / `uc_print_num` / `uc_print_float`（stub for float）| 10a | ~50-80 |
+| `lib/string.uc` | `uc_strlen` / `uc_strcpy` / `uc_strcmp` | 10b | ~40-60 |
+| `lib/memory.uc` | `uc_memcpy` / `uc_memmove` / `uc_memset` | 10c | ~50-70 |
+| `lib/math.uc` | `uc_add` / `uc_abs`（替代 abs_int）| 10d | ~15-20 |
+| `lib/alloc.uc` | `uc_alloc` / `uc_free`（thin wrappers）| 10d | ~10 |
+| `lib/sys/sys.uc` + `lib/sys/raw.uc` | `sys::write/read/open/close/exit/...` + `raw_syscall` | 10e | ~130-200 |
 
-**bootstrap 路径**（per runtime-architecture §9）：
-- 0.3.x 阶段（0.3.1-0.3.7）：**`lib/uc_runtime.c`（C 实现）是临时 bootstrap** — 提供 print / strlen / memcpy 等最小集，让 0.3.x 阶段能工作
-- 0.4.0+ 阶段：**首次自举** — 用 uc_compiler 编译 `lib/*.uc` 替换 C 临时 runtime
-- 1.0 阶段：完全自举（`src-c/` 可移除）
+**注**：`lib/sync.uc`（`mutex<T>` / `atomic<T>`）留 0.3.5+（M5 前置，不在 0.3.4 范围）。
 
-> **`lib/uc_runtime.c` 与 `lib/*.uc` 的关系**：0.3.3 起，用户应**首选在 `lib/*.uc` 用 UltraCPP 自身写 stdlib**；`lib/uc_runtime.c` 仅作为临时过渡，在 `lib/*.uc` 启动后逐文件替换。最终目标：1.0 时，`lib/uc_runtime.c` 全部被 `lib/*.uc` 替代，`src-c/` 目录可移除（除非作为保留后端实现）。
+**0.3.4 完成后，stdlib 调用走以下路径**：
+- `BUILTIN_SIGS[]` 仅含 6 项 primitives（alloc/free/move/clone/mod/unmod，per §11.0.1）
+- abs_int 等历史 builtin 名通过 extern function lookup 链接到 lib/math.o 等
+- codegen 调用 emit `call void @uc_abs(i32 %x)` 或类似，链接时由 linker 解析
 
-> **[0.3.3 过渡特例]** codegen 当前仍 emit `declare i8* @malloc(i64)` 和 `declare void @free(i8*)`（来自 libc），且 `UC_STMT_FREE` / `UC_EXPR_ALLOC` emit 直接调 libc。这是为了与现有 `lib/uc_runtime.c` C bootstrap 兼容。**0.4.0+ 阶段**当 `lib/*.uc` 自建 stdlib 完成后，移除这些 libc 声明，全部由 UltraCPP stdlib 提供。
+**与 0.3.3 文本的关系**：0.3.3 spec §11.0.2 描述「14 项 stdlib 删除 + `lib/uc_runtime.c` 临时 bootstrap」规划，0.3.4 把该规划实化为 6 文件落地。`BUILTIN_SIGS[]` **不再** 含 `abs_int` / `print` / `strlen` / `memcpy` 等历史 builtin，全部走 extern lookup（per §11.0.3）。
 
-#### 11.0.3 codegen 集成 *(0.3.2 §11.0.2 改, 0.3.3 §11.0.3 改, runtime-architecture 集成)*
+详见 §11.0.4 UltraCPP stdlib 自举路径（Stage 1 设计，0.4.0+ 启动）。
+
+#### 11.0.3 codegen 集成（0.3.4 修订） *(0.3.2 §11.0.2 改, 0.3.3 §11.0.3 改, 0.3.4 重写, runtime-architecture 集成)*
+
+`BUILTIN_SIGS[]`（`src-c/src/codegen.c`）现仅含 **6 项 primitives**（per §11.0.1）：
+- alloc / free / move / clone / mod / unmod
+
+**历史 builtin（如 abs_int）已从 BUILTIN_SIGS[] 移除**（per commit 11a）：
+- abs_int 行为简单（`n < 0 ? -n : n`），由 UltraCPP `lib/math.uc::uc_abs` 实现
+- 调用方仍可写 `abs_int(x)`，codegen 通过 extern function lookup 链接到 lib/math.o::uc_abs
+- 其他历史 builtin（print / strlen / memcpy 等）随 stdlib 引导（`lib/*.uc`）走 extern 路径
+
+**C bootstrap 不存在**：原计划假设的 `lib/uc_runtime.c` C bootstrap 已被证伪（per 0.3.3 process §2.5）。UltraCPP 直接 bootstrap `lib/*.uc`，详见 §11.0.4。
 
 `src-c/src/codegen.c` 中，builtin 签名表用 `static const struct` 数组维护：
 
@@ -2546,12 +2642,18 @@ typedef struct {
 // - null / is_null / sizeof / alignof 不在此表 (intrinsic, codegen 特殊处理, per runtime-architecture §5.2)
 // - stdlib (print / strlen / memcpy / ...) 不在此表 (改 UltraCPP stdlib lib/*.uc, per runtime-architecture §5.3)
 //
+// [0.3.4 commit 11a — D2] abs_int 已从 BUILTIN_SIGS[] 移除（原第 1 项）：
+// - 原 inline IR `@builtin_abs_int` 21 行实现从 `get_builtins_defs()` 完全删除
+// - abs_int 调用走 codegen 主流水 P3 `lookup_extern_func("abs_int")` 路径
+// - 链接时由 linker 解析到 lib/math.o::uc_abs（来自 lib/math.uc）
+//
 // 类型参数化由 `UCExprCall.return_type` 字段承担 (0.3.2 §6.2.1 已加);
 // 不需要 `is_type_parametric` 字段.
 //
 // mod/unmod 是 **builtin**, emit IR marker (`@uc_borrow_mod_enter` / `@uc_borrow_mod_exit`),
 // 不是占位签名; 也不再走单独的 UC_INTRINSIC_MOD / UC_INTRINSIC_UNMOD 路径.
 static const BuiltinSig BUILTIN_SIGS[] = {
+    /* [0.3.4 commit 11a] Removed abs_int per D2: migrate to lib/math.uc::uc_abs */
     { "alloc",   "T*",   0 },  // emit: call @malloc(sizeof(T)) + 类型标记
     { "free",    "void", 1 },  // emit: call @free(%p) + 标记 %p 为 freed (NEW, 从 FFI 提升为 builtin)
     { "move",    "T*",   0 },  // emit: IR 标记 + 加载 + 返回新 owner
@@ -2562,7 +2664,44 @@ static const BuiltinSig BUILTIN_SIGS[] = {
 };
 ```
 
-> **[0.3.3 plan A 简化 + runtime-architecture 集成]**
+**UCExprCall codegen 主流程**（per 0.3.2 §6.2.1 + 0.3.4 修订，主流水 4 级优先级链）：
+
+```c
+// 4 级优先级链（per 0.3.2 §6.2.1）
+// P1: sys$* 前缀 → 直接映射 libc / sys:: (0.3.3 commit 8c)
+// P2: BUILTIN_SIGS[] 查表 → 6 项语言原语 emit
+// P3: lookup_extern_func(name) → extern lookup (用户 extern "C" 或 stdlib)
+// P4: default → 假设返回 i32（fallback）
+
+static LLVMValueRef gen_call(CodeGen* g, UCExprCall* call) {
+    const char* fn_name = call->fn_name;
+
+    // P1: sys$* 前缀 (libc / sys:: 转发)
+    if (strncmp(fn_name, "sys$", 4) == 0) {
+        return gen_syscall_call(g, call, fn_name + 4);
+    }
+
+    // P2: BUILTIN_SIGS[] 查表 — 6 项语言原语
+    const BuiltinSig* sig = lookup_builtin_sig(fn_name);
+    if (sig != NULL) {
+        return emit_builtin_call(g, call, sig);
+    }
+
+    // P3: extern lookup — [0.3.4 commit 11a] abs_int 在此分支
+    // - 用户 extern "C" { int abs_int(int x); } 声明
+    // - stdlib (lib/math.uc::uc_abs) 提供 @abs_int 符号
+    // - libc fallback (0.4.0+ 完全移除)
+    LLVMValueRef fn = lookup_extern_func(g, fn_name);
+    if (fn != NULL) {
+        return emit_extern_call(g, call, fn);
+    }
+
+    // P4: default — 假设返回 i32（fallback）
+    return emit_default_call(g, call, "i32");
+}
+```
+
+> **[0.3.3 plan A 简化 + runtime-architecture 集成 + 0.3.4 重写]**
 >
 > - `BUILTIN_SIGS[]` **仅收录 §11.0.1 语言原语 6 项**（此前为 7 项；`null` 改为 intrinsic, per runtime-architecture §5.2）
 > - **stdlib 不进 BUILTIN_SIGS[]** — 改为 UltraCPP stdlib（`lib/*.uc`）；不再走 `extern "C" libc`
@@ -2570,6 +2709,7 @@ static const BuiltinSig BUILTIN_SIGS[] = {
 > - **不**需要 stdlib 14 项 — 全部由 UltraCPP 自带 stdlib 提供
 > - **不**需要 `UC_INTRINSIC_MOD` / `UC_INTRINSIC_UNMOD` 单独路径 — mod / unmod 移入 BUILTIN_SIGS[], 走 `BUILTIN_SIGS[]` 查表 + 统一的 `UC_EXPR_CALL` emit 路径（与 §6.2.1 优先级链一致）
 > - **不再**有占位签名 — mod / unmod 全部是真实 emit（约 5 LOC each，输出 `@uc_borrow_mod_enter` / `@uc_borrow_mod_exit` IR marker）
+> - **abs_int 已移除**（0.3.4 commit 11a）— 走 P3 extern lookup 路径，链接 lib/math.o::uc_abs
 
 #### 11.0.4 添加新 builtin 的流程 *(0.3.2 §11.0.3 改, 0.3.3 §11.0.4 改, runtime-architecture 集成)*
 
