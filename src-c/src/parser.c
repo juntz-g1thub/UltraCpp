@@ -2002,6 +2002,42 @@ static UCExpr* parse_postfix(UCParser* p) {
     UCExpr* expr = parse_primary(p);
     if (is_err(p) || !expr) return expr;
 
+    /* [0.3.3 commit 8c] Qualified-call: IDENT '::' IDENT '(' args ')'
+     * per spec §10.4 + runtime-architecture §6 + D3 (sys$ + sys::
+     * coexistence). Synthesize UCExprCall with callee=UCExprIdent("sys$<name>")
+     * so existing @sys$ dispatch in case UC_EXPR_CALL routes via
+     * gen_syscall_call (codegen.c:979). No codegen changes needed. */
+    if (expr->kind == UC_EXPR_IDENT && check(p, UC_TOK_OP_SCOPE)) {
+        advance(p);  /* consume '::' */
+        if (!check(p, UC_TOK_IDENT)) {
+            err_here(p, "expected identifier after '::'");
+            uc_expr_free(expr);
+            return NULL;
+        }
+        /* Build "sys$<name>" callee name. Lexeme is not guaranteed
+         * null-terminated, so use a length-bounded copy rather than
+         * relying on strndup (POSIX-only, not declared here). */
+        size_t name_len = p->current.lexeme_len;
+        char* combined = (char*)malloc(name_len + 5 + 1);
+        if (!combined) {
+            err_here(p, "out of memory");
+            uc_expr_free(expr);
+            return NULL;
+        }
+        memcpy(combined, "sys$", 4);
+        memcpy(combined + 4, p->current.lexeme, name_len);
+        combined[4 + name_len] = '\0';
+        advance(p);
+        /* Free the original IDENT (e.g. "sys") and rebuild as
+         * "sys$<name>" so the call-site dispatch can match @sys$ in
+         * gen_syscall_call's if-else chain. */
+        uc_expr_free(expr);
+        expr = uc_expr_ident(combined, name_len + 4);
+        free(combined);
+        /* Fall through to the for(;;) loop below; the next token will
+         * be '(' which is handled as a regular call. */
+    }
+
     for (;;) {
         if (check(p, UC_TOK_LPAREN)) {
             advance(p);
