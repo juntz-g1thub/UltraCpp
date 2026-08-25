@@ -2663,7 +2663,22 @@ To add a new builtin in the future (e.g. `sqrt`, `pow`):
 3. Add an entry to `builtin_sigs[]` in `src-c/src/codegen.c`.
 4. (Optional) Add a stub implementation in `src-c/src/stdlib/` if the builtin needs runtime support.
 
-#### 11.0.5 Cross-References with Other Sections *(new in 0.3.2, revised in 0.3.3)*
+#### 11.0.5 UltraCPP stdlib Bootstrap Path *(0.3.4+)*
+
+UltraCPP compiler adopts a staged bootstrap path:
+
+- **Stage 0 (0.3.3, DEPRECATED)**: C bootstrap (`lib/uc_runtime.c`) as temporary stdlib. This path was disproven — src-c/ has no lib/uc_runtime.c, using inline LLVM IR + libc link hybrid approach (per `.dev/drafts/0.3.3-implementation-process.md` §2.5).
+
+- **Stage 1 (0.3.4, current)**: UltraCPP compiles `lib/*.uc`, emits LLVM IR, links with src-c/ compiler IR.
+  - **Compile path**: `uc_compiler` (src-c/build/uc_lexer → uc_compiler) reads lib/*.uc → emits LLVM IR → `llc` → lib.o
+  - **Link path**: User .uc compiled → emits LLVM IR → `llc` → user.o → links lib.o + libc (for sys$*) → exe
+  - **Bootstrap constraint**: `lib/*.uc` must be compiled before user code; use `bootstrap=stage1` flag
+
+- **Stage 2 (0.4.0+, future)**: UltraCPP compiles itself src-uc/.
+
+See runtime-architecture §9.
+
+#### 11.0.6 Cross-References with Other Sections *(new in 0.3.2, revised in 0.3.3, 0.3.4 §11.0.5 → §11.0.6 renumbered, runtime-architecture integrated)*
 
 | Section | Relationship |
 |------|------|
@@ -3410,7 +3425,72 @@ __thread int local = 42;  // per-thread independent
 
 ---
 
+## 14. Spec Gap Index *(0.3.4+)*
+
+> **[0.3.4 New]** This chapter centrally catalogs spec gaps that were not covered in the main chapters during the 0.3.x phase of M0 baseline but have been explicitly defined in the spec revisions. Each section retains its original S-N identifier (per m0-priority §9.x) for cross-referencing across spec-gap documents.
+
+### §S6 FFI extern body source policy *(0.3.4 New)*
+
+For `extern "C" { int abs_int(int x); }`, the body source follows a three-tier lookup path (in priority order):
+
+1. **Linked UltraCPP stdlib** (`lib/*.uc` compiled artifact) — e.g., abs_int → lib/math.o::uc_abs
+2. **Linked UltraCPP user code** (other .o in same process) — e.g., user-defined extern function
+3. **libc** (fallback only) — kept for Stage 1 bootstrap needs
+
+**Codegen implementation**: emits `declare external fn <name>` (LLVM IR); linker resolves at link time per the above order. No runtime cost (extern is compile-time binding).
+
+**m0 test impact**: m0_41_extern_c is already PASS (per commit 7d), but the failure cause is the test runner exit code extraction bug (resolved by §S9), not a §S6 path issue.
+
+**References**: see §10.1 `extern "C"` Block; see runtime-architecture §3.1.
+
+### §S8 deref-assign type safety *(0.3.4 New)*
+
+In `*p = X`, `*p` must satisfy lvalue classification + pointee type matching:
+
+**lvalue classification** (per §4.13.5 deref semantics):
+- `*p` is an lvalue (type = pointee type T)
+- In assignment `*p = X`, `*p` is an lvalue (consistent with §4.13.3 assignment-context constraint)
+
+**Codegen emit flow**:
+- `*p` → compute `p`'s SSA value (type `T*`)
+- emit `store T X, T* %p` (type-matched)
+- Current codegen UC_UN_DEREF emits `store i32 X, i8* %p` (type mismatched) — **requires commit 11c revision**
+
+**Implementation details**:
+- codegen.c UC_UN_DEREF case must check `*p`'s pointee type (from `p->as.unary_expr` type inference)
+- Pointee type inference: `p` is `int*` → pointee `int`; `p` is `MyStruct*` → pointee `%struct.MyStruct`
+- store instruction emit: `store <pointee_type> X, <pointee_type>* %p`
+
+**m0 test impact**: m0_30 + m0_34 + m0_36 + m0_42 deref-assign flip PASS (commit 11c).
+
+**References**: see §4.13.5 deref semantics (deref is always an lvalue); see commit 11c implementation plan.
+
+### §S9 main exit code 8-bit truncation semantics *(0.3.4 New)*
+
+`int main()`'s return value passes through OS exit. The 8-bit truncation is OS-level behavior (bash `$?` takes low 8 bits), not UltraCPP behavior.
+
+**UltraCPP compiler constraint**:
+- Does not truncate; preserves main's full int return value
+- Calls `exit(return_value)` system call with full int
+
+**Test runner constraint**:
+- Run main process → `wait` for child → capture `wstatus` → `WEXITSTATUS(wstatus)` extracts **full** exit code
+- Do NOT take low 8 bits (OS/shell behavior) as expected exit code
+
+**Example**:
+- `int main() { return 720; }` — UltraCPP calls `exit(720)`
+- bash `$?` takes low 8 bits → 720 % 256 = 208
+- Runner should capture 720 (not 208)
+
+**m0 test impact**:
+- m0_19 (factorial = 720): currently FAIL due to runner taking low 8 bits; §S9 fix → PASS
+
+**References**: see runtime-architecture §11 OS integration; see commit 11b implementation plan.
+
+---
+
 ## Document History
+
 
 | Version | Date | Description |
 |------|------|------|
@@ -3419,6 +3499,7 @@ __thread int local = 42;  // per-thread independent
 | 0.1.0 | 2026-04-18 | 0.1.0 finalized |
 | 0.2.0 | 2026-08-07 | Implemented the 8 design decisions D-1 .. D-8: `unique` generalized, `&` immutable borrow, `&mut` enters the language, `move` as a builtin primitive, explicit assignment move rules, `alloc`/`free` not enforced pairing, `DanglingReference` trigger conditions, C-host-first decision. *(Note: 0.3.0 reverses D-3 and removes `&mut`; D-2's `&` semantics are superseded by the Q3 reversal.)* |
 | **0.3.0** | **2026-08-07** | **This version**: complete split of the two permissions (Rule 22); added the `#modlaw` directive (Rule 23); added `mod()` / `unmod()` expressions (Rule 24); added the threading model chapter §13 (Rules 25–28); rewrote §3.3 reference types as **a single `T&`** (Q3 reversal, **removing `T&mut`**); rewrote §3.8 pointer modifiers to the Q6 custom semantics "opposite to C++"; rewrote §7.1 assignment as "implicit `mod()` + no ownership transfer" (Q4=a); rewrote §3.2 to distinguish owning vs non-owning pointers (Rule 2B); §11.5.1 added the `mutex<T>` / `atomic<T>` standard-library types (revisions #5, #6). Status: draft. |
+| 0.3.4 | 2026-08-21 | This version (S6/S8/S9 spec gap fixes + stdlib bootstrap path + §11.0.2 materialization + abs_int → uc_abs migration) |
 | **0.3.1** | **2026-08-12** | **This version (lvalue / rvalue concept clarification, S2)**: added the full §4.13 "Expression classification: lvalue and rvalue" chapter (§4.13.1 definition + §4.13.2 lvalue classification table + §4.13.3 assignment-context constraints + §4.13.4 codegen implementation constraints + §4.13.5 cross-references); §4.1 precedence table gains level 2.5 unary ops (`*` `&` `+` `-` `!` `~` `mod` `unmod` prefix `++` `--`, right-to-left); §4.6 assignment-operator table's 11 rows uniformly gain the "LHS must be an lvalue (§4.13.2)" constraint + header note + associativity + lvalue context note; §7.8 reference-creation rule 1 references §4.13.2 and adds 5 valid + 4 invalid examples; §12.1 EBNF adds the `lvalue` / `rvalue` non-terminals and updates the `assignment_expression` LHS annotation; §12.3 appendix precedence table synchronously adds level 2.5. **Fixed the m0_42 deref-assign bug** (`*view = payload` from compile_failed → PASS). Introduces no new syntax, no semantic changes, fully backward compatible. Status: draft. |
 | **0.3.2** | **2026-08-12** | **This version (C-style cast + function return type + §11.0 builtin signature table, S4+S5)**: added C-style cast `(T)expr` (§4.8.1) and the `cast(T, x)` builtin (§4.8.2); added §6.2.1 "Function Return Type" with the `UCExprCall.return_type` field type-parameterization mechanism; added the §11.0 "Builtin Signature Master Table" (single category, 16 rows: print/print_num/print_float + strlen/strcpy/strcmp + memcpy/memmove/memset + sizeof_impl/alignof_impl/is_null/clone_impl + move/alloc + abs_int); §12.1 EBNF adds the `cast_expression` production and `cast` builtin call. **Fixed the m0_41 abs_int link error and the second part of m0_42 deref-assign**. Status: draft. |
 | **0.3.3** | **2026-08-18** | **This version (spec clarification, S1+S3+Reclassification as builtin functions)**: added §4.13.5 "deref Semantics" full sub-chapter (§4.13.5.1 basic deref + §4.13.5.2 compound forms + §4.13.5.3 relation with §3.5 + §4.13.5.4 precedence (positional overloading between `*` and `*` mul) + §4.13.5.5 error cases + §4.13.5.6 cross-references; `*` and `&` are now positional overloading between deref/addr-of prefix and mul/bitwise-AND infix); added §7.0 "Concept Clarification" full sub-chapter (§7.0.1 operators + §7.0.2 builtin functions + §7.0.3 Reclassification as builtin functions for mod/unmod/move/clone + §7.0.4 historical retrospective + §7.0.5 cross-references); §4.1 precedence table adds level 2.5 unary prefix row (right-to-left) and removes level 15 `move clone` (now builtin functions); §4.9/§4.10 mod/unmod annotations updated to call out builtin-function classification + IR marker codegen; §7.8 reference section adds cross-reference to §4.13.5; §11.0 dual classification per runtime-architecture §5: §11.0.1 builtin language primitives (6 entries: alloc/free/move/clone/mod/unmod, all codegen-emit); §11.0.2 UltraCPP stdlib paths (`lib/print.uc` / `lib/string.uc` / `lib/memory.uc` / `lib/math.uc` / `lib/alloc.uc` / `lib/sync.uc` / `lib/sys.uc`, replacing the 0.3.2 14-row stdlib table — stdlib no longer backed by libc); §11.0.3 codegen integration: `BUILTIN_SIGS[]` simplified to 6 entries (mod/unmod promoted from intrinsic to builtin emit IR marker `@uc_borrow_mod_{enter,exit}`; `free` promoted from FFI to builtin emit `call @free` + mark freed); §10 FFI gains 4 new sub-sections (§10.2 C-style `@ifdef` preprocessor / §10.3 GCC-style `asm { ... }` inline assembly / §10.4 `sys::` syscall namespace / §10.5 cross-references + errno mapping); §10.2/§10.3/§10.4 inserted; §10.6 (was 10.2 C Type Mapping) / §10.7 (was 10.3 unsafe Block) / §10.8 (was 10.4 Inline Assembly legacy) renumbered. **This is spec clarification only — no bug fixes, no new syntax; mod/unmod/move/clone call syntax unchanged.** Status: draft. |
