@@ -1491,6 +1491,26 @@ Unary / binary / ternary operators, with **associativity**, listed in the §4.1 
 | §12.1 EBNF | the `builtin_function_call` production see §12.1 (added 0.3.3) — only the 6 language primitives; stdlib goes through `import "lib/*.uc"` and is not in `builtin_function_call` |
 | §12.3 appendix precedence table | synchronized with §4.1 revision |
 
+#### 7.0.6 abs_int → uc_abs Migration Note *(new in 0.3.4)*
+
+abs_int has been removed from `BUILTIN_SIGS[]` (src-c/src/codegen.c) and is now provided by UltraCPP's own implementation in `lib/math.uc::uc_abs` (per commit 11a). Callers may still write `abs_int(x)` syntax; the codegen routes via extern function lookup to link against lib/math.o::uc_abs. The corresponding §11.0.3 codegen integration section is updated accordingly.
+
+**Historical**: From 0.3.2, `abs_int` was the first entry of `BUILTIN_SIGS[]` and was implemented via the inline IR `@builtin_abs_int` (21 lines). During the 0.3.3 phase it was moved out of `BUILTIN_SIGS[]` together with the rest of the stdlib; commit 11a in 0.3.4 completely removes the inline IR implementation.
+
+**0.3.4 Migration Path**:
+
+1. `abs_int` is **completely removed** from `BUILTIN_SIGS[]` (commit 11a)
+2. The codegen in the `UCExprCall` main flow takes **P3 extern function lookup** (per §11.0.3 revision): emit `declare external i32 @abs_int(i32)` + `call i32 @abs_int(i32 %x)`
+3. At link time the linker resolves the symbol to `lib/math.o::uc_abs` (from `lib/math.uc`)
+4. `lib/math.uc` provides the `uc_abs(n: int) -> int` implementation: `n < 0 ? -n : n`
+
+**Regression guarantee**: The behavior of `uc_abs` must be byte-identical to the original inline IR (`uc_abs(-7) == 7` / `uc_abs(0) == 0` / `uc_abs(7) == 7`); the `m0_41_extern_c` test still PASSES after commit 11a (per 0.3.4 plan §6 R2).
+
+**Related Sections**:
+- §11.0.3 Codegen Integration — the 6 primitives no longer include abs_int; it takes the P3 extern function lookup path
+- §11.0.2 UltraCPP stdlib Paths — `lib/math.uc` provides `uc_abs`
+- §S6 FFI extern body source strategy (new section) — extern lookup three-tier priority (stdlib → user code → libc fallback)
+
 ### 7.1 Ownership Semantics (**two permissions split**) *(rewritten in 0.3.0: Rule 22, Q4, Q5)*
 
 > **[0.3.0 · Rule 22]** 0.3.0 splits the 0.2.0 notion of "ownership" into two independent permissions:
@@ -2124,6 +2144,20 @@ extern "C" {
 
 > **[0.3.3 revision]** The `extern "C"` block is **only for users declaring external C functions themselves** (rare cases such as calling system libraries or legacy C code). It is **not used for stdlib** — stdlib is written by UltraCPP itself in `lib/*.uc` (per runtime-architecture §3.1 "UltraCPP does not use libc as runtime"). Once stdlib uses `lib/*.uc`, `extern "C"` is only used for temporary bootstrap leftover calls during the 0.3.x phase.
 
+#### 10.1.1 Implementation Status *(new in 0.3.4, per 0.3.4 plan §1 + 0.3.4 spec-text-changes §3.2)*
+
+> **[0.3.4 new]** The `extern "C"` block mechanism described in §10.1 was confirmed complete in **0.3.4 commit 11b**.
+
+| Syntax subset | Implementation status | Related commit |
+|----------|----------|-------------|
+| `extern "C" { fn_decl; }` basic syntax | ✅ Implemented (per 0.3.3 commit 7d) | 7d |
+| Multiple function declarations inside the block | ✅ Implemented | 7d |
+| Function declarations skip already-declared builtins (UC_TL_EXTERN skip) | ✅ Implemented (per 0.3.3 commit `42d75f7`) | `42d75f7` |
+| Function body source (extern three-tier lookup) | ✅ Implemented (per 0.3.3 + 0.3.4 commit 11a) | 11a |
+| Complete specification of body source strategy | ⚠️ Partial (see new §S6, 0.3.4 Phase 3) | Deferred to 0.3.4 Phase 3 |
+
+**0.3.4 revision**: Rules unchanged; the body source strategy (extern three-tier lookup: UltraCPP stdlib → user code → libc fallback) is clearly defined by 0.3.4 commit 11b + the new §S6 section.
+
 ### 10.2 Preprocessor Macros *(new in 0.3.3, per runtime-architecture §7)*
 
 UltraCPP adopts **C-style preprocessor macro syntax**, not Rust-style `#[cfg(...)]`. Rationale: compatible with the C ecosystem toolchain; seamless with the existing C implementation in `src-c/`; friendly learning curve. The `@` prefix avoids conflicts with user-code identifiers.
@@ -2175,6 +2209,24 @@ UltraCPP adopts **C-style preprocessor macro syntax**, not Rust-style `#[cfg(...
 
 - **Predefined macro source** (per runtime-architecture §11): the uc compiler auto-detects via `uname` at startup; can be explicitly overridden by `-D NAME=VALUE`.
 - **Detection timing**: lexer / parser phase; `@ifdef` / `@if defined()` is evaluated immediately and does not enter the AST.
+
+#### 10.2.3 Implementation Status *(new in 0.3.4, per 0.3.4 plan §1 + 0.3.3 process §3.1 commit 8a)*
+
+> **[0.3.4 new]** The preprocessor macro mechanism described in §10.2 completed its codegen implementation in **0.3.3 commit 8a** (per `.dev/drafts/0.3.3-implementation-process.md` §3.1).
+
+| Syntax subset | Implementation status | Related commit |
+|----------|----------|-------------|
+| `@ifdef(MACRO) ... @end` | ✅ Implemented (per 0.3.3 commit 8a) | 8a |
+| `@ifndef(MACRO) ... @end` | ✅ Implemented | 8a |
+| `@if defined(MACRO) && defined(MACRO2) ... @end` | ✅ Implemented | 8a |
+| `@if !defined(MACRO) ... @end` | ✅ Implemented | 8a |
+| `@else` / `@elif(EXPR)` | ✅ Implemented | 8a |
+| `@define(NAME, VALUE)` | ✅ Implemented | 8a |
+| `@error("msg")` | ✅ Implemented | 8a |
+| `@warning("msg")` | ✅ Implemented | 8a |
+| Predefined macro auto-detection (`TARGET_OS_*` / `TARGET_ARCH_*`) | ✅ Implemented (per runtime-arch §11) | 8a |
+
+**0.3.4 confirmation**: 0.3.4 commit 11b confirms that 0.3.3 commit 8a is fully landed with no unimplemented items. The 0.4.0+ Stage 1 self-hosting phase will use this mechanism to cross-platform-distribute `lib/sys/raw.uc` (per §11.0.5).
 
 ### 10.3 Inline Assembly *(new in 0.3.3, per runtime-architecture §8)*
 
@@ -2231,6 +2283,21 @@ UltraCPP chose C style over Rust's `asm!` macro:
 | Clobber list as the fourth section | `lateout(...)` / `options(...)` |
 | `"0"` reuses a prior operand | passing the same variable directly |
 | `asm volatile { ... }` | `options(preserves_flags, nostack)` etc. |
+
+#### 10.3.4 Implementation Status *(new in 0.3.4, per 0.3.3 process §3.1 commit 8b)*
+
+> **[0.3.4 new]** The inline assembly mechanism described in §10.3 completed its codegen implementation (basic GCC constraint subset) in **0.3.3 commit 8b**.
+
+| Syntax subset | Implementation status | Related commit |
+|----------|----------|-------------|
+| `asm { "syscall" : ... }` basic format | ✅ Implemented (per 0.3.3 commit 8b) | 8b |
+| Constraint characters `r` / `a` / `D` / `S` / `d` / `c` / `b` / `=r` | ✅ Implemented | 8b |
+| Constraint characters `+r` / `0`–`7` (register reuse) | ✅ Implemented | 8b |
+| Constraint characters `m` / `i` / `cc` / `memory` | ✅ Implemented | 8b |
+| `asm volatile { ... }` | ✅ Implemented | 8b |
+| Constraint characters `r0`–`r7` (ARM / RISC-V register numbers) | ⚠️ Not implemented (x86_64 only in 0.3.3) | Deferred to 0.3.5+ |
+
+**0.3.4 confirmation**: The basic GCC constraint subset is fully implemented (via `@builtin_asm_*` forwarding to LLVM IR); the complete constraint set is deferred to 0.4.0+. 0.3.4 commit 10e's `lib/sys/raw.uc` uses this mechanism to implement `sys::raw_syscall` (x86_64 only).
 
 ### 10.4 `sys::` System Call Namespace *(new in 0.3.3, per runtime-architecture §6)*
 
@@ -2298,6 +2365,25 @@ Kernel mode (Linux / macOS / Windows NT / FreeBSD)
 - `sys::` is **UltraCPP-provided stdlib** (implemented in `lib/sys/*.uc`), **not** a builtin (not listed in §11.0.1).
 - Users obtain it via `import "lib/sys/sys.uc"`; no entry in `BUILTIN_SIGS[]` is required (per runtime-architecture §5.3).
 - **raw_syscall**: `sys::raw_syscall` accepts a syscall number + args, and is implemented in `lib/sys/raw.uc` using `asm { "syscall" ... }` (x86_64) / `asm { "svc #0" ... }` (aarch64) / `asm { "ecall" ... }` (riscv64) (per §10.3 + runtime-architecture §6.1).
+
+#### 10.4.5 Implementation Status *(new in 0.3.4, per 0.3.3 process §3.1 commit 8c)*
+
+> **[0.3.4 new]** The `sys::` namespace described in §10.4 completed its codegen implementation (basic `sys$*` prefix mapping) in **0.3.3 commit 8c**.
+
+| API | Implementation status | Related commit |
+|-----|----------|-------------|
+| `sys$write(1, s, len)` (`sys::write` prefix form) | ✅ Implemented (per 0.3.3 commit 8c) | 8c |
+| `sys$read(fd, buf, len)` | ✅ Implemented | 8c |
+| `sys::write(fd, buf, len)` full form | ⚠️ Partial (in 0.3.3, only the `sys$*` prefix mapping) | Deferred to 0.3.4 commit 10e |
+| `sys::read(fd, buf, len)` full form | ⚠️ Partial | Deferred to 0.3.4 commit 10e |
+| `sys::open(path, flags)` | ❌ Not implemented (no such call existed in 0.3.3) | Deferred to commit 10e |
+| `sys::close(fd)` | ❌ Not implemented | Deferred to commit 10e |
+| `sys::exit(code)` | ❌ Not implemented (main still goes through libc exit) | Deferred to commit 10e |
+| `sys::raw_syscall(num, ...)` | ❌ Not implemented | Deferred to commit 10e |
+| `sys::` namespace syntax parsing (`sys::name(...)` form) | ⚠️ Partial (in 0.3.3, the `sys$*` prefix instead of `sys::*`) | Deferred to 0.3.5+ |
+| Cross-platform unified dispatch (`@ifdef(TARGET_OS_*)`) | ✅ Implemented (preprocessor support) | 8c |
+
+**0.3.4 confirmation**: 0.3.4 commit 11b confirms that 0.3.3 commit 8c is fully landed. `sys::name(args)` and `sys$name(args)` coexist; the underlying dispatch goes through `gen_syscall_call` directly emitting libc `@syscall`. The complete `sys::*` full-namespace syntax plus 6–8 fully implemented `sys::*` functions are advanced by 0.3.4 commit 10e (`lib/sys/sys.uc` + `lib/sys/raw.uc`).
 
 ### 10.5 Cross-References with Other Sections *(new in 0.3.3)*
 
@@ -2448,35 +2534,45 @@ The "language primitives" builtins described in §7.0, directly related to memor
 - In 0.3.2 / 0.3.3 original plans, `mod` / `unmod` were "compile-time decisions without runtime function"; now they are promoted to builtins.
 - Rationale: they are the entry / exit of borrow-checker state, and the compiler must record them explicitly in the IR (emit `@uc_borrow_mod_enter` / `@uc_borrow_mod_exit` intrinsics); the dedicated `UC_INTRINSIC_MOD` / `UC_INTRINSIC_UNMOD` indirect path is no longer needed.
 
-#### 11.0.2 UltraCPP stdlib paths *(new category in 0.3.3, runtime-architecture §3.1 + §9.2 integration)*
+#### 11.0.2 UltraCPP stdlib Paths (0.3.4+ Materialized) *(new category in 0.3.3, materialized in 0.3.4, per runtime-architecture §3.1 + §9.2)*
 
-> **[0.3.3 major revision — runtime-architecture integration]** All items of the 0.3.2 §11.0 "stdlib conventions (14 entries)" table (`print` / `strlen` / `strcpy` / `strcmp` / `memcpy` / `memmove` / `memset` / `sizeof_impl` / `alignof_impl` / `is_null` / `clone_impl` / `print_num` / `print_float` / `abs_int`) are **all removed**: they **do not enter BUILTIN_SIGS[]**, and they **do not depend on libc**. These stdlib functions are written by UltraCPP itself in `lib/*.uc`. The bootstrapping path is documented in `.dev/drafts/0.3.0-runtime-architecture.md` §9.2.
+> **[0.3.4 materialization — per D1 + 0.3.4 plan §3.1 commits 10a–10e]** 0.3.3 spec described §11.0.2 as the "future UltraCPP stdlib path" + "0.3.x phase `lib/uc_runtime.c` as a temporary C bootstrap". The 0.3.4 investigation (per 0.3.3 process §2.5) discovered that **`lib/uc_runtime.c` never existed**; 0.3.4 directly bootstraps `lib/*.uc`, and **does not create** the temporary C bootstrap.
 
-**Paths**:
+**0.3.4 current status** (per commits 10a–10e):
 
-| File | Provided Functions | Notes |
-|------|----------|------|
-| `lib/print.uc` | `uc_print(s)` / `uc_print_num(n)` / `uc_print_float(f)` | replaces the original builtins `print` / `print_num` / `print_float` |
-| `lib/string.uc` | `uc_strlen` / `uc_strcpy` / `uc_strcmp` | UltraCPP-implemented, no libc dependency |
-| `lib/memory.uc` | `uc_memcpy` / `uc_memmove` / `uc_memset` | UltraCPP-implemented |
-| `lib/math.uc` | `uc_abs` (replaces `abs_int`) | UltraCPP-implemented |
-| `lib/alloc.uc` | `uc_alloc` / `uc_free` thin wrappers | backup (for testing); the main path goes through §11.0.1 builtins |
-| `lib/sync.uc` | (future) `uc_mutex` / `uc_atomic` | to be added after Stage 1 |
-| `lib/sys.uc` + `lib/sys/raw.uc` | full `sys::` namespace implementation | §10.4 |
-| `lib/test/test_runtime.uc` | runtime unit tests | after Stage 1 |
+| File | Contents | 0.3.4 Commit | LOC |
+|---|---|---|---|
+| `lib/print.uc` | `uc_print` / `uc_print_num` / `uc_print_float` (stub for float) | 10a | ~50–80 |
+| `lib/string.uc` | `uc_strlen` / `uc_strcpy` / `uc_strcmp` | 10b | ~40–60 |
+| `lib/memory.uc` | `uc_memcpy` / `uc_memmove` / `uc_memset` | 10c | ~50–70 |
+| `lib/math.uc` | `uc_add` / `uc_abs` (replaces abs_int) | 10d | ~15–20 |
+| `lib/alloc.uc` | `uc_alloc` / `uc_free` (thin wrappers) | 10d | ~10 |
+| `lib/sys/sys.uc` + `lib/sys/raw.uc` | `sys::write/read/open/close/exit/...` + `raw_syscall` | 10e | ~130–200 |
 
-**Bootstrap path** (per runtime-architecture §9):
-- 0.3.x phase (0.3.1–0.3.7): **`lib/uc_runtime.c` (C implementation) is a temporary bootstrap** — it provides the minimum set (print / strlen / memcpy, etc.) so that 0.3.x is functional.
-- 0.4.0+ phase: **first self-hosting** — use `uc_compiler` to compile `lib/*.uc` and replace the C temporary runtime.
-- 1.0 phase: full self-hosting (`src-c/` can be removed).
+**Note**: `lib/sync.uc` (`mutex<T>` / `atomic<T>`) is deferred to 0.3.5+ (M5 prerequisite, not in the 0.3.4 scope).
 
-> **Relation between `lib/uc_runtime.c` and `lib/*.uc`**: from 0.3.3 onward, users should **prefer writing stdlib in `lib/*.uc` using UltraCPP itself**; `lib/uc_runtime.c` is only a temporary bridge, replaced file-by-file once `lib/*.uc` is online. The final goal: at 1.0, `lib/uc_runtime.c` is fully replaced by `lib/*.uc`, and the `src-c/` directory can be removed (unless kept as a preserved backend implementation).
+**After 0.3.4, stdlib calls follow this path**:
+- `BUILTIN_SIGS[]` contains only 6 primitives (alloc / free / move / clone / mod / unmod, per §11.0.1)
+- Historical builtin names (such as `abs_int`) route via extern function lookup to link against `lib/math.o` etc.
+- codegen emits `call void @uc_abs(i32 %x)` or similar; the linker resolves the symbol at link time
 
-> **[0.3.3 transition note]** codegen still emits `declare i8* @malloc(i64)` and `declare void @free(i8*)` (from libc), and `UC_STMT_FREE` / `UC_EXPR_ALLOC` emit direct calls to libc. This is to remain compatible with the existing `lib/uc_runtime.c` C bootstrap. In the **0.4.0+ phase**, once `lib/*.uc` self-built stdlib is complete, these libc declarations are removed and all functionality is provided by UltraCPP stdlib.
+**Relation to the 0.3.3 text**: 0.3.3 spec §11.0.2 described the "14-entry stdlib removal + `lib/uc_runtime.c` temporary bootstrap" plan. 0.3.4 materializes that plan as a 6-file landing. `BUILTIN_SIGS[]` **no longer** contains `abs_int` / `print` / `strlen` / `memcpy` and other historical builtins; everything goes through extern lookup (per §11.0.3).
 
-#### 11.0.3 Codegen Integration *(revised in 0.3.2, revised in 0.3.3)*
+See §11.0.5 UltraCPP stdlib Bootstrap Path for details.
 
-In `src-c/src/codegen.c`, the builtin signature table is maintained as a `static const struct` array:
+#### 11.0.3 Codegen Integration (0.3.4 Revision) *(revised in 0.3.2, revised in 0.3.3, rewritten in 0.3.4, runtime-architecture integration)*
+
+`BUILTIN_SIGS[]` (`src-c/src/codegen.c`) now contains only **6 primitives** (per §11.0.1):
+- alloc / free / move / clone / mod / unmod
+
+**Historical builtins (such as `abs_int`) have been removed from `BUILTIN_SIGS[]`** (per commit 11a):
+- `abs_int` has simple behavior (`n < 0 ? -n : n`) and is implemented by UltraCPP `lib/math.uc::uc_abs`
+- Callers may still write `abs_int(x)`; codegen routes via extern function lookup to link against `lib/math.o::uc_abs`
+- Other historical builtins (print / strlen / memcpy etc.) take the extern path through stdlib (`lib/*.uc`)
+
+**No C bootstrap**: The originally planned `lib/uc_runtime.c` C bootstrap was disproven (per 0.3.3 process §2.5). UltraCPP bootstraps `lib/*.uc` directly; see §11.0.5.
+
+The current `BUILTIN_SIGS[]` definition in `src-c/src/codegen.c`:
 
 ```c
 // Pseudocode (actual implementation in src-c/src/codegen.c)
@@ -2486,45 +2582,77 @@ typedef struct {
     int is_void;
 } builtin_sig_t;
 
+// Comments preserved from 0.3.3:
+// - null / is_null / sizeof / alignof are not in this table (intrinsic, codegen special handling, per runtime-architecture §5.2)
+// - stdlib (print / strlen / memcpy / ...) is not in this table (implemented by UltraCPP stdlib lib/*.uc, per runtime-architecture §5.3)
+//
+// [0.3.4 commit 11a — D2] abs_int has been removed from BUILTIN_SIGS[] (the original 1st entry):
+// - The original inline IR `@builtin_abs_int` 21-line implementation is completely removed from `get_builtins_defs()`
+// - The abs_int call goes through the codegen main flow P3 `lookup_extern_func("abs_int")` path
+// - At link time the linker resolves to lib/math.o::uc_abs (from lib/math.uc)
+//
+// Type parameterization is carried by the `UCExprCall.return_type` field (added in 0.3.2 §6.2.1);
+// no `is_type_parametric` field is needed.
+//
+// mod/unmod are **builtins**, emitting IR markers (`@uc_borrow_mod_enter` / `@uc_borrow_mod_exit`),
+// not placeholder signatures; they also no longer go through the separate UC_INTRINSIC_MOD / UC_INTRINSIC_UNMOD path.
 static const builtin_sig_t builtin_sigs[] = {
-    {"print",       "void", 1},
-    {"print_num",   "void", 1},
-    {"print_float", "void", 1},
-    {"strlen",      "i32",  0},
-    {"strcpy",      "i8*",  0},
-    {"strcmp",      "i32",  0},
-    {"memcpy",      "i8*",  0},
-    {"memmove",     "i8*",  0},
-    {"memset",      "i8*",  0},
-    {"sizeof_impl", "i32",  0},
-    {"alignof_impl","i32",  0},
-    {"is_null",     "i1",   0},
-    {"clone_impl",  "i32*", 0},
-    {"abs_int",     "i32",  0},
-    // type-parameterized alloc/move are handled separately
-    {NULL, NULL, 0}  // sentinel
+    /* [0.3.4 commit 11a] Removed abs_int per D2: migrate to lib/math.uc::uc_abs */
+    { "alloc",   "T*",   0 },  // emit: call @malloc(sizeof(T)) + type tag
+    { "free",    "void", 1 },  // emit: call @free(%p) + mark %p as freed (NEW, promoted from FFI to builtin)
+    { "move",    "T*",   0 },  // emit: IR marker + load + return new owner
+    { "clone",   "T*",   0 },  // emit: alloc(T) + LLVMBuildMemcpy
+    { "mod",     "void", 1 },  // emit: @uc_borrow_mod_enter (borrow-checker state entry)
+    { "unmod",   "void", 1 },  // emit: @uc_borrow_mod_exit (borrow-checker state exit)
+    // type-parameterized alloc/move/clone use the ret_type from UCExprCall.return_type
 };
 ```
 
-`UC_EXPR_CALL` handling:
+**UCExprCall codegen main flow** (per 0.3.2 §6.2.1 + 0.3.4 revision, 4-level priority chain):
 
 ```c
-case UC_EXPR_CALL:
-    // ... (emit args, emit call)
-    const char* fn_name = call_expr->as.call.callee;
-    const builtin_sig_t* sig = lookup_builtin(fn_name);
-    if (sig) {
-        // builtin: take the return type from the signature table
-        g->last_expr_type = cgen_strdup(sig->ret_type);
-        if (sig->is_void) {
-            // void function has no return value; do not emit ret_val
-        }
-    } else {
-        // user function: take the return type from the function definition
-        // ... (look up in the symbol table)
+// 4-level priority chain (per 0.3.2 §6.2.1)
+// P1: sys$* prefix → direct mapping to libc / sys:: (0.3.3 commit 8c)
+// P2: BUILTIN_SIGS[] lookup → 6 language primitives emit
+// P3: lookup_extern_func(name) → extern lookup (user extern "C" or stdlib)
+// P4: default → assume i32 return (fallback)
+
+static LLVMValueRef gen_call(CodeGen* g, UCExprCall* call) {
+    const char* fn_name = call->fn_name;
+
+    // P1: sys$* prefix (libc / sys:: forwarding)
+    if (strncmp(fn_name, "sys$", 4) == 0) {
+        return gen_syscall_call(g, call, fn_name + 4);
     }
-    break;
+
+    // P2: BUILTIN_SIGS[] lookup — 6 language primitives
+    const builtin_sig_t* sig = lookup_builtin_sig(fn_name);
+    if (sig != NULL) {
+        return emit_builtin_call(g, call, sig);
+    }
+
+    // P3: extern lookup — [0.3.4 commit 11a] abs_int goes through this branch
+    // - User `extern "C" { int abs_int(int x); }` declaration
+    // - stdlib (lib/math.uc::uc_abs) provides the @abs_int symbol
+    // - libc fallback (fully removed in 0.4.0+)
+    LLVMValueRef fn = lookup_extern_func(g, fn_name);
+    if (fn != NULL) {
+        return emit_extern_call(g, call, fn);
+    }
+
+    // P4: default — assume i32 return (fallback)
+    return emit_default_call(g, call, "i32");
+}
 ```
+
+> **[0.3.3 Plan A simplification + runtime-architecture integration + 0.3.4 rewrite]**
+>
+> - `BUILTIN_SIGS[]` **only contains the 6 §11.0.1 language primitives** (was 7 entries; `null` changed to intrinsic, per runtime-architecture §5.2)
+> - **stdlib is not in BUILTIN_SIGS[]** — replaced by UltraCPP stdlib (`lib/*.uc`); no longer goes through `extern "C" libc`
+> - **No need** for the 14 stdlib entries — all provided by UltraCPP's own stdlib
+> - **No need** for a separate `UC_INTRINSIC_MOD` / `UC_INTRINSIC_UNMOD` path — mod / unmod are moved into BUILTIN_SIGS[], going through the `BUILTIN_SIGS[]` lookup + unified `UC_EXPR_CALL` emit path (consistent with §6.2.1 priority chain)
+> - **No more placeholder signatures** — mod / unmod are all real emit (about 5 LOC each, outputting `@uc_borrow_mod_enter` / `@uc_borrow_mod_exit` IR markers)
+> - **`abs_int` has been removed** (0.3.4 commit 11a) — takes the P3 extern lookup path, linking to `lib/math.o::uc_abs`
 
 #### 11.0.4 Flow for Adding a New Builtin *(new in 0.3.2, revised in 0.3.3)*
 
