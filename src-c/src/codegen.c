@@ -28,13 +28,18 @@ static const builtin_sig_t builtin_sigs[] = {
      * lookup_builtin_ret -> NULL -> extern/default-i32 fallback; no
      * m0 test does direct calls (verified - all 4 candidate tests
      * m0_23/24/25/39 use sys$* wrappers). */
-    {"abs_int", "i32"},
-    /* [0.3.3 commit 6] 6 primitives per spec §11.0.1. `clone_impl` was a
-     * pre-0.3.3 placeholder that emitted `i32*`; it is replaced here by
-     * `clone` (returns i8*) since commit 6 introduces a real @clone
-     * inline def. `mod`/`unmod` route via the is_builtin=1 intrinsic
-     * dispatch in UC_EXPR_CALL (commit 5); their BUILTIN_SIGS entries
-     * exist for spec-table consistency. */
+    /* [0.3.4 commit 11a — D2] Removed abs_int from BUILTIN_SIGS[].
+     * abs_int now routes to @uc_abs in lib/math.uc via the new
+     * abs_int/uc_abs branch in case UC_EXPR_CALL (emit_uc_abs_call).
+     * Per spec §11.0.3 codegen integration + runtime-architecture §3.1
+     * 'stdlib 不在 BUILTIN_SIGS[]'. The remaining 6 primitives per
+     * §11.0.1: alloc / free / move / clone / mod / unmod.
+     *
+     * `clone_impl` was a pre-0.3.3 placeholder that emitted `i32*`; it
+     * is replaced here by `clone` (returns i8*) since commit 6 introduces
+     * a real @clone inline def. `mod`/`unmod` route via the is_builtin=1
+     * intrinsic dispatch in UC_EXPR_CALL (commit 5); their BUILTIN_SIGS
+     * entries exist for spec-table consistency. */
     {"alloc", "i8*"}, {"free", "void"}, {"move", "i8*"},
     {"clone", "i8*"}, {"mod", "void"}, {"unmod", "void"},
     {NULL, NULL}
@@ -309,26 +314,18 @@ static const char* get_builtins_decls(void) {
 /* Builtin function bodies — emitted at module start so that calls to
  * @builtin_<name> resolve at link time without depending on libc.
  *
- * Per Plan A step 2 (0.3.2-implementation-plan.md §3.2): the user-facing
- * builtin `abs_int` (spec §11.0.1) gets a real implementation; other
+ * Per Plan A step 2 (0.3.2-implementation-plan.md §3.2): the remaining
  * builtins get a void-returning stub so a future test that calls them
  * still links (the stub returns immediately and the test verifies the
  * compile path, not runtime semantics).
  *
- * abs_int semantics: |x| = (x > 0) ? x : -x. Matches the values asserted
- * by test/programs/baseline/m0_41_extern_c.uc (abs_int(-7)=7, abs_int(0)=0,
- * abs_int(3)=3 → return 10).
+ * [0.3.4 commit 11a — D2] abs_int removed from BUILTIN_SIGS[] + this
+ * inline IR def; abs_int is now routed to @uc_abs in lib/math.uc
+ * (via the new branch in case UC_EXPR_CALL; see emit_uc_abs_call).
  */
 static const char* get_builtins_defs(void) {
     return
         "\n"
-        "define i32 @builtin_abs_int(i32 %x) {\n"
-        "entry:\n"
-        "    %abs_pos = icmp sgt i32 %x, 0\n"
-        "    %abs_neg = sub i32 0, %x\n"
-        "    %abs_ret = select i1 %abs_pos, i32 %x, i32 %abs_neg\n"
-        "    ret i32 %abs_ret\n"
-        "}\n"
         /* [0.3.3 commit 7b] Removed @builtin_print / @builtin_print_num /
          * @builtin_print_float inline IR defs — the signatures and bodies
          * now live in UltraCPP lib/print.uc (DEFERRED to 0.3.4 per D2).
@@ -356,6 +353,30 @@ static const char* get_builtins_defs(void) {
         "define i8* @clone(i8* %p) {\n"
         "entry:\n"
         "    ret i8* %p\n"
+        "}\n"
+        /* [0.3.4 commit 11a] abs_int removed from BUILTIN_SIGS[] + the prior
+         * inline @builtin_abs_int definition; abs_int now emits
+         * `call i32 @uc_abs(i32 %x)` via emit_uc_abs_call. @uc_abs's real
+         * body lives in lib/math.uc::uc_abs (commit 10d), but the test
+         * harness (test/e2e/run_baseline.sh) does not link lib/math.o yet.
+         * Inline a stub here so abs_int() resolves at link time; once the
+         * harness links lib/math.o this stub will be replaced by the
+         * extern declaration in get_builtins_decls() alone (no inline
+         * define), per spec §11.0.3 'stdlib link via lib/_STAR_.o'.
+         *
+         * Body: `if (n < 0) -n else n` — proper integer abs via slt + sub. */
+        "define i32 @uc_abs(i32 %n) {\n"
+        "entry:\n"
+        "    %cmp = icmp slt i32 %n, 0\n"
+        "    br i1 %cmp, label %neg, label %pos\n"
+        "neg:\n"
+        "    %negv = sub i32 0, %n\n"
+        "    br label %join\n"
+        "pos:\n"
+        "    br label %join\n"
+        "join:\n"
+        "    %res = phi i32 [%negv, %neg], [%n, %pos]\n"
+        "    ret i32 %res\n"
         "}\n";
 }
 
@@ -551,6 +572,9 @@ static char* emit_clone_call(UCCodeGenerator* g, const UCExpr* inner, UCError* e
 static char* emit_alloc_call(UCCodeGenerator* g, const UCType* ty, UCError* err);
 static void  emit_free_call(UCCodeGenerator* g, const UCExpr* inner, UCError* err);
 static void  emit_asm_block(UCCodeGenerator* g, const UCASTAsmBlock* block, UCError* err);
+/* [0.3.4 commit 11a] Route abs_int to lib/math.uc::uc_abs.
+ * Per spec §11.0.3 codegen integration. */
+static char* emit_uc_abs_call(UCCodeGenerator* g, const UCExpr* inner, UCError* err);
 
 /* ------------------------------------------------------------------------- */
 /* Top level dispatch                                                        */
@@ -1385,6 +1409,43 @@ static char* emit_clone_call(UCCodeGenerator* g, const UCExpr* inner, UCError* e
     return res;
 }
 
+/* [0.3.4 commit 11a] emit_uc_abs_call: `abs_int(x)` →
+ *   %res = call i32 @uc_abs(i32 %x)
+ *
+ * abs_int removed from BUILTIN_SIGS[] in this commit; routes via
+ * this dedicated emitter to @uc_abs in lib/math.uc::uc_abs. Linker
+ * resolves @uc_abs from lib/math.o at link time (lib/math.uc::uc_abs
+ * body, commit 10d).
+ *
+ * Per spec §11.0.3 codegen integration + runtime-architecture §3.1
+ * 'stdlib 不在 BUILTIN_SIGS[]'. Dispatched from case UC_EXPR_CALL
+ * when callee->kind == UC_EXPR_IDENT and ident.data == "abs_int"
+ * (the parser does NOT mark abs_int as is_builtin since the name
+ * is not in is_intrinsic_name(); see case UC_EXPR_CALL comment).
+ * Returns i32 (|x|). */
+static char* emit_uc_abs_call(UCCodeGenerator* g, const UCExpr* inner, UCError* err) {
+    if (uc_vec_len(inner->as.call.args) != 1) {
+        uc_error_set(err, UC_ERR_CODEGEN, 0, 0, NULL,
+                     "abs_int() takes exactly 1 argument");
+        return NULL;
+    }
+    UCExpr* a0 = (UCExpr*)uc_vec_at(inner->as.call.args, 0);
+    UCError e2; uc_error_init(&e2);
+    char* src = gen_expr(g, a0, &e2, 0);
+    if (!src || e2.kind != UC_ERR_NONE) {
+        uc_error_set(err, e2.kind, 0, 0, NULL, e2.message);
+        return NULL;
+    }
+    char* res = mk_temp(g);
+    /* Emit `call i32 @uc_abs(...)` — @uc_abs is the lib/math.uc symbol
+     * (commit 10d), resolved at link time from lib/math.o. */
+    emit_fmt_writeln(g, "%s = call i32 @uc_abs(i32 %s)", res, src);
+    free(src);
+    free(g->last_expr_type);
+    g->last_expr_type = cgen_strdup("i32");
+    return res;
+}
+
 /* [0.3.3 commit 6] emit_alloc_call: `alloc(T)` →
  *   %res = call i8* @malloc(i64 %sizeof(T))
  *
@@ -1812,6 +1873,19 @@ static char* gen_expr(UCCodeGenerator* g, const UCExpr* expr, UCError* err, int 
                 if (strcmp(iname, "unmod") == 0)
                     return emit_unmod_exit(g, expr, err);
                 /* other is_builtin=1 names: fall through */
+            }
+            /* [0.3.4 commit 11a] abs_int → @uc_abs route (lib/math.uc::uc_abs).
+             * Per spec §11.0.3 codegen integration. abs_int was previously in
+             * BUILTIN_SIGS[] (removed in this commit) and parsed with
+             * is_builtin=0; the parser's is_intrinsic_name() does NOT include
+             * abs_int, so we must dispatch here OUTSIDE the is_builtin=1
+             * guard (the mod/unmod path above only fires for is_builtin=1).
+             * emit_uc_abs_call emits `call i32 @uc_abs(i32 %x)` so the linker
+             * resolves @uc_abs from lib/math.o (commit 10d). */
+            if (callee && callee->kind == UC_EXPR_IDENT
+                && callee->as.ident.data
+                && strcmp(callee->as.ident.data, "abs_int") == 0) {
+                return emit_uc_abs_call(g, expr, err);
             }
             char* symbol = NULL;
             if (callee->kind == UC_EXPR_IDENT) {
