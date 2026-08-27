@@ -4,18 +4,18 @@
 
 > **语言版本**：[简体中文（本文件）](./README-zh-CN.md) · [English](./README.md)
 >
-> **当前规范**：[UltraCPP v0.3.1（简体中文）](./docs/UltraCPP-v0.3.1-spec-zh-CN.md) · [UltraCPP v0.3.1 (English)](./docs/UltraCPP-v0.3.1-spec-en.md)
+> **当前规范**：[UltraCPP v0.3.4（简体中文）](./docs/UltraCPP-v0.3.4-spec-zh-CN.md) · [UltraCPP v0.3.4 (English)](./docs/UltraCPP-v0.3.4-spec-en.md)
 >
-> **状态**：草稿 · **最后修订**：2026-08-17
+> **状态**：草稿 · **最后修订**：2026-08-21
 
-> **当前状态（2026-08-08）**
+> **当前状态（2026-08-21）**
 >
-> 0.3.1 正在定义新的所有权、修改权和线程规则，目前仍是语言设计，不是已经由编译器兑现的安全承诺。C99 端口 `src-c/` 是生产主机编译器；Rust 端口 `src/` 只作参考。0.3.1 新增的语义检查阶段尚未在代码中实现。
+> 0.3.4 完成了 lib/*.uc 标准库引导（6 个文件：print/string/memory/math/alloc/sys.uc + sys/raw.uc）以及 codegen 中 abs_int → uc_abs 的迁移。0.3.3 阶段的工作（S1 一元运算符优先级 + S3 deref 语义 + mod/unmod/move/clone 函数化）与 0.3.4 规范缺口修复（S6/S8/S9）已写入代码。C99 端口 `src-c/` 是生产主机编译器；Rust 端口 `src/` 只作参考。当前基线：32/48 通过 / 16 失败。下一阶段 0.3.5 / M1 里程碑将聚焦 UC_TYPE_MUTABLE_POINTER 清理、剩余 m0 测试以及 6 关键字词法器集成。
 >
 > 请先阅读：
 >
-> - [UltraCPP v0.3.1 中文规范](docs/UltraCPP-v0.3.1-spec-zh-CN.md)
-> - [UltraCPP v0.3.1 English Specification](docs/UltraCPP-v0.3.1-spec-en.md)
+> - [UltraCPP v0.3.4 中文规范](docs/UltraCPP-v0.3.4-spec-zh-CN.md)
+> - [UltraCPP v0.3.4 English Specification](docs/UltraCPP-v0.3.4-spec-en.md)
 > - [0.1.0 借用检查规范与实现审计](.dev/drafts/0.1.0-borrowck-spec-vs-impl.md)，记录旧模型为何必须重做
 > - [C 主机编译器说明](src-c/README.md)，当前实现能力
 
@@ -287,7 +287,7 @@ UltraCpp/
 ├── src-c/       C99 生产主机编译器：lexer、parser、AST、codegen、CLI
 ├── src/         Rust 参考实现，不是当前生产目标
 ├── src-uc/      未来用 UltraCPP 编写的自举编译器，目前待实现
-├── docs/        0.1.0、0.2.0、0.3.1 版本化语言规范
+├── docs/        0.1.0、0.2.0、0.3.1、0.3.2、0.3.3 和 0.3.4 版本化语言规范
 ├── .dev/        设计计划、审计、草稿和开发过程记录
 ├── bootstrap/   自举计划与 C/Rust 基线产物
 ├── lib/         UltraCPP 标准库源码
@@ -322,8 +322,8 @@ make -C src-c test
 
 | 文档 | 用途 |
 |---|---|
-| [UltraCPP v0.3.1 中文规范](docs/UltraCPP-v0.3.1-spec-zh-CN.md) | v0.3.1 语言规范的简体中文版本 |
-| [UltraCPP v0.3.1 English Specification](docs/UltraCPP-v0.3.1-spec-en.md) | v0.3.1 语言规范的英文版本 |
+| [UltraCPP v0.3.4 中文规范](docs/UltraCPP-v0.3.4-spec-zh-CN.md) | v0.3.4 语言规范的简体中文版本 |
+| [UltraCPP v0.3.4 English Specification](docs/UltraCPP-v0.3.4-spec-en.md) | v0.3.4 语言规范的英文版本 |
 | [0.1.0 借用检查审计](.dev/drafts/0.1.0-borrowck-spec-vs-impl.md) | 记录 0/12 执行现状、矛盾和后续决策 |
 | [C 端口 README](src-c/README.md) | 当前生产主机编译器的构建方式和能力 |
 | [Bootstrap Plan](bootstrap/PLAN.md) | 从 C 主机走向 `src-uc/` 自举编译器的路线 |

@@ -4,18 +4,18 @@
 
 > **Language editions**: [English (this file)](./README.md) · [简体中文](./README-zh-CN.md)
 >
-> **Current spec**: [UltraCPP v0.3.1 (English)](./docs/UltraCPP-v0.3.1-spec-en.md) · [UltraCPP v0.3.1 (简体中文)](./docs/UltraCPP-v0.3.1-spec-zh-CN.md)
+> **Current spec**: [UltraCPP v0.3.4 (English)](./docs/UltraCPP-v0.3.4-spec-en.md) · [UltraCPP v0.3.4 (简体中文)](./docs/UltraCPP-v0.3.4-spec-zh-CN.md)
 >
-> **Status**: draft · **Last revised**: 2026-08-17
+> **Status**: draft · **Last revised**: 2026-08-21
 
-> **Current Status (2026-08-08)**
+> **Current Status (2026-08-21)**
 >
-> Version 0.3.1 is defining new rules for ownership, modification rights, and threads. Those rules are a language design, not a safety guarantee already delivered by the compiler. The C99 port in `src-c/` is the production host compiler; the Rust port in `src/` is a reference. The semantic checking stage introduced by the 0.3.1 design has not been implemented yet.
+> Version 0.3.4 completes lib/*.uc stdlib bootstrap (6 files: print/string/memory/math/alloc/sys.uc + sys/raw.uc) and codegen abs_int → uc_abs migration. The 0.3.3 work (S1 unary operator priority + S3 deref semantics + mod/unmod/move/clone functionalization) and 0.3.4 spec gap fixes (S6/S8/S9) are now in code. The C99 port in `src-c/` is the production host compiler; the Rust port in `src/` is a reference. Baseline: 32/48 PASS / 16 FAIL. The 0.3.5 / M1 milestone (UC_TYPE_MUTABLE_POINTER cleanup + remaining m0 tests + 6-keyword lexer integration) is the next focus.
 >
 > Start here:
 >
-> - [UltraCPP v0.3.1 Chinese Specification](docs/UltraCPP-v0.3.1-spec-zh-CN.md)
-> - [UltraCPP v0.3.1 English Specification](docs/UltraCPP-v0.3.1-spec-en.md)
+> - [UltraCPP v0.3.4 Chinese Specification](docs/UltraCPP-v0.3.4-spec-zh-CN.md)
+> - [UltraCPP v0.3.4 English Specification](docs/UltraCPP-v0.3.4-spec-en.md)
 > - [0.1.0 borrow-checker spec versus implementation audit](.dev/drafts/0.1.0-borrowck-spec-vs-impl.md), the record of why the old model had to be reconsidered
 > - [C host compiler README](src-c/README.md), the current implementation
 
@@ -291,7 +291,7 @@ UltraCpp/
 ├── src-c/       Production C99 host: lexer, parser, AST, codegen, CLI
 ├── src/         Rust reference implementation, not the production target
 ├── src-uc/      Future self-hosted compiler written in UltraCPP
-├── docs/        Versioned 0.1.0, 0.2.0, and 0.3.1 specifications
+├── docs/        Versioned 0.1.0, 0.2.0, 0.3.1, 0.3.2, 0.3.3, and 0.3.4 specifications
 ├── .dev/        Design plans, audits, drafts, and development records
 ├── bootstrap/   Bootstrap plan and C/Rust baseline artifacts
 ├── lib/         UltraCPP standard-library sources
@@ -326,8 +326,8 @@ make -C src-c test
 
 | Document | Purpose |
 |---|---|
-| [UltraCPP v0.3.1 Chinese Specification](docs/UltraCPP-v0.3.1-spec-zh-CN.md) | Chinese edition of the v0.3.1 language specification |
-| [UltraCPP v0.3.1 English Specification](docs/UltraCPP-v0.3.1-spec-en.md) | English edition of the v0.3.1 language specification |
+| [UltraCPP v0.3.4 Chinese Specification](docs/UltraCPP-v0.3.4-spec-zh-CN.md) | Chinese edition of the v0.3.4 language specification |
+| [UltraCPP v0.3.4 English Specification](docs/UltraCPP-v0.3.4-spec-en.md) | English edition of the v0.3.4 language specification |
 | [0.1.0 borrow-checker audit](.dev/drafts/0.1.0-borrowck-spec-vs-impl.md) | Records the 0/12 enforcement result, contradictions, and later decisions |
 | [C port README](src-c/README.md) | Build instructions and capabilities of the production host compiler |
 | [Bootstrap Plan](bootstrap/PLAN.md) | Route from the C host to the future compiler in `src-uc/` |
