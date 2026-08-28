@@ -3,9 +3,9 @@
      启动新会话时,先看这里识别当前任务范围。
      ============================================================ -->
 
-# 🔖 当前任务:0.3.4 实施完成 (10a-11a 完成，commit 11c skipped per spec §S8 已由 0.3.3 commit 6 实质解决；baseline 32/48 unchanged)
+# 🔖 当前任务:0.3.5 / M1 词法扩展 (commit 14a spec → 14b-14i 实施 → 15 docs sync 待执行；上一轮 0.3.4 已收官，HEAD `5499a1a`，baseline 32/48 unchanged)
 
-**目标**:0.3.4 实施完成 — 7 commits (10a/10b/10c/10d/10e lib/*.uc 6 文件 + 11a codegen abs_int 路由)；baseline 32/48 unchanged；commit 11c skipped (spec §S8 已由 0.3.3 commit 6 实质解决)。下一步进入 0.3.5 / M1 词法扩展。
+**目标**:0.3.5 / M1 词法扩展 — 计划见 `.dev/drafts/0.3.5-implementation-plan.md`（339 行）：UC_TYPE_MUTABLE_POINTER 清理 + 6 关键字 lexer 集成 (mod/unmod/is_null/sizeof/alignof/volatile) + 剩余 m0 baseline 翻 PASS。上一轮 0.3.4 已收官（HEAD `5499a1a`，19 commits：6 spec + 7 implementation + 6 docs sync；baseline 32/48 unchanged）。
 
 **已完成迭代**:
 - ✅ **0.3.1**(S2 lvalue/rvalue)— 已完成
@@ -16,7 +16,7 @@
 **下一步** (0.3.5 / M1 词法扩展):
 - 详见"进行中/未来工作"段落
 
-**当前状态**(2026-08-21 / HEAD `3c6d625`):
+**当前状态**(2026-08-21 / HEAD `5499a1a`):
 - ✅ 0.3.1 / 0.3.2 / 0.3.3 **spec + 实施全部完成**
 - baseline:**32/48 PASS / 16 FAIL / 66.7%** (5 个 0.3.3 翻 PASS: m0_30 / m0_37 / m0_41 / m0_42 / m0_44)
 - 14 commits 跨 0.3.1 → 0.3.3 完整链路 (1 spec en + 13 implementation)
@@ -31,7 +31,7 @@
 - **未起草 spec 缺陷**:S6 FFI body / S7 CJK / S8 deref-assign 残余 / S9 exit code 等 — 实际位置: `.dev/drafts/0.3.3-implementation-plan.md` §14 + `.dev/drafts/0.3.0-m0-priority.md` §9.x
 
 **关联文档**(必读):
-1. `HANDOFF.md`(本文件)— 整体状态 (2026-08-21 refresh)
+1. `HANDOFF.md`(本文件)— 整体状态 (2026-08-21 refresh，HEAD `5499a1a`)
 2. `.dev/drafts/0.3.4-implementation-process.md` — 0.3.4 实施过程记录 (completed)
 3. `.dev/drafts/0.3.4-implementation-plan.md` — 0.3.4 实施计划 (707 行)
 4. `.dev/drafts/0.3.4-spec-text-changes.md` — 0.3.4 spec 改动明细 (1208 行)
@@ -40,6 +40,8 @@
 7. `.dev/plans/0.3.0-borrow-check-milestones.md` — M0-M5 路线图
 8. `docs/UltraCPP-v0.3.4-spec-zh-CN.md` — 当前中文规范 (head, commit 11b)
 9. `docs/UltraCPP-v0.3.4-spec-en.md` — 当前英文规范 (head, commit 11b)
+10. `.dev/drafts/0.3.5-implementation-plan.md` — 0.3.5 实施计划（即将启动，339 行）
+11. `.dev/drafts/0.3.5-spec-text-changes.md` — 0.3.5 spec 改动明细（即将启动，213 行）
 
 **新会话应做**:
 1. 读本任务标识 (顶块) + HANDOFF §1 看更新后 baseline (32/48)
@@ -80,7 +82,13 @@ Current progress (HEAD `02d7170`): M0 P0-1 (const trio m0_22/45/46) + P0-2 (allo
 | 2026-08-12 | P1-4 partial (m0_31 + m0_29 + m0_19) | m0_19, m0_29, m0_31 | **26/48** | partial done | commits a513226 (UC_UN_ADDR_OF) + 985eade (m0_19 .uc trailing // 208); m0_41/m0_42 P3-5 范畴待 |
 | 2026-08-12 | P1-1 标 PASS (测试目标='编译器输出 lexer error') | m0_50 | **27/48** | done | runner 加 `expects_compiler_error` 标记 + m0_50 .uc 加 marker; 编译器一直正确拒绝 CJK(违反 spec §2.4 ASCII 标识符约束); commit `02d7170`; src-c 未改; M0 git chain `cb07848` → `62befa4` (~71 commits, 10+ for M0); C 单元测试 505/505 PASS |
 | 2026-08-21 | 0.3.3 spec + 实施完成 | **32/48** | done | 14 commits (1 spec en + 13 implementation): spec en translation (6ef63d6) + AST is_builtin (108a206) + parser intrinsic (5e989c9) + codegen intrinsic emit (7ff910a) + 4 keywords (e28e22c) + mod/unmod (5a65cc6) + 4 emit funcs (88dfae4) + BUILTIN_SIGS remove print/intrinsic/libc (7798585/cf3e310/b1d2b25) + preprocessor @ifdef (51bf9ed) + sys:: (26507d3) + asm { } (33c2524+cd04c84+e035922); 5 FAIL 翻 PASS (m0_30/37/41/42/44); git chain `4b42288` → `e035922` |
-| 2026-08-21 | 0.3.4 实施完成 | **32/48** | done | 7 commits: lib/*.uc 6 文件 (print/string/memory/math/sys) — 10a/10b/10c/10d/10e + 11a codegen abs_int 路由 (calloc/free/memcpy 调整 + UC_EXPR_CALL 整数 literal 返回路径); commit 11c skipped (spec §S8 已由 0.3.3 commit 6 实质解决); baseline 32/48 unchanged; git chain `e035922` → `3c6d625`; 详见 `.dev/drafts/0.3.4-implementation-process.md` |
+| 2026-08-21 | 0.3.4 实施完成 | **32/48** | done | 7 commits: lib/*.uc 6 文件 (print/string/memory/math/sys) — 10a/10b/10c/10d/10e + 11a codegen abs_int 路由 (calloc/free/memcpy 调整 + UC_EXPR_CALL 整数 literal 返回路径); commit 11c skipped (spec §S8 已由 0.3.3 commit 6 实质解决); baseline 32/48 unchanged; git chain `e035922` → `3c6d625` → `5499a1a`（docs sync 6 commits）; 详见 `.dev/drafts/0.3.4-implementation-process.md` |
+| 2026-08-21 | 0.3.4 docs sync phase 1 (HANDOFF+AGENTS refresh) | **32/48** | done | commit `001718b`; 同步 0.3.4 实施完成状态 |
+| 2026-08-21 | 0.3.4 docs sync phase 2 (README 双语 spec 指针刷新 v0.3.1→v0.3.4) | **32/48** | done | commit `857ee1b` |
+| 2026-08-21 | 0.3.4 docs sync phase 3 (release notes) | **32/48** | done | commit `ae9bc85`; docs/UltraCPP-v0.3.4-release-notes.md (+151 LOC) |
+| 2026-08-21 | 0.3.4 docs sync phase 4 (implementation process) | **32/48** | done | commit `08c6a2a`; .dev/drafts/0.3.4-implementation-process.md (+386 LOC) |
+| 2026-08-21 | 0.3.4 docs sync phase 5 (0.3.3 process SUPERSEDED) | **32/48** | done | commit `72e50f7`; 0.3.3-implementation-process.md 标 SUPERSEDED |
+| 2026-08-21 | 0.3.4 docs sync phase 6 (milestones+priority refresh) | **32/48** | done | commit `5499a1a`; .dev/plans/0.3.0-borrow-check-milestones.md + m0-priority.md 同步 0.3.4 完成；git chain `3c6d625` → `5499a1a` |
 
 ## 2. Quick Start (30 seconds)
 

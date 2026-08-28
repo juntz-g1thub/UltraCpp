@@ -11,7 +11,7 @@
 不重复维护具体进度数字，以避免与 HANDOFF 不一致。涉及决策/计划/历史/
 当下 milestone 的所有问题，以 **`HANDOFF.md` 为单一权威来源（single source of truth）**。
 
-> 当前快速摘要（最新一次 baseline，2026-08-21 HEAD `3c6d625`）：M0 **32/48 PASS / 16 FAIL**（=66.7%）；
+> 当前快速摘要（最新一次 baseline，2026-08-21 HEAD `5499a1a`）：M0 **32/48 PASS / 16 FAIL**（=66.7%）；
 > P0-1 → P0-2 → P0-3 → P0-4 全部完成 + **P1-2 ✅ done** (m0_10 commit `09b4df5`) + **P1-3 ✅ done** (m0_13/14/15 commits `afae9c9` + `c8492ef`) + **P1-4 partial done** (m0_19 / m0_29 / m0_31，commits `a513226` + `985eade`；**m0_41 / m0_42 deferred to P3-5**) + **P1-1 ✅ done** (m0_50 commit `02d7170` — runner 加 `// expects_compiler_error` marker 支持 + m0_50 .uc 加 marker；测试目标是验证编译器正确拒绝 CJK 标识符，编译器一直正确输出 lexer error，runner 旧逻辑把 `compile_failed` 一律当 FAIL 是误判) + **P1-5 🟡 deferred** (CJK 真支持推迟到 未来 spec 修订) + **0.3.1 → 0.3.3 实施 ✅ done**（14 commits，baseline 27 → 32/48，5 FAIL 翻 PASS：m0_30 / m0_37 / m0_41 / m0_42 / m0_44 — 0.3.3 实施副产品，详见 `.dev/drafts/0.3.3-implementation-process.md`）+ **0.3.4 实施 ✅ done**（10a-10e lib/*.uc 6 文件 + 11a codegen abs_int 路由；commit 11c skipped per spec §S8 已由 0.3.3 commit 6 实质解决；baseline 32/48 unchanged，详见 `.dev/drafts/0.3.4-implementation-process.md`）；剩 **P2**（数组/struct/extern/include）+ 长期推 **P3-5 pointer runtime** (m0_34/m0_36)。
 > 详情与分类见 `HANDOFF.md` §1 + `.dev/drafts/0.3.0-m0-priority.md` §8。
 
@@ -99,6 +99,8 @@
 | **0.3.4 实施计划** | `.dev/drafts/0.3.4-implementation-plan.md` |
 | **0.3.4 spec text changes** | `.dev/drafts/0.3.4-spec-text-changes.md` |
 | **0.3.4 release notes** | `docs/UltraCPP-v0.3.4-release-notes.md`（待 Phase 3 新建）|
+| **0.3.5 实施计划（即将启动）** | `.dev/drafts/0.3.5-implementation-plan.md` |
+| **0.3.5 spec text changes（即将启动）** | `.dev/drafts/0.3.5-spec-text-changes.md` |
 | **0.3.3 实施过程（SUPERSEDED by 0.3.4）** | `.dev/drafts/0.3.3-implementation-process.md` |
 | **.uc 测试目录**（102 个测试） | `docs/test-outline.md` |
 | 借用检查审计 + 21+ 决策 + 0.3.0 outcome | `.dev/drafts/0.1.0-borrowck-spec-vs-impl.md` |
@@ -181,7 +183,7 @@
 
 - ✅ `README.md` / `README-zh-CN.md` 已按本节规则清理（commit `b7ca430`，header 重写 + banned-word 移除 + 0.3.1 spec 引用更新）
 - ⚠️ `.dev/_archive/` 历史归档不含 spec 双语文件，仅含 README + 设计笔记；本节翻译规则不追溯历史
-- ⚠️ HANDOFF.md §3 background spec pointer 原含本节禁词措辞，已在 commit 13 phase 1 (HEAD `3c6d625`) 同步清除 — §3 改为「当前活跃版本, commit 11b」中性措辞
+- ⚠️ HANDOFF.md §3 background spec pointer 原含本节禁词措辞，已在 commit 13 phase 1 (HEAD `5499a1a`) 同步清除 — §3 改为「当前活跃版本, commit 11b」中性措辞
 
 ---
 
@@ -225,7 +227,7 @@
     - **remaining**: P2 (m0_26/27/28 array + m0_32/33 struct + m0_40 include) + 长期推 P3-5 pointer runtime (m0_34/m0_36)
 - [ ] **Bootstrap**（UltraCPP 写 UltraCPP）：路线见 `bootstrap/PLAN.md`，**当前休眠**
 
-> 当前焦点是 **0.3.5 / M1 词法扩展**（在 0.3.4 实施完成 7 commits 基础上：UC_TYPE_MUTABLE_POINTER 清理 + 6 关键字 lexer 集成 (mod/unmod/is_null/sizeof/alignof/volatile) + 剩余 m0 baseline 翻 PASS；详见 `.dev/drafts/0.3.4-implementation-process.md` 末段「Next Steps」）。M0 baseline verification 已 complete（baseline **32/48 PASS / 16 FAIL**；详见 `HANDOFF.md` §1）。
+> 当前焦点是 **0.3.5 / M1 词法扩展**（在 0.3.4 收官 19 commits 基础上：UC_TYPE_MUTABLE_POINTER 清理 + 6 关键字 lexer 集成 (mod/unmod/is_null/sizeof/alignof/volatile) + 剩余 m0 baseline 翻 PASS；详见 `.dev/drafts/0.3.4-implementation-process.md` 末段「Next Steps」）。M0 baseline verification 已 complete（baseline **32/48 PASS / 16 FAIL**；详见 `HANDOFF.md` §1）。
 >
 > 借用检查在 C 主机中的实现路线仍按 `.dev/plans/0.3.0-borrow-check-milestones.md` M0-M5 推进：
 > 1. **M0**（基线验证）——✅ done（32/48 PASS）
