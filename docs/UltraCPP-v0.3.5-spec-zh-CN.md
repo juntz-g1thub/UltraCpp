@@ -1516,7 +1516,7 @@ UltraCPP 中「语言原语」分两类：
 1. `abs_int` 从 `BUILTIN_SIGS[]` **完全移除**（commit 11a）
 2. codegen 在 `UCExprCall` 主流水中走 **P3 extern function lookup**（per §11.0.3 修订）：emit `declare external i32 @abs_int(i32)` + `call i32 @abs_int(i32 %x)`
 3. 链接时由 linker 解析到 `lib/math.o::uc_abs`（来自 `lib/math.uc`）
-4. `lib/math.uc` 提供 `uc_abs(n: int) -> int` 实现：`n < 0 ? -n : n`
+4. `lib/math.uc` 提供 `int uc_abs(int n)` 实现：`n < 0 ? -n : n`
 
 **回归保证**：`uc_abs` 行为必须与原 inline IR 字节一致（`uc_abs(-7) == 7` / `uc_abs(0) == 0` / `uc_abs(7) == 7`），m0_41_extern_c 测试在 commit 11a 后仍 PASS（per 0.3.4 plan §6 R2）。
 
@@ -2265,7 +2265,7 @@ UltraCPP 采用 **C 风格的预编译宏语法**，不采用 Rust 的 `#[cfg(..
 UltraCPP 采用 **C / GCC 风格的内联汇编语法**，不采用 Rust 的 `asm!` 宏。理由：LLVM 工具链直接理解；与 `src-c/` 当前 C 实现无缝；与 §10.2 预编译宏一致使用 C 生态约定。
 
 ```c
-fn raw_syscall(num: int, arg1: int) -> int {
+int raw_syscall(int num, int arg1) {
     int result;
     asm {
         "syscall"

@@ -1504,7 +1504,7 @@ abs_int has been removed from `BUILTIN_SIGS[]` (src-c/src/codegen.c) and is now 
 1. `abs_int` is **completely removed** from `BUILTIN_SIGS[]` (commit 11a)
 2. The codegen in the `UCExprCall` main flow takes **P3 extern function lookup** (per §11.0.3 revision): emit `declare external i32 @abs_int(i32)` + `call i32 @abs_int(i32 %x)`
 3. At link time the linker resolves the symbol to `lib/math.o::uc_abs` (from `lib/math.uc`)
-4. `lib/math.uc` provides the `uc_abs(n: int) -> int` implementation: `n < 0 ? -n : n`
+4. `lib/math.uc` provides the `int uc_abs(int n)` implementation: `n < 0 ? -n : n`
 
 **Regression guarantee**: The behavior of `uc_abs` must be byte-identical to the original inline IR (`uc_abs(-7) == 7` / `uc_abs(0) == 0` / `uc_abs(7) == 7`); the `m0_41_extern_c` test still PASSES after commit 11a (per 0.3.4 plan §6 R2).
 
@@ -2235,14 +2235,17 @@ UltraCPP adopts **C-style preprocessor macro syntax**, not Rust-style `#[cfg(...
 UltraCPP adopts **C / GCC-style inline assembly syntax**, not Rust's `asm!` macro. Rationale: LLVM toolchain understands it directly; seamless with the current C implementation in `src-c/`; consistent with §10.2 preprocessor macros in using C ecosystem conventions.
 
 ```c
-unsafe {
-    int result;
-    asm {
-        "syscall"
-        : "=a"(result)               // output operand
-        : "0"(num), "D"(arg1)         // input operands (0 = reuse output 0)
-        : "rcx", "r11", "cc", "memory"  // clobbers
+int raw_syscall(int num, int arg1) {
+    unsafe {
+        int result;
+        asm {
+            "syscall"
+            : "=a"(result)               // output operand
+            : "0"(num), "D"(arg1)         // input operands (0 = reuse output 0)
+            : "rcx", "r11", "cc", "memory"  // clobbers
+        }
     }
+    return result;
 }
 ```
 
