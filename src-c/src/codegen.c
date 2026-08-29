@@ -184,6 +184,7 @@ struct UCCodeGenerator {
     Map global_vars;   /* global var/const name -> LLVM type (M0 P0-1) */
     Map const_init_values; /* const-global name -> folded long long (as string) */
     Map local_funcs;   /* func name  -> module name (for mangling) */
+    Map fn_ptr_sigs;   /* [0.3.5 commit 14b] fn-ptr local name -> "ret|param1,param2,..." (LLVM types); absent => not a fn-ptr local */
     Map imported_modules; /* module name -> module name */
     Map declared_externals; /* symbol -> "1" (set membership) */
 
@@ -220,6 +221,7 @@ UCCodeGenerator* uc_codegen_new(const char* module_name) {
     map_init(&g->global_vars);
     map_init(&g->const_init_values);
     map_init(&g->local_funcs);
+    map_init(&g->fn_ptr_sigs);
     map_init(&g->imported_modules);
     map_init(&g->declared_externals);
     g->loop_scopes = uc_vec_new();
@@ -238,6 +240,7 @@ void uc_codegen_free(UCCodeGenerator* g) {
     map_free(&g->global_vars);
     map_free(&g->const_init_values);
     map_free(&g->local_funcs);
+    map_free(&g->fn_ptr_sigs);
     map_free(&g->imported_modules);
     map_free(&g->declared_externals);
     uc_vec_free(g->loop_scopes, (void (*)(void*))free_loop_scope);
@@ -411,8 +414,14 @@ static const char* llvm_type(UCTypeKind k) {
             return "i32";
         /* Array/Function unsupported in this minimal port. */
         case UC_TYPE_ARRAY:
-        case UC_TYPE_FUNCTION:
             return "i32";
+        /* [0.3.5 commit 14b] Function pointers: per spec §3.1 the storage
+         * representation is opaque `i8*` (matches UC_TYPE_POINTER above).
+         * LLVM 18 opaque-pointer model: indirect-call syntax is
+         * `call <ret> %fp(<args>)` — NO callee-type prefix between the
+         * return type and the callee value. m0_37 confirms. */
+        case UC_TYPE_FUNCTION:
+            return "i8*";
     }
     return "i32";
 }
@@ -725,8 +734,10 @@ static void gen_func(UCCodeGenerator* g, const UCFuncDef* func, int exported) {
     /* Reset per-function state. */
     map_free(&g->local_types);
     map_free(&g->local_vars);
+    map_free(&g->fn_ptr_sigs);
     map_init(&g->local_types);
     map_init(&g->local_vars);
+    map_init(&g->fn_ptr_sigs);
 
     for (size_t i = 0; i < uc_vec_len(func->params); i++) {
         UCParam* p = (UCParam*)uc_vec_at(func->params, i);
@@ -925,7 +936,56 @@ static void gen_stmt(UCCodeGenerator* g, const UCStmt* stmt) {
             sprintf(alloc, "%%%s", d->name.data);
             char* ll_type = llvm_type_of(g, d->ty);
             map_put(&g->local_vars, d->name.data, ll_type);
+            /* [0.3.5 commit 14b] Register fn-ptr locals so UC_EXPR_CALL
+             * can route `fp(args)` to an indirect-call path. Signature
+             * format: "ret|param1,param2,..." (LLVM types). */
+            if (d->ty && d->ty->kind == UC_TYPE_FUNCTION
+                && d->ty->as.function.ret
+                && d->ty->as.function.params) {
+                size_t sig_cap = 256;
+                char* sig = (char*)malloc(sig_cap);
+                size_t sig_len = 0;
+                char* ret_t = llvm_type_of(g, d->ty->as.function.ret);
+                size_t rlen = strlen(ret_t);
+                memcpy(sig, ret_t, rlen); sig_len += rlen;
+                sig[sig_len++] = '|';
+                free(ret_t);
+                for (size_t i = 0;
+                     i < uc_vec_len(d->ty->as.function.params); i++) {
+                    UCParam* pp = (UCParam*)uc_vec_at(
+                        d->ty->as.function.params, i);
+                    if (i > 0) sig[sig_len++] = ',';
+                    char* pt = llvm_type_of(g, pp->ty);
+                    size_t plen = strlen(pt);
+                    if (sig_len + plen + 1 >= sig_cap) {
+                        while (sig_len + plen + 1 >= sig_cap)
+                            sig_cap *= 2;
+                        sig = (char*)realloc(sig, sig_cap);
+                    }
+                    memcpy(sig + sig_len, pt, plen);
+                    sig_len += plen;
+                    free(pt);
+                }
+                sig[sig_len] = '\0';
+                map_put(&g->fn_ptr_sigs, d->name.data, sig);
+                free(sig);
+            }
             emit_fmt_writeln(g, "%s = alloca %s", alloc, ll_type);
+            /* [0.3.5 commit 14b] `int (*fp)(int,int) = add;` — the
+             * initialiser is a bare function name, which gen_expr()
+             * cannot type as a fn-ptr. Store the function address
+             * directly (opaque-pointer model: `@sym` is already ptr). */
+            if (d->init && d->ty && d->ty->kind == UC_TYPE_FUNCTION
+                && d->init->kind == UC_EXPR_IDENT) {
+                const char* fname = d->init->as.ident.data;
+                int is_local = map_contains(&g->local_funcs, fname);
+                char* sym = mangle_name(g, fname, is_local);
+                emit_fmt_writeln(g, "store i8* %s, i8** %s", sym, alloc);
+                free(sym);
+                free(alloc);
+                free(ll_type);
+                break;
+            }
             if (d->init) {
                 UCError err; uc_error_init(&err);
                 char* v = gen_expr(g, d->init, &err, 0);
@@ -1887,11 +1947,160 @@ static char* gen_expr(UCCodeGenerator* g, const UCExpr* expr, UCError* err, int 
                 && strcmp(callee->as.ident.data, "abs_int") == 0) {
                 return emit_uc_abs_call(g, expr, err);
             }
+            /* [0.3.5 commit 14b] Indirect call dispatch (m0_37).
+             *
+             *   `fp(args)`            — callee = IDENT, fp is fn-ptr local.
+             *   `(*fp)(args)`         — callee = UNARY(DEREF, IDENT), fp fn-ptr local.
+             *
+             * Both shapes load the pointer from the alloca and emit
+             *   %t = call <ret> %fp(<args>)
+             * LLVM 18 opaque-pointer model: NO callee-type prefix between
+             * the return type and the callee value. Pre-opaque-pointer
+             * syntax `call <ret> i8* %fp(...)` is rejected by llc 18
+             * ("expected value token" at the `*`). */
             char* symbol = NULL;
             if (callee->kind == UC_EXPR_IDENT) {
                 const char* name = callee->as.ident.data;
+                if (map_contains(&g->fn_ptr_sigs, name)) {
+                    const char* sig = map_get(&g->fn_ptr_sigs, name);
+                    /* sig layout: "ret|param1,param2,..." */
+                    const char* bar = strchr(sig, '|');
+                    const char* ret_t = sig;
+                    size_t ret_len = bar ? (size_t)(bar - sig)
+                                         : strlen(sig);
+                    char* ret_str = (char*)malloc(ret_len + 1);
+                    memcpy(ret_str, ret_t, ret_len);
+                    ret_str[ret_len] = '\0';
+
+                    /* Load pointer from alloca */
+                    char* loaded = mk_temp(g);
+                    char* alloca_name = (char*)malloc(strlen(name) + 3);
+                    sprintf(alloca_name, "%%%s", name);
+                    emit_fmt_writeln(g, "%s = load i8*, i8** %s",
+                                     loaded, alloca_name);
+                    free(alloca_name);
+
+                    /* Emit args */
+                    Buf argbuf; argbuf.data = NULL;
+                    argbuf.len = 0; argbuf.cap = 0;
+                    for (size_t i = 0;
+                         i < uc_vec_len(expr->as.call.args); i++) {
+                        UCExpr* a = (UCExpr*)uc_vec_at(
+                            expr->as.call.args, i);
+                        char* av = gen_expr(g, a, err, 0);
+                        if (!av || err->kind != UC_ERR_NONE) {
+                            free(loaded);
+                            free(ret_str);
+                            free(symbol);
+                            buf_free(&argbuf);
+                            return av;
+                        }
+                        const char* at = g->last_expr_type
+                                         ? g->last_expr_type : "i32";
+                        if (argbuf.len > 0) buf_append(&argbuf, ", ", 2);
+                        buf_append(&argbuf, at, strlen(at));
+                        buf_append(&argbuf, " ", 1);
+                        buf_append(&argbuf, av, strlen(av));
+                        free(av);
+                    }
+                    if (argbuf.data == NULL) buf_appends(&argbuf, "");
+                    free(expr->as.call.return_type);
+                    ((UCExpr*)expr)->as.call.return_type =
+                        cgen_strdup(ret_str);
+                    char* res = mk_temp(g);
+                    if (strcmp(ret_str, "void") == 0) {
+                        emit_fmt_writeln(g,
+                            "call void %s(%s)",
+                            loaded, argbuf.data);
+                        free(g->last_expr_type);
+                        g->last_expr_type = cgen_strdup("void");
+                    } else {
+                        emit_fmt_writeln(g,
+                            "%s = call %s %s(%s)",
+                            res, ret_str, loaded, argbuf.data);
+                        free(g->last_expr_type);
+                        g->last_expr_type = cgen_strdup(ret_str);
+                    }
+                    buf_free(&argbuf);
+                    free(loaded);
+                    free(ret_str);
+                    return res;
+                }
                 int is_local = map_contains(&g->local_funcs, name);
                 symbol = mangle_name(g, name, is_local);
+            } else if (callee->kind == UC_EXPR_UNARY
+                       && callee->as.unary.op == UC_UN_DEREF
+                       && callee->as.unary.operand
+                       && callee->as.unary.operand->kind == UC_EXPR_IDENT
+                       && map_contains(
+                           &g->fn_ptr_sigs,
+                           callee->as.unary.operand->as.ident.data)) {
+                /* (*fp)(args) — parse_unary() returns the pointer value for
+                 * DEREF (lvalue-context behaviour; in_lvalue_ctx branch is
+                 * skipped here because the operand sits in expr-position
+                 * via the call site). We still need to load the alloca
+                 * slot to materialise the fn-ptr value. */
+                const char* name =
+                    callee->as.unary.operand->as.ident.data;
+                const char* sig = map_get(&g->fn_ptr_sigs, name);
+                const char* bar = strchr(sig, '|');
+                const char* ret_t = sig;
+                size_t ret_len = bar ? (size_t)(bar - sig) : strlen(sig);
+                char* ret_str = (char*)malloc(ret_len + 1);
+                memcpy(ret_str, ret_t, ret_len);
+                ret_str[ret_len] = '\0';
+
+                char* loaded = mk_temp(g);
+                char* alloca_name = (char*)malloc(strlen(name) + 3);
+                sprintf(alloca_name, "%%%s", name);
+                emit_fmt_writeln(g, "%s = load i8*, i8** %s",
+                                 loaded, alloca_name);
+                free(alloca_name);
+
+                Buf argbuf; argbuf.data = NULL;
+                argbuf.len = 0; argbuf.cap = 0;
+                for (size_t i = 0;
+                     i < uc_vec_len(expr->as.call.args); i++) {
+                    UCExpr* a = (UCExpr*)uc_vec_at(
+                        expr->as.call.args, i);
+                    char* av = gen_expr(g, a, err, 0);
+                    if (!av || err->kind != UC_ERR_NONE) {
+                        free(loaded);
+                        free(ret_str);
+                        free(symbol);
+                        buf_free(&argbuf);
+                        return av;
+                    }
+                    const char* at = g->last_expr_type
+                                     ? g->last_expr_type : "i32";
+                    if (argbuf.len > 0) buf_append(&argbuf, ", ", 2);
+                    buf_append(&argbuf, at, strlen(at));
+                    buf_append(&argbuf, " ", 1);
+                    buf_append(&argbuf, av, strlen(av));
+                    free(av);
+                }
+                if (argbuf.data == NULL) buf_appends(&argbuf, "");
+                free(expr->as.call.return_type);
+                ((UCExpr*)expr)->as.call.return_type =
+                    cgen_strdup(ret_str);
+                char* res = mk_temp(g);
+                if (strcmp(ret_str, "void") == 0) {
+                    emit_fmt_writeln(g,
+                        "call void %s(%s)",
+                        loaded, argbuf.data);
+                    free(g->last_expr_type);
+                    g->last_expr_type = cgen_strdup("void");
+                } else {
+                    emit_fmt_writeln(g,
+                        "%s = call %s %s(%s)",
+                        res, ret_str, loaded, argbuf.data);
+                    free(g->last_expr_type);
+                    g->last_expr_type = cgen_strdup(ret_str);
+                }
+                buf_free(&argbuf);
+                free(loaded);
+                free(ret_str);
+                return res;
             } else if (callee->kind == UC_EXPR_FIELD) {
                 UCExpr* mod = callee->as.field.target;
                 if (mod->kind != UC_EXPR_IDENT) {

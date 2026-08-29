@@ -1143,11 +1143,122 @@ static UCVec* parse_func_params(UCParser* p) {
     return params;
 }
 
+/* Function-pointer parameter list: types only, no names.
+ * Mirrors parse_func_params but parse_one_param requires `<type> <name>`,
+ * whereas fn-ptr signatures are `T (*fp)(T1, T2, ...)` with no param names.
+ * Each parsed type is wrapped in a UCParam with an empty name so the
+ * existing UC_TYPE_FUNCTION (which stores UCVec*<UCParam*>) is reused
+ * unchanged.
+ */
+static UCVec* parse_fn_ptr_params(UCParser* p) {
+    UCVec* params = uc_vec_new();
+    if (check(p, UC_TOK_RPAREN)) return params;
+    for (;;) {
+        UCType* ty = parse_type(p);
+        if (is_err(p)) {
+            uc_type_free(ty);
+            uc_vec_free(params, param_free_local);
+            return NULL;
+        }
+        if (!ty) {
+            err_here(p, "expected function-pointer parameter type");
+            uc_vec_free(params, param_free_local);
+            return NULL;
+        }
+        UCParam* prm = uc_param_new(uc_string_empty(), ty);
+        uc_vec_push(params, prm);
+        if (!match(p, UC_TOK_COMMA)) break;
+    }
+    return params;
+}
+
+/* ------------------------------------------------------------------------- */
+/* Function-pointer decl: `(* IDENT )( params... ) [= expr] ;`              */
+/*                                                                           */
+/* Called when current is LPAREN and peek is OP_STAR (fn-ptr sigil).         */
+/* Consumes the whole fn-ptr declarator including the optional initializer  */
+/* and trailing ';'. `ret_ty` becomes UC_TYPE_FUNCTION's return slot.       */
+/* ------------------------------------------------------------------------- */
+static UCVarDecl* parse_fn_ptr_decl_inner(UCParser* p, UCType* ret_ty) {
+    advance(p);                                  /* consume '(' */
+    if (!expect(p, UC_TOK_OP_STAR, "'*' inside function-pointer")) {
+        uc_type_free(ret_ty);
+        return NULL;
+    }
+    if (!check(p, UC_TOK_IDENT)) {
+        err_here(p, "expected function-pointer variable name");
+        uc_type_free(ret_ty);
+        return NULL;
+    }
+    UCString name = uc_string_new(p->current.lexeme, p->current.lexeme_len);
+    advance(p);
+    if (!expect(p, UC_TOK_RPAREN, "')' after function-pointer variable name")) {
+        uc_string_free(&name);
+        uc_type_free(ret_ty);
+        return NULL;
+    }
+    if (!expect(p, UC_TOK_LPAREN, "'(' before function-pointer parameters")) {
+        uc_string_free(&name);
+        uc_type_free(ret_ty);
+        return NULL;
+    }
+    UCVec* params = parse_fn_ptr_params(p);
+    if (is_err(p)) {
+        uc_string_free(&name);
+        uc_type_free(ret_ty);
+        return NULL;
+    }
+    if (!params) {
+        uc_string_free(&name);
+        uc_type_free(ret_ty);
+        return NULL;
+    }
+    if (!expect(p, UC_TOK_RPAREN, "')' to close function-pointer parameters")) {
+        uc_string_free(&name);
+        uc_type_free(ret_ty);
+        uc_vec_free(params, param_free_local);
+        return NULL;
+    }
+    UCType* fp_ty = uc_type_function(ret_ty, params);
+    UCExpr* init = NULL;
+    if (match(p, UC_TOK_OP_ASSIGN)) {
+        init = parse_expression(p);
+        if (is_err(p)) {
+            uc_string_free(&name);
+            uc_type_free(fp_ty);
+            uc_expr_free(init);
+            return NULL;
+        }
+        if (!init) {
+            uc_string_free(&name);
+            uc_type_free(fp_ty);
+            err_here(p, "expected initializer expression");
+            return NULL;
+        }
+    }
+    if (!expect(p, UC_TOK_SEMICOLON,
+                "';' after function-pointer declaration")) {
+        uc_string_free(&name);
+        uc_type_free(fp_ty);
+        uc_expr_free(init);
+        return NULL;
+    }
+    return uc_var_decl_new(name, fp_ty, init);
+}
+
 /* ------------------------------------------------------------------------- */
 /* Type-name-driven: var decl, func def, func decl                            */
 /* ------------------------------------------------------------------------- */
 
 static UCTopLevel* parse_var_or_func(UCParser* p, UCType* ret_ty) {
+    /* [0.3.5 commit 14b] Function-pointer decl: `T (*name)(...);`.
+     * peek-after-LPAREN == '*' is the unique fn-ptr sigil, so it cannot
+     * collide with a parenthesised initializer or a cast. */
+    if (check(p, UC_TOK_LPAREN) && p->peek.kind == UC_TOK_OP_STAR) {
+        UCVarDecl* vd = parse_fn_ptr_decl_inner(p, ret_ty);
+        if (!vd) return NULL;
+        return uc_tl_var_decl(vd);
+    }
     if (!check(p, UC_TOK_IDENT)) {
         err_here(p, "expected identifier after type");
         uc_type_free(ret_ty);
@@ -1533,6 +1644,13 @@ static UCStmt* parse_expr_stmt(UCParser* p) {
 /* Consumes an already-parsed type and parses `name [= expr];` as a
  * statement-level declaration. */
 static UCStmt* parse_decl_stmt(UCParser* p, UCType* ty) {
+    /* [0.3.5 commit 14b] Function-pointer block-local: `T (*name)(...);`.
+     * Same disambiguation as parse_var_or_func — `(*` is unique. */
+    if (check(p, UC_TOK_LPAREN) && p->peek.kind == UC_TOK_OP_STAR) {
+        UCVarDecl* vd = parse_fn_ptr_decl_inner(p, ty);
+        if (!vd) return NULL;
+        return uc_stmt_decl(vd);
+    }
     if (!check(p, UC_TOK_IDENT)) {
         err_here(p, "expected identifier after type");
         uc_type_free(ty);

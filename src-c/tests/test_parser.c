@@ -388,6 +388,52 @@ static void test_pointer_types(void) {
 }
 
 /* ------------------------------------------------------------------------- */
+/* [0.3.5 commit 14b] Function-pointer declarations                          */
+/* ------------------------------------------------------------------------- */
+
+static void test_fn_ptr_basic(void) {
+    UCModule* m = parse_source("int (*fp)(int);");
+    ASSERT_TRUE(m != NULL);
+    UCTopLevel* t = (UCTopLevel*)uc_vec_at(m->declarations, 0);
+    ASSERT_TRUE(t->kind == UC_TL_VAR_DECL);
+    UCType* fty = t->as.var_decl->ty;
+    ASSERT_TRUE(fty->kind == UC_TYPE_FUNCTION);
+    ASSERT_TRUE(fty->as.function.ret->kind == UC_TYPE_INT);
+    ASSERT_EQ_INT(uc_vec_len(fty->as.function.params), 1);
+    uc_module_free(m);
+}
+
+static void test_fn_ptr_multi_params(void) {
+    UCModule* m = parse_source("int (*fp)(int, int, int);");
+    ASSERT_TRUE(m != NULL);
+    UCTopLevel* t = (UCTopLevel*)uc_vec_at(m->declarations, 0);
+    ASSERT_TRUE(t->kind == UC_TL_VAR_DECL);
+    UCType* fty = t->as.var_decl->ty;
+    ASSERT_TRUE(fty->kind == UC_TYPE_FUNCTION);
+    ASSERT_TRUE(fty->as.function.ret->kind == UC_TYPE_INT);
+    ASSERT_EQ_INT(uc_vec_len(fty->as.function.params), 3);
+    uc_module_free(m);
+}
+
+static void test_fn_ptr_block_local_with_init(void) {
+    UCModule* m = parse_source(
+        "int add(int a) { return a; } "
+        "int main() { int (*fp)(int) = add; return 0; }");
+    ASSERT_TRUE(m != NULL);
+    uc_module_free(m);
+}
+
+static void test_fn_ptr_void_ret(void) {
+    UCModule* m = parse_source("void (*fp)(int);");
+    ASSERT_TRUE(m != NULL);
+    UCTopLevel* t = (UCTopLevel*)uc_vec_at(m->declarations, 0);
+    UCType* fty = t->as.var_decl->ty;
+    ASSERT_TRUE(fty->kind == UC_TYPE_FUNCTION);
+    ASSERT_TRUE(fty->as.function.ret->kind == UC_TYPE_VOID);
+    uc_module_free(m);
+}
+
+/* ------------------------------------------------------------------------- */
 /* Error cases                                                               */
 /* ------------------------------------------------------------------------- */
 
@@ -1041,6 +1087,11 @@ int main(void) {
     RUN(test_export_wraps_var);
     RUN(test_multiple_decls);
     RUN(test_pointer_types);
+    /* [0.3.5 commit 14b] Function-pointer declarations */
+    RUN(test_fn_ptr_basic);
+    RUN(test_fn_ptr_multi_params);
+    RUN(test_fn_ptr_block_local_with_init);
+    RUN(test_fn_ptr_void_ret);
 
     RUN(test_stmt_if_without_else);
     RUN(test_stmt_if_with_else);
