@@ -663,31 +663,31 @@ UCToken uc_lexer_next(UCLexer* l) {
     switch (c) {
         case '+':
             advance_one(l);
-            if (match_char(l, '+')) { kind = UC_TOK_OP_INC;   len = 2; }
-            else if (match_char(l, '=')) { kind = UC_TOK_OP_PLUS;   len = 2; }  /* KNOWN BUG */
-            else                    { kind = UC_TOK_OP_PLUS;   len = 1; }
+            if (match_char(l, '+')) { kind = UC_TOK_OP_INC;          len = 2; }
+            else if (match_char(l, '=')) { kind = UC_TOK_OP_PLUS_ASSIGN;  len = 2; }
+            else                    { kind = UC_TOK_OP_PLUS;          len = 1; }
             break;
         case '-':
             advance_one(l);
-            if (match_char(l, '-')) { kind = UC_TOK_OP_DEC;     len = 2; }
-            else if (match_char(l, '=')) { kind = UC_TOK_OP_MINUS;  len = 2; }  /* KNOWN BUG */
-            else if (match_char(l, '>')) { kind = UC_TOK_OP_ARROW;  len = 2; }
-            else                    { kind = UC_TOK_OP_MINUS;  len = 1; }
+            if (match_char(l, '-')) { kind = UC_TOK_OP_DEC;            len = 2; }
+            else if (match_char(l, '=')) { kind = UC_TOK_OP_MINUS_ASSIGN; len = 2; }
+            else if (match_char(l, '>')) { kind = UC_TOK_OP_ARROW;       len = 2; }
+            else                    { kind = UC_TOK_OP_MINUS;           len = 1; }
             break;
         case '*':
             advance_one(l);
-            if (match_char(l, '=')) { kind = UC_TOK_OP_STAR;   len = 2; }  /* KNOWN BUG */
-            else                    { kind = UC_TOK_OP_STAR;   len = 1; }
+            if (match_char(l, '=')) { kind = UC_TOK_OP_MUL_ASSIGN;  len = 2; }
+            else                    { kind = UC_TOK_OP_STAR;        len = 1; }
             break;
         case '/':
             advance_one(l);
-            if (match_char(l, '=')) { kind = UC_TOK_OP_SLASH;  len = 2; }  /* KNOWN BUG */
-            else                    { kind = UC_TOK_OP_SLASH;  len = 1; }
+            if (match_char(l, '=')) { kind = UC_TOK_OP_DIV_ASSIGN;  len = 2; }
+            else                    { kind = UC_TOK_OP_SLASH;       len = 1; }
             break;
         case '%':
             advance_one(l);
-            if (match_char(l, '=')) { kind = UC_TOK_OP_PERCENT; len = 2; }  /* KNOWN BUG */
-            else                    { kind = UC_TOK_OP_PERCENT; len = 1; }
+            if (match_char(l, '=')) { kind = UC_TOK_OP_MOD_ASSIGN;  len = 2; }
+            else                    { kind = UC_TOK_OP_PERCENT;     len = 1; }
             break;
         case '=':
             advance_one(l);

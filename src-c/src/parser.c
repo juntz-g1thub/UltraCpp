@@ -1833,9 +1833,10 @@ static UCExpr* wrap_kw_as_ident(UCParser* p) {
 /* ------------------------------------------------------------------------- */
 
 /* Assignment (right-associative).
- * Only '=' is supported here; compound-assignment (+=, -=, ...) requires
- * lexer support that is documented as a known bug in src/frontend/lexer.rs
- * (Phase 1.1 §9.1) and will arrive when that lands.
+ * Plain `=` is supported, plus the 5 compound-assignment operators
+ * `+=`, `-=`, `*=`, `/=`, `%=` introduced by [0.3.5 commit 14f] (m0_07).
+ * Compound forms are desugared at parse time: `a += b` → `a = a + b`,
+ * reusing the standard UC_EXPR_ASSIGN + UC_EXPR_BINARY codegen path.
  *
  * For byte-level alignment with the Rust parser (Phase 2.6), we use
  * the dedicated UC_EXPR_ASSIGN node rather than UC_EXPR_BINARY with
@@ -1847,6 +1848,36 @@ static UCExpr* parse_assignment(UCParser* p) {
         UCExpr* rhs = parse_assignment(p);
         if (is_err(p) || !rhs) { uc_expr_free(lhs); return rhs; }
         return uc_expr_assign(lhs, rhs);
+    }
+    /* [0.3.5 commit 14f] Compound assignment desugar.
+     * Lexer now emits UC_TOK_OP_*_ASSIGN instead of falling back to the
+     * bare operator token (the old KNOWN BUG fall-through). We translate
+     * `a <op>= b` to `a = a <op> b` so the codegen can reuse UC_EXPR_ASSIGN
+     * + UC_EXPR_BINARY load/binop/store pattern. The duplicate `a` reference
+     * requires a fresh IDENT node to avoid double-free of `lhs`; complex
+     * lvalues (index/field/deref) are out of scope for this commit — only
+     * IDENT targets are allowed to keep the desugar closed-form. */
+    UCBinaryOp binop;
+    int is_compound = 0;
+    if      (match(p, UC_TOK_OP_PLUS_ASSIGN))  { binop = UC_BIN_ADD; is_compound = 1; }
+    else if (match(p, UC_TOK_OP_MINUS_ASSIGN)) { binop = UC_BIN_SUB; is_compound = 1; }
+    else if (match(p, UC_TOK_OP_MUL_ASSIGN))   { binop = UC_BIN_MUL; is_compound = 1; }
+    else if (match(p, UC_TOK_OP_DIV_ASSIGN))   { binop = UC_BIN_DIV; is_compound = 1; }
+    else if (match(p, UC_TOK_OP_MOD_ASSIGN))   { binop = UC_BIN_MOD; is_compound = 1; }
+    if (is_compound) {
+        if (lhs->kind != UC_EXPR_IDENT) {
+            err_here(p, "compound assignment target must be a plain identifier");
+            uc_expr_free(lhs);
+            return NULL;
+        }
+        UCExpr* rhs = parse_assignment(p);
+        if (is_err(p) || !rhs) { uc_expr_free(lhs); return rhs; }
+        /* Deep-clone the IDENT so the binary operand owns its own node
+         * (lhs is shared with the assignment target). */
+        UCExpr* lhs_dup = uc_expr_ident(lhs->as.ident.data,
+                                       lhs->as.ident.len);
+        UCExpr* combined = uc_expr_binary(binop, lhs_dup, rhs);
+        return uc_expr_assign(lhs, combined);
     }
     return lhs;
 }

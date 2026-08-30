@@ -104,6 +104,11 @@ const char* uc_token_kind_name(UCTokenKind kind) {
         case UC_TOK_OP_SHR:      return "OpShr";
         case UC_TOK_OP_INC:      return "OpInc";
         case UC_TOK_OP_DEC:      return "OpDec";
+        case UC_TOK_OP_PLUS_ASSIGN:  return "OpPlusAssign";
+        case UC_TOK_OP_MINUS_ASSIGN: return "OpMinusAssign";
+        case UC_TOK_OP_MUL_ASSIGN:   return "OpMulAssign";
+        case UC_TOK_OP_DIV_ASSIGN:   return "OpDivAssign";
+        case UC_TOK_OP_MOD_ASSIGN:   return "OpModAssign";
         case UC_TOK_OP_ARROW:    return "OpArrow";
         case UC_TOK_OP_SCOPE:    return "OpScope";
         case UC_TOK_OP_QUESTION: return "OpQuestion";

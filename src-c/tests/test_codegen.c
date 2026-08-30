@@ -177,6 +177,59 @@ static void test_codegen_field_call_with_pound_import(void) {
     free(ir);
 }
 
+/* [0.3.5 commit 14f] Compound assignment emit tests.
+ * Parser desugars `a += b` → `a = a + b`, so the IR contains:
+ *   - alloca for the lvalue (`%a`)
+ *   - load (read current value)
+ *   - the binop (`add`/`sub`/`mul`/`sdiv`/`srem`)
+ *   - store back into the lvalue
+ * The minimal ASSERT below verifies the binop landed and the alloca/
+ * store pair is intact. */
+static void test_codegen_compound_assign_plus(void) {
+    char* ir = compile_src("int main() { int a = 5; a += 3; return a; }");
+    ASSERT_TRUE(ir != NULL); if (!ir) return;
+    ASSERT_CONTAINS(ir, "%a = alloca i32");
+    ASSERT_CONTAINS(ir, "= add i32");
+    ASSERT_CONTAINS(ir, "store i32");
+    free(ir);
+}
+
+static void test_codegen_compound_assign_minus(void) {
+    char* ir = compile_src("int main() { int a = 5; a -= 2; return a; }");
+    ASSERT_TRUE(ir != NULL); if (!ir) return;
+    ASSERT_CONTAINS(ir, "%a = alloca i32");
+    ASSERT_CONTAINS(ir, "= sub i32");
+    ASSERT_CONTAINS(ir, "store i32");
+    free(ir);
+}
+
+static void test_codegen_compound_assign_mul(void) {
+    char* ir = compile_src("int main() { int a = 5; a *= 4; return a; }");
+    ASSERT_TRUE(ir != NULL); if (!ir) return;
+    ASSERT_CONTAINS(ir, "%a = alloca i32");
+    ASSERT_CONTAINS(ir, "= mul i32");
+    ASSERT_CONTAINS(ir, "store i32");
+    free(ir);
+}
+
+static void test_codegen_compound_assign_div(void) {
+    char* ir = compile_src("int main() { int a = 20; a /= 4; return a; }");
+    ASSERT_TRUE(ir != NULL); if (!ir) return;
+    ASSERT_CONTAINS(ir, "%a = alloca i32");
+    ASSERT_CONTAINS(ir, "= sdiv i32");
+    ASSERT_CONTAINS(ir, "store i32");
+    free(ir);
+}
+
+static void test_codegen_compound_assign_mod(void) {
+    char* ir = compile_src("int main() { int a = 17; a %= 5; return a; }");
+    ASSERT_TRUE(ir != NULL); if (!ir) return;
+    ASSERT_CONTAINS(ir, "%a = alloca i32");
+    ASSERT_CONTAINS(ir, "= srem i32");
+    ASSERT_CONTAINS(ir, "store i32");
+    free(ir);
+}
+
 int main(void) {
     RUN(test_codegen_builtin_decls);
     RUN(test_codegen_return_int_literal);
@@ -186,6 +239,11 @@ int main(void) {
     RUN(test_codegen_string_literal);
     RUN(test_codegen_field_call_no_decl);
     RUN(test_codegen_field_call_with_pound_import);
+    RUN(test_codegen_compound_assign_plus);
+    RUN(test_codegen_compound_assign_minus);
+    RUN(test_codegen_compound_assign_mul);
+    RUN(test_codegen_compound_assign_div);
+    RUN(test_codegen_compound_assign_mod);
 
     printf("\nResults: %d/%d tests passed\n", tests_passed, tests_run);
     return (tests_passed == tests_run) ? 0 : 1;

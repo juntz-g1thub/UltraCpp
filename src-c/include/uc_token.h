@@ -91,6 +91,19 @@ typedef enum {
     UC_TOK_OP_SHR,
     UC_TOK_OP_INC,
     UC_TOK_OP_DEC,
+    /* [0.3.5 commit 14f] Compound assignment operators (m0_07 → PASS).
+     * Previously these were KNOWN BUG fall-throughs that emitted the
+     * bare operator token (UC_TOK_OP_PLUS for `+=` etc.); the lexer
+     * consumed both chars but downstream parser/codegen had no way to
+     * tell `+` from `+=`. With these 5 dedicated tokens, parse_assignment
+     * desugars `a += b` to `a = a + b` and emits the standard load+binop
+     * +store pattern via UC_EXPR_ASSIGN. Same scheme for MINUS/MUL/DIV/
+     * MOD. Spec: .dev/drafts/0.3.5-implementation-plan.md §3.1 commit 14f. */
+    UC_TOK_OP_PLUS_ASSIGN,    /* += */
+    UC_TOK_OP_MINUS_ASSIGN,   /* -= */
+    UC_TOK_OP_MUL_ASSIGN,     /* *= */
+    UC_TOK_OP_DIV_ASSIGN,     /* /= */
+    UC_TOK_OP_MOD_ASSIGN,     /* %= */
     UC_TOK_OP_ARROW,
     UC_TOK_OP_SCOPE,
     UC_TOK_OP_QUESTION,
