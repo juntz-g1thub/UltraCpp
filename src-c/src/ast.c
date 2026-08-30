@@ -222,12 +222,6 @@ UCType* uc_type_pointer(UCType* inner) {
     return t;
 }
 
-UCType* uc_type_mutable_pointer(UCType* inner) {
-    UCType* t = type_new(UC_TYPE_MUTABLE_POINTER);
-    t->as.inner = inner;
-    return t;
-}
-
 UCType* uc_type_ref(UCType* inner) {
     UCType* t = type_new(UC_TYPE_REF);
     t->as.inner = inner;
@@ -276,7 +270,6 @@ void uc_type_free(UCType* t) {
         case UC_TYPE_ISIZE:
             break;
         case UC_TYPE_POINTER:
-        case UC_TYPE_MUTABLE_POINTER:
         case UC_TYPE_REF:
             type_free(t->as.inner);
             break;
@@ -972,7 +965,6 @@ static void type_dump(const UCType* t, FILE* out, int indent) {
     fprintf(out, "Type %s", uc_type_kind_name(t->kind));
     switch (t->kind) {
         case UC_TYPE_POINTER:
-        case UC_TYPE_MUTABLE_POINTER:
         case UC_TYPE_REF:
             fputc('\n', out);
             type_dump(t->as.inner, out, indent + 2);
@@ -1305,7 +1297,6 @@ const char* uc_type_kind_name(UCTypeKind k) {
         case UC_TYPE_USIZE:           return "USize";
         case UC_TYPE_ISIZE:           return "ISize";
         case UC_TYPE_POINTER:         return "Pointer";
-        case UC_TYPE_MUTABLE_POINTER: return "MutablePointer";
         case UC_TYPE_REF:             return "Ref";
         case UC_TYPE_ARRAY:           return "Array";
         case UC_TYPE_FUNCTION:        return "Function";

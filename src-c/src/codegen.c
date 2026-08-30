@@ -422,7 +422,6 @@ static const char* llvm_type(UCTypeKind k) {
         case UC_TYPE_F32: return "float";
         case UC_TYPE_F64: return "double";
         case UC_TYPE_POINTER:
-        case UC_TYPE_MUTABLE_POINTER:
         case UC_TYPE_REF:
         case UC_TYPE_NAMED: return "i8*";
         /* I8/I16/U8/U16 collapse to i32 in this Rust port. */
@@ -1550,7 +1549,6 @@ static char* emit_alloc_call(UCCodeGenerator* g, const UCType* ty, UCError* err)
             case UC_TYPE_I64:
             case UC_TYPE_F64: size = 8; break;
             case UC_TYPE_POINTER:
-            case UC_TYPE_MUTABLE_POINTER:
             case UC_TYPE_REF: size = 8; break;
             default: size = 4;  /* TODO 0.3.4: struct/array/function size */
         }

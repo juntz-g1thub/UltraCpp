@@ -1059,7 +1059,7 @@ static UCTopLevel* parse_extern_decl(UCParser* p) {
             /* Record the declaration for call return-type resolution. */
             const char* ret_ll = (ity->kind == UC_TYPE_VOID) ? "void" :
                 (ity->kind == UC_TYPE_BOOL) ? "i1" :
-                (ity->kind == UC_TYPE_POINTER || ity->kind == UC_TYPE_MUTABLE_POINTER) ? "i8*" :
+                (ity->kind == UC_TYPE_POINTER) ? "i8*" :
                 (ity->kind == UC_TYPE_F32) ? "float" :
                 (ity->kind == UC_TYPE_F64) ? "double" : "i32";
             extern_func_table_add(iname.data, ret_ll, NULL, (int)uc_vec_len(iparams));

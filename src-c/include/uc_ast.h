@@ -108,7 +108,6 @@ typedef enum UCTypeKind {
     UC_TYPE_ISIZE,
 
     UC_TYPE_POINTER,
-    UC_TYPE_MUTABLE_POINTER,
     UC_TYPE_REF,
     UC_TYPE_ARRAY,
     UC_TYPE_FUNCTION,
@@ -118,7 +117,7 @@ typedef enum UCTypeKind {
 struct UCType {
     UCTypeKind kind;
     union {
-        UCType* inner;                  /* Pointer / MutablePointer / Ref */
+        UCType* inner;                  /* Pointer / Ref */
         struct {
             UCType* element;            /* owned */
             size_t length;              /* usize */
@@ -152,7 +151,6 @@ UCType* uc_type_isize(void);
 
 /* Constructors for composite type variants (take ownership of inputs). */
 UCType* uc_type_pointer(UCType* inner);                /* takes ownership */
-UCType* uc_type_mutable_pointer(UCType* inner);
 UCType* uc_type_ref(UCType* inner);
 UCType* uc_type_array(UCType* element, size_t length);
 UCType* uc_type_function(UCType* ret, UCVec* params);  /* takes ownership of ret & params */
