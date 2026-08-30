@@ -157,10 +157,11 @@ static void test_codegen_field_call_no_decl(void) {
     /* Without #import, no `declare` line should appear for io.X. */
     char* ir = compile_src("int main() { return io.print(); }");
     ASSERT_TRUE(ir != NULL); if (!ir) return;
-    /* The call is emitted but no extern decl since no import. */
-    ASSERT_CONTAINS(ir, "call i32 @io$print");
-    /* No declare line for it. */
-    ASSERT_TRUE(strstr(ir, "declare i32 @io$print") == NULL);
+    /* The call is emitted (bare `@fn` symbol per 0.3.5 commit 14d) but no
+     * extern decl since no import. */
+    ASSERT_CONTAINS(ir, "call i32 @print(");
+    /* No declare line for the field call's symbol. */
+    ASSERT_TRUE(strstr(ir, "declare i32 @print") == NULL);
     free(ir);
 }
 
@@ -170,7 +171,9 @@ static void test_codegen_field_call_with_pound_import(void) {
         "#import \"lib/io\"\n"
         "int main() { return io.print(); }");
     ASSERT_TRUE(ir != NULL); if (!ir) return;
-    ASSERT_CONTAINS(ir, "declare i32 @io$print()");
+    /* [0.3.5 commit 14d] Declare emit now uses bare `@fn` symbol (matching
+     * export-side definition) with signature `(i32, i32)`. */
+    ASSERT_CONTAINS(ir, "declare i32 @print(i32, i32)");
     free(ir);
 }
 
