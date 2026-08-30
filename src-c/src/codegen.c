@@ -357,6 +357,14 @@ static const char* get_builtins_defs(void) {
         "entry:\n"
         "    ret i8* %p\n"
         "}\n"
+        ;
+}
+
+/* [0.3.5 commit 14c] The @uc_abs stub is emitted separately so that a
+ * translation unit which already defines uc_abs (e.g. via a source-copy
+ * `#include "lib/math.uc"`) does not get a duplicate definition. */
+static const char* get_uc_abs_stub_def(void) {
+    return
         /* [0.3.4 commit 11a] abs_int removed from BUILTIN_SIGS[] + the prior
          * inline @builtin_abs_int definition; abs_int now emits
          * `call i32 @uc_abs(i32 %x)` via emit_uc_abs_call. @uc_abs's real
@@ -2358,6 +2366,23 @@ char* uc_codegen_generate(UCCodeGenerator* g, const UCModule* m, UCError* err) {
     Buf all; all.data = NULL; all.len = 0; all.cap = 0;
     buf_appends(&all, get_builtins_decls());
     buf_appends(&all, get_builtins_defs());
+    /* [0.3.5 commit 14c] Skip the @uc_abs stub when this TU defines uc_abs
+     * itself (source-copy #include of lib/math.uc would otherwise produce
+     * an 'invalid redefinition of function' LLVM error). */
+    {
+        int has_uc_abs = 0;
+        for (size_t i = 0; i < uc_vec_len(m->declarations); i++) {
+            UCTopLevel* decl = (UCTopLevel*)uc_vec_at(m->declarations, i);
+            while (decl && decl->kind == UC_TL_EXPORT) decl = decl->as.export_;
+            if (decl && decl->kind == UC_TL_FUNC_DEF
+                && decl->as.func_def->name.data
+                && strcmp(decl->as.func_def->name.data, "uc_abs") == 0) {
+                has_uc_abs = 1;
+                break;
+            }
+        }
+        if (!has_uc_abs) buf_appends(&all, get_uc_abs_stub_def());
+    }
     if (g->global_strings.data) buf_append(&all, g->global_strings.data,
                                             g->global_strings.len);
     if (g->extern_decls.data) buf_append(&all, g->extern_decls.data,

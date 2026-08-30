@@ -271,6 +271,7 @@ static UCType* parse_type(UCParser* p) {
 static UCTopLevel* parse_top_level(UCParser* p);
 static UCTopLevel* parse_import(UCParser* p);
 static UCTopLevel* parse_pound_import(UCParser* p);
+static UCTopLevel* parse_pound_include(UCParser* p);  /* [0.3.5 commit 14c] */
 static UCTopLevel* parse_struct_def(UCParser* p);
 static UCTopLevel* parse_extern_decl(UCParser* p);
 static UCTopLevel* parse_var_or_func(UCParser* p, UCType* ret_ty);
@@ -359,6 +360,14 @@ static UCTopLevel* parse_top_level(UCParser* p) {
      * trailing semicolon; it produces a UC_TL_IMPORT top-level. */
     if (match(p, UC_TOK_PP_IMPORT)) {
         return parse_pound_import(p);
+    }
+    if (match(p, UC_TOK_PP_INCLUDE)) {
+        /* [0.3.5 commit 14c] #include is a source-copy preprocessor
+         * directive. The actual file expansion happens in main.c's
+         * preprocess_includes() before lexing; this parser hook just
+         * consumes the directive so it does not become a stray token.
+         * Mirrors parse_pound_import() in shape and leniency. */
+        return parse_pound_include(p);
     }
     if (match(p, UC_TOK_KW_IMPORT)) {
         return parse_import(p);
@@ -525,6 +534,41 @@ static UCTopLevel* parse_pound_import(UCParser* p) {
         skip_optional_angle_path(p);
     }
     /* Otherwise the directive had no path; just skip it. */
+    if (match(p, UC_TOK_KW_AS) && check(p, UC_TOK_IDENT)) {
+        advance(p);
+    }
+    match(p, UC_TOK_SEMICOLON);  /* optional */
+    return NULL;  /* no top-level emitted */
+}
+
+/* ------------------------------------------------------------------------- */
+/* [0.3.5 commit 14c] '#include "path"' directive.                          */
+/*                                                                           */
+/* Semantic difference from '#import':                                       */
+/*   - '#import' is a module-reference directive resolved out of band     */
+/*     (the Rust preprocessor strips it entirely; C parser mirrors by     */
+/*     emitting no TopLevel).                                              */
+/*   - '#include' is a preprocessor source-copy directive: the contents  */
+/*     of the referenced file are inlined into the current TU by         */
+/*     main.c::preprocess_includes() BEFORE lexing. The cycle protection */
+/*     and path resolution happen there. The work this function does is  */
+/*     purely the parser side: consume the directive tokens so the line  */
+/*     does not leak into the TopLevel stream as a stray token.          */
+/*                                                                           */
+/* Accepted shapes (matches the existing m0_40 usage):                     */
+/*   #include "path"           (most common; comma/space semicolon OK)    */
+/*   #include "path";          (semicolon variant)                        */
+/*   #include "path" as alias  (accepted for symmetry with #import; the  */
+/*                               alias is unused because source-copy      */
+/*                               semantics don't need a binding)          */
+/*                                                                           */
+/* All forms produce no TopLevel.                                          */
+/* ------------------------------------------------------------------------- */
+static UCTopLevel* parse_pound_include(UCParser* p) {
+    if (check(p, UC_TOK_STRING)) {
+        advance(p);  /* consume "path" */
+    }
+    /* Optional `as alias` for symmetry with #import — ignored. */
     if (match(p, UC_TOK_KW_AS) && check(p, UC_TOK_IDENT)) {
         advance(p);
     }

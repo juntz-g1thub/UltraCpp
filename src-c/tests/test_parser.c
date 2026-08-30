@@ -155,6 +155,58 @@ static void test_pound_import_with_alias(void) {
     uc_module_free(m);
 }
 
+/* [0.3.5 commit 14c] #include source-copy preprocessor. Unlike #import,
+ * the parser-side `parse_pound_include` does not store any AST node for
+ * the directive (the real work is in main.c `preprocess_includes`). The
+ * parser just consumes the directive line, so the resulting module
+ * declaration list is empty in every test below. */
+
+static void test_pound_include_no_decl(void) {
+    /* #include path consumed; no declarations. */
+    UCModule* m = parse_source("#include \"foo.uc\"");
+    ASSERT_TRUE(m != NULL); if (!m) return;
+    ASSERT_EQ_INT((long long)uc_vec_len(m->declarations), 0);
+    uc_module_free(m);
+}
+
+static void test_pound_include_with_semicolon(void) {
+    /* Optional trailing ';' is accepted. */
+    UCModule* m = parse_source("#include \"foo.uc\";");
+    ASSERT_TRUE(m != NULL); if (!m) return;
+    ASSERT_EQ_INT((long long)uc_vec_len(m->declarations), 0);
+    uc_module_free(m);
+}
+
+static void test_pound_include_as_alias(void) {
+    /* `as alias` is accepted (the alias is currently ignored: #include
+     * is a source-copy preprocessor, not a module-binding directive). */
+    UCModule* m = parse_source("#include \"foo.uc\" as math;");
+    ASSERT_TRUE(m != NULL); if (!m) return;
+    ASSERT_EQ_INT((long long)uc_vec_len(m->declarations), 0);
+    uc_module_free(m);
+}
+
+static void test_pound_include_followed_by_func_def(void) {
+    /* #include must not consume the rest of the source. The following
+     * function definition must parse normally. */
+    UCModule* m = parse_source(
+        "#include \"foo.uc\"\n"
+        "int add(int a, int b) { return a + b; }\n"
+        "int main() { return add(5,3); }"
+    );
+    ASSERT_TRUE(m != NULL); if (!m) return;
+    ASSERT_EQ_INT((long long)uc_vec_len(m->declarations), 2);
+    uc_module_free(m);
+}
+
+static void test_pound_include_bare(void) {
+    /* Bare double-quote path with no semicolon and no alias. */
+    UCModule* m = parse_source("#include \"foo.uc\"");
+    ASSERT_TRUE(m != NULL); if (!m) return;
+    ASSERT_EQ_INT((long long)uc_vec_len(m->declarations), 0);
+    uc_module_free(m);
+}
+
 static void test_bare_import_no_alias(void) {
     /* Bare 'import' (UC_TOK_KW_IMPORT) is rare; it produces a UC_TL_IMPORT. */
     UCModule* m = parse_source("import \"lib/io\";");
@@ -1108,6 +1160,13 @@ int main(void) {
     RUN(test_stmt_unsafe_block);
     RUN(test_stmt_nested_blocks);
     RUN(test_stmt_complex_nesting);
+
+    /* Phase 2.5: #include source-copy preprocessor (0.3.5 commit 14c) */
+    RUN(test_pound_include_no_decl);
+    RUN(test_pound_include_with_semicolon);
+    RUN(test_pound_include_as_alias);
+    RUN(test_pound_include_followed_by_func_def);
+    RUN(test_pound_include_bare);
 
     /* Phase 2.4: binary operators */
     RUN(test_expr_additive);
