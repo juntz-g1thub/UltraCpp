@@ -26,6 +26,13 @@ void uc_codegen_free(UCCodeGenerator* g);
 
 void uc_codegen_add_imported_module(UCCodeGenerator* g, const char* module_path);
 
+/* [0.3.5 commit 14d] Multi-TU build: when set, the generated IR omits the
+ * builtin decls/defs and treats all functions in this TU as non-local
+ * (bare-name mangling). Used for imported TUs so that the main TU is the
+ * sole provider of builtin shims and so that user-defined symbols match
+ * the caller's `@fn` declare (rather than `@<module>$fn`). */
+void uc_codegen_set_skip_builtins(UCCodeGenerator* g, int skip);
+
 /* Generate LLVM IR for the module. Returns a heap-allocated NUL-
  * terminated string (caller frees) on success; on error returns NULL
  * and writes details into `err`. */

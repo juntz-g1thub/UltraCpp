@@ -651,8 +651,12 @@ static void scan_imports(const char* buf, UCCodeGenerator* g) {
 /* Run lex + parse + codegen on `src_path`.  Returns the IR as a
  * heap-allocated NUL-terminated string the caller frees, or NULL on
  * error.  On error, prints to stderr.  `keep_obj_out` is set to either
- * the module-name stem (for further assembly) or NULL if unknown. */
+ * the module-name stem (for further assembly) or NULL if unknown.
+ * [0.3.5 commit 14d] `skip_builtins` is 1 when compiling an imported TU
+ * for a multi-TU build: the codegen omits the builtin decls/defs and
+ * treats all functions in this TU as non-local (bare-name mangling). */
 static char* generate_ir(const char* src_path, const char* module_name,
+                         int skip_builtins,
                          char* err_buf, size_t err_buf_cap) {
     (void)err_buf; (void)err_buf_cap;
     size_t src_len = 0;
@@ -681,6 +685,7 @@ static char* generate_ir(const char* src_path, const char* module_name,
         uc_error_report(&err, stderr);
     } else {
         UCCodeGenerator* g = uc_codegen_new(module_name);
+        if (skip_builtins) uc_codegen_set_skip_builtins(g, 1);
         scan_imports(buf, g);
         ir = uc_codegen_generate(g, m, &err);
         if (err.kind != UC_ERR_NONE) {
@@ -701,7 +706,7 @@ static int run_emit_ll(const char* path, const char* output_path) {
     char module_name[256];
     extract_module_name(path, module_name, sizeof(module_name));
 
-    char* ir = generate_ir(path, module_name, NULL, 0);
+    char* ir = generate_ir(path, module_name, 0, NULL, 0);
     int rc = 0;
     if (!ir) { return 1; }
 
@@ -722,8 +727,58 @@ static int run_emit_ll(const char* path, const char* output_path) {
     return rc;
 }
 
+/* Extract `#import "..."` / `#import <...>` path strings from a source
+ * buffer. Returns a heap-allocated NULL-terminated array of
+ * heap-allocated path strings (caller frees each entry + the array);
+ * `*out_n` is the count. Returns NULL when the source contains no
+ * `#import` directives. Paths retain their original relative form —
+ * they have NOT been stripped to basenames (unlike
+ * uc_codegen_add_imported_module, which is for codegen-side use). */
+static char** extract_import_paths(const char* buf, size_t* out_n) {
+    *out_n = 0;
+    size_t cap = 0;
+    char** arr = NULL;
+    const char* p = buf;
+    while ((p = strstr(p, "#import")) != NULL) {
+        const char* eol = strchr(p, '\n');
+        size_t llen = eol ? (size_t)(eol - p) : strlen(p);
+        const char* q1  = (const char*)memchr(p, '"', llen);
+        const char* lt1 = (const char*)memchr(p, '<', llen);
+        const char* opener = NULL, *closer = NULL;
+        if (q1) {
+            const char* q2 = (const char*)memchr(q1 + 1, '"',
+                llen - (size_t)(q1 - p) - 1);
+            if (q2) { opener = q1; closer = q2; }
+        } else if (lt1) {
+            const char* gt1 = (const char*)memchr(lt1 + 1, '>',
+                llen - (size_t)(lt1 - p) - 1);
+            if (gt1) { opener = lt1; closer = gt1; }
+        }
+        if (opener && closer) {
+            size_t plen = (size_t)(closer - opener - 1);
+            if (*out_n >= cap) {
+                cap = cap ? cap * 2 : 4;
+                arr = (char**)realloc(arr, cap * sizeof(char*));
+            }
+            char* ip = (char*)malloc(plen + 1);
+            if (!ip) { p = eol ? eol + 1 : p + llen; continue; }
+            memcpy(ip, opener + 1, plen);
+            ip[plen] = '\0';
+            arr[(*out_n)++] = ip;
+        }
+        p = eol ? eol + 1 : p + llen;
+    }
+    return arr;
+}
+
 /* End-to-end build: generate IR, run llc, then gcc.  Temp files in
- * /tmp; cleaned up on success unless `keep` is true. */
+ * /tmp; cleaned up on success unless `keep` is true.
+ * [0.3.5 commit 14d] Multi-TU: when the main source contains
+ * `#import "path"` directives, each imported TU is compiled
+ * separately (with `skip_builtins=1` to avoid duplicate @uc_abs
+ * emits across the link unit) and the resulting .s files are linked
+ * together with the main .s into the executable. */
+#define UC_BUILD_MAX_IMPORTS 64
 static int run_build(const char* path, const char* output_path, int keep) {
     char module_name[256];
     extract_module_name(path, module_name, sizeof(module_name));
@@ -735,52 +790,148 @@ static int run_build(const char* path, const char* output_path, int keep) {
         output_path = default_exe;
     }
 
-    /* Build temp paths in /tmp. */
-    char ll_path[1024];
-    char s_path[1024];
-    snprintf(ll_path, sizeof(ll_path), "/tmp/uc_build_%s.ll", module_name);
-    snprintf(s_path, sizeof(s_path), "/tmp/uc_build_%s.s", module_name);
+    /* Main source dir — used to resolve relative #imports. */
+    char main_dir[1024];
+    path_dirname(path, main_dir, sizeof(main_dir));
 
-    char* ir = generate_ir(path, module_name, NULL, 0);
-    if (!ir) return 1;
+    /* Scan main source for #import paths (uses the un-preprocessed
+     * source: #include is for source-copy inlining, not TU bring-up;
+     * #import is the actual TU reference). */
+    size_t src_len = 0;
+    char* main_buf = slurp_file(path, &src_len);
+    if (!main_buf) return 1;
+    size_t import_n = 0;
+    char** import_paths = extract_import_paths(main_buf, &import_n);
+    free(main_buf);
+    if (import_n > UC_BUILD_MAX_IMPORTS) {
+        fprintf(stderr, "Error: too many #imports (%zu > %d)\n",
+                import_n, UC_BUILD_MAX_IMPORTS);
+        import_n = UC_BUILD_MAX_IMPORTS;
+    }
 
-    FILE* f = fopen(ll_path, "wb");
+    /* Resolve each import against main_dir. */
+    char** resolved = NULL;
+    if (import_n > 0) {
+        resolved = (char**)calloc(import_n, sizeof(char*));
+        for (size_t i = 0; i < import_n; i++) {
+            resolved[i] = path_join(main_dir, import_paths[i]);
+            free(import_paths[i]);
+        }
+        free(import_paths);
+    }
+
+    /* Temp file tracking for cleanup. imp_* are 2D char arrays so we
+     * can reuse sizeof() for the per-row size. */
+    char imp_ll[UC_BUILD_MAX_IMPORTS][1024];
+    char imp_s[UC_BUILD_MAX_IMPORTS][1024];
+    memset(imp_ll, 0, sizeof(imp_ll));
+    memset(imp_s,  0, sizeof(imp_s));
+    char main_ll[1024] = "";
+    char main_s[1024]  = "";
+    int rc = 0;
+    char cmd[4096];
+
+    /* 1) Compile each imported TU (skip_builtins=1) → .ll → llc → .s.
+     * Imported TUs run with bare symbol names so the @fn declares
+     * emitted by the main TU (via UC_EXPR_FIELD mod.fn) link cleanly
+     * against the @fn definitions here. */
+    for (size_t i = 0; i < import_n; i++) {
+        char imp_name[256];
+        extract_module_name(resolved[i], imp_name, sizeof(imp_name));
+        snprintf(imp_ll[i], sizeof(imp_ll[i]),
+                 "/tmp/uc_build_imp%zu_%s.ll", i, imp_name);
+        snprintf(imp_s[i],  sizeof(imp_s[i]),
+                 "/tmp/uc_build_imp%zu_%s.s",  i, imp_name);
+
+        char* imp_ir = generate_ir(resolved[i], imp_name, 1, NULL, 0);
+        if (!imp_ir) { rc = 1; goto cleanup; }
+        FILE* f = fopen(imp_ll[i], "wb");
+        if (!f) {
+            fprintf(stderr, "Error: cannot write %s\n", imp_ll[i]);
+            free(imp_ir);
+            rc = 2;
+            goto cleanup;
+        }
+        fputs(imp_ir, f);
+        fclose(f);
+        free(imp_ir);
+        printf("Wrote IR to %s\n", imp_ll[i]);
+
+        snprintf(cmd, sizeof(cmd), "llc %s -o %s", imp_ll[i], imp_s[i]);
+        printf("Running: %s\n", cmd);
+        int lrc = system(cmd);
+        if (lrc != 0) {
+            fprintf(stderr, "llc failed for %s (exit %d)\n",
+                    resolved[i], lrc);
+            rc = 1;
+            goto cleanup;
+        }
+        printf("Compiled to %s\n", imp_s[i]);
+    }
+
+    /* 2) Compile main TU (skip_builtins=0) → .ll → llc → .s. */
+    snprintf(main_ll, sizeof(main_ll), "/tmp/uc_build_%s.ll", module_name);
+    snprintf(main_s,  sizeof(main_s),  "/tmp/uc_build_%s.s",  module_name);
+
+    char* ir = generate_ir(path, module_name, 0, NULL, 0);
+    if (!ir) { rc = 1; goto cleanup; }
+    FILE* f = fopen(main_ll, "wb");
     if (!f) {
-        fprintf(stderr, "Error: cannot write %s\n", ll_path);
+        fprintf(stderr, "Error: cannot write %s\n", main_ll);
         free(ir);
-        return 2;
+        rc = 2;
+        goto cleanup;
     }
     fputs(ir, f);
     fclose(f);
     free(ir);
-    printf("Wrote IR to %s\n", ll_path);
+    printf("Wrote IR to %s\n", main_ll);
 
-    char cmd[4096];
-    snprintf(cmd, sizeof(cmd), "llc %s -o %s", ll_path, s_path);
+    snprintf(cmd, sizeof(cmd), "llc %s -o %s", main_ll, main_s);
     printf("Running: %s\n", cmd);
-    int rc = system(cmd);
-    if (rc != 0) {
-        fprintf(stderr, "llc failed (exit %d)\n", rc);
-        if (!keep) remove(ll_path);
-        return 1;
+    int lrc = system(cmd);
+    if (lrc != 0) {
+        fprintf(stderr, "llc failed (exit %d)\n", lrc);
+        rc = 1;
+        goto cleanup;
     }
-    printf("Compiled to %s\n", s_path);
+    printf("Compiled to %s\n", main_s);
 
-    snprintf(cmd, sizeof(cmd), "gcc -no-pie %s -o %s", s_path, output_path);
-    printf("Running: %s\n", cmd);
-    rc = system(cmd);
-    if (rc != 0) {
-        fprintf(stderr, "gcc linking failed (exit %d)\n", rc);
-        if (!keep) { remove(ll_path); remove(s_path); }
-        return 1;
+    /* 3) Link: main.s + all imported .s. */
+    {
+        char link_cmd[8192];
+        size_t off = (size_t)snprintf(link_cmd, sizeof(link_cmd),
+                                      "gcc -no-pie %s", main_s);
+        for (size_t i = 0; i < import_n; i++) {
+            off += (size_t)snprintf(link_cmd + off, sizeof(link_cmd) - off,
+                                    " %s", imp_s[i]);
+        }
+        off += (size_t)snprintf(link_cmd + off, sizeof(link_cmd) - off,
+                                " -o %s", output_path);
+        printf("Running: %s\n", link_cmd);
+        int grc = system(link_cmd);
+        if (grc != 0) {
+            fprintf(stderr, "gcc linking failed (exit %d)\n", grc);
+            rc = 1;
+            goto cleanup;
+        }
     }
     printf("Built executable %s\n", output_path);
 
+cleanup:
     if (!keep) {
-        remove(ll_path);
-        remove(s_path);
+        for (size_t i = 0; i < import_n; i++) {
+            if (imp_ll[i][0]) remove(imp_ll[i]);
+            if (imp_s[i][0])  remove(imp_s[i]);
+        }
+        if (main_ll[0]) remove(main_ll);
+        if (main_s[0])  remove(main_s);
     }
-    return 0;
+    if (resolved) {
+        for (size_t i = 0; i < import_n; i++) free(resolved[i]);
+        free(resolved);
+    }
+    return rc;
 }
 
 static void print_version(void) {

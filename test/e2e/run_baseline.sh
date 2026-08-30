@@ -44,7 +44,7 @@ PARSE_ONLY_FILES=(
 
 # Helper files paired with multi-file tests — never built standalone.
 EXCLUDED_FILES=(
-    "m0_44_helper.uc"
+    "helper.uc"
 )
 
 # ─── Helpers ─────────────────────────────────────────────────────────────

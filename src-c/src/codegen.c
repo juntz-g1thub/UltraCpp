@@ -188,6 +188,13 @@ struct UCCodeGenerator {
     Map imported_modules; /* module name -> module name */
     Map declared_externals; /* symbol -> "1" (set membership) */
 
+    int skip_builtins; /* [0.3.5 commit 14d] when 1, do NOT emit the builtin
+                          decls/defs and skip `local_funcs` population — used
+                          for imported TUs in a multi-TU build so the main TU
+                          is the sole provider of the builtin shims and the
+                          imported TU's functions emit with bare names
+                          (matching the main TU's `mod.fn` declare). */
+
     char* last_expr_type;
 
     UCVec* loop_scopes;  /* stack of LoopScope* for break/continue targets */
@@ -245,6 +252,10 @@ void uc_codegen_free(UCCodeGenerator* g) {
     map_free(&g->declared_externals);
     uc_vec_free(g->loop_scopes, (void (*)(void*))free_loop_scope);
     free(g);
+}
+
+void uc_codegen_set_skip_builtins(UCCodeGenerator* g, int skip) {
+    if (g) g->skip_builtins = skip ? 1 : 0;
 }
 
 void uc_codegen_add_imported_module(UCCodeGenerator* g, const char* module_path) {
@@ -2118,14 +2129,21 @@ static char* gen_expr(UCCodeGenerator* g, const UCExpr* expr, UCError* err, int 
                 }
                 const char* module_name = mod->as.ident.data;
                 const char* fn = callee->as.field.field.data;
-                size_t n = strlen(module_name) + strlen(fn) + 3;
+                /* [0.3.5 commit 14d] Match the import-side call symbol to
+                 * the export-side definition. helper.uc compiles its
+                 * `export int helper_mul(...)` to `@helper_mul` (bare name,
+                 * since imported TUs run with `skip_builtins=1` so the
+                 * mangle_name() `local` branch is bypassed). The call site
+                 * here must therefore declare and call `@helper_mul`, not
+                 * `@helper$helper_mul` (which would link-fail). */
+                size_t n = strlen(fn) + 2;
                 symbol = (char*)malloc(n);
-                snprintf(symbol, n, "@%s$%s", module_name, fn);
+                snprintf(symbol, n, "@%s", fn);
                 if (map_contains(&g->imported_modules, module_name)) {
                     if (!map_contains(&g->declared_externals, symbol)) {
                         map_put(&g->declared_externals, symbol, "1");
                         buf_printf(&g->extern_decls,
-                                   "declare i32 %s()\n", symbol);
+                                   "declare i32 %s(i32, i32)\n", symbol);
                     }
                 }
             } else {
@@ -2349,12 +2367,16 @@ static char* gen_expr(UCCodeGenerator* g, const UCExpr* expr, UCError* err, int 
 
 char* uc_codegen_generate(UCCodeGenerator* g, const UCModule* m, UCError* err) {
     /* Pre-populate local_funcs so mangle_name() knows which functions
-     * are local. */
-    for (size_t i = 0; i < uc_vec_len(m->declarations); i++) {
-        UCTopLevel* decl = (UCTopLevel*)uc_vec_at(m->declarations, i);
-        if (decl->kind == UC_TL_FUNC_DEF) {
-            map_put(&g->local_funcs, decl->as.func_def->name.data,
-                    g->module_name);
+     * are local.  [0.3.5 commit 14d] Skipped for imported TUs (skip_builtins)
+     * so that this TU's functions emit with bare names — matching the
+     * `@fn` declares emitted by the importing TU. */
+    if (!g->skip_builtins) {
+        for (size_t i = 0; i < uc_vec_len(m->declarations); i++) {
+            UCTopLevel* decl = (UCTopLevel*)uc_vec_at(m->declarations, i);
+            if (decl->kind == UC_TL_FUNC_DEF) {
+                map_put(&g->local_funcs, decl->as.func_def->name.data,
+                        g->module_name);
+            }
         }
     }
     for (size_t i = 0; i < uc_vec_len(m->declarations); i++) {
@@ -2364,24 +2386,29 @@ char* uc_codegen_generate(UCCodeGenerator* g, const UCModule* m, UCError* err) {
 
     /* Concatenate: header + global_strings + extern_decls + output */
     Buf all; all.data = NULL; all.len = 0; all.cap = 0;
-    buf_appends(&all, get_builtins_decls());
-    buf_appends(&all, get_builtins_defs());
-    /* [0.3.5 commit 14c] Skip the @uc_abs stub when this TU defines uc_abs
-     * itself (source-copy #include of lib/math.uc would otherwise produce
-     * an 'invalid redefinition of function' LLVM error). */
-    {
-        int has_uc_abs = 0;
-        for (size_t i = 0; i < uc_vec_len(m->declarations); i++) {
-            UCTopLevel* decl = (UCTopLevel*)uc_vec_at(m->declarations, i);
-            while (decl && decl->kind == UC_TL_EXPORT) decl = decl->as.export_;
-            if (decl && decl->kind == UC_TL_FUNC_DEF
-                && decl->as.func_def->name.data
-                && strcmp(decl->as.func_def->name.data, "uc_abs") == 0) {
-                has_uc_abs = 1;
-                break;
+    /* [0.3.5 commit 14d] Imported TUs skip the builtin shims — the main TU
+     * is the sole provider, avoiding multiple-definition link errors when
+     * the imported TU is compiled and linked alongside. */
+    if (!g->skip_builtins) {
+        buf_appends(&all, get_builtins_decls());
+        buf_appends(&all, get_builtins_defs());
+        /* [0.3.5 commit 14c] Skip the @uc_abs stub when this TU defines uc_abs
+         * itself (source-copy #include of lib/math.uc would otherwise produce
+         * an 'invalid redefinition of function' LLVM error). */
+        {
+            int has_uc_abs = 0;
+            for (size_t i = 0; i < uc_vec_len(m->declarations); i++) {
+                UCTopLevel* decl = (UCTopLevel*)uc_vec_at(m->declarations, i);
+                while (decl && decl->kind == UC_TL_EXPORT) decl = decl->as.export_;
+                if (decl && decl->kind == UC_TL_FUNC_DEF
+                    && decl->as.func_def->name.data
+                    && strcmp(decl->as.func_def->name.data, "uc_abs") == 0) {
+                    has_uc_abs = 1;
+                    break;
+                }
             }
+            if (!has_uc_abs) buf_appends(&all, get_uc_abs_stub_def());
         }
-        if (!has_uc_abs) buf_appends(&all, get_uc_abs_stub_def());
     }
     if (g->global_strings.data) buf_append(&all, g->global_strings.data,
                                             g->global_strings.len);
