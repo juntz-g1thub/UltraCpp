@@ -45,6 +45,15 @@ typedef enum {
     UC_TOK_KW_MOD,         /* mod(ref) builtin — 0.3.3 §4.9 + §11.0.1; emits @uc_borrow_mod_enter */
     UC_TOK_KW_UNMOD,       /* unmod(ref) builtin — 0.3.3 §4.10 + §11.0.1; emits @uc_borrow_mod_exit */
 
+    /* [0.3.5 commit 14e] M1 borrow-check 前置 keywords (per milestones §3.1).
+     * mod/unmod 已在 0.3.3 commit 4-5 实施 lexer；本批补 shared / __thread /
+     * move_to_thread / typedef 4 个 M1 词法扩展。Lexer 阶段识别，parser / codegen
+     * 暂不消费（M2-M5 实施时按需加；0.3.5 仅 lexer/parse 层闭环）。 */
+    UC_TOK_KW_SHARED,           /* shared ownership qualifier — M3-M4 borrow check 前置 */
+    UC_TOK_KW___THREAD,         /* __thread thread-local storage — 0.3.0 spec §3.x */
+    UC_TOK_KW_MOVE_TO_THREAD,   /* move_to_thread ownership transfer across threads */
+    UC_TOK_KW_TYPEDEF,          /* typedef type aliasing — m0_38 deferred → M1 */
+
     /* [0.3.3 commit 8a] @-prefixed preprocessor directive tokens.
      * Distinct from UC_TOK_KW_IF / UC_TOK_KW_ELSE (which represent the
      * language-level if/else statements used in parse_if_stmt) and from

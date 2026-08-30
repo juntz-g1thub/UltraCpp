@@ -68,6 +68,12 @@ const char* uc_token_kind_name(UCTokenKind kind) {
         case UC_TOK_KW_MOD:      return "KwMod";      /* 0.3.3 §4.9 + §11.0.1 (commit 5) — emits @uc_borrow_mod_enter  */
         case UC_TOK_KW_UNMOD:    return "KwUnmod";    /* 0.3.3 §4.10 + §11.0.1 (commit 5) — emits @uc_borrow_mod_exit */
 
+        /* [0.3.5 commit 14e] M1 keywords (lexer 阶段识别；parser/codegen 暂不消费)。 */
+        case UC_TOK_KW_SHARED:         return "KwShared";         /* M3-M4 borrow check 前置 */
+        case UC_TOK_KW___THREAD:       return "KwThread";         /* __thread  → 避免标识符冲突用三下划线命名 */
+        case UC_TOK_KW_MOVE_TO_THREAD: return "KwMoveToThread";   /* cross-thread ownership transfer */
+        case UC_TOK_KW_TYPEDEF:        return "KwTypedef";        /* m0_38 deferred → M1 */
+
         /* [0.3.3 commit 8a] @-prefixed preprocessor directive tokens. */
         case UC_TOK_KW_AT_IFDEF: return "KwAtIfdef";
         case UC_TOK_KW_AT_IF:    return "KwAtIf";
@@ -168,6 +174,13 @@ UCTokenKind uc_keyword_lookup(const char* ident, size_t len) {
     KW("volatile", UC_TOK_KW_VOLATILE);  /* 0.3.3 §10.3  (commit 4) — asm {} qualifier; usage wired in commit 8 */
     KW("mod",      UC_TOK_KW_MOD);       /* 0.3.3 §4.9 + §11.0.1 (commit 5) — intrinsic, emits @uc_borrow_mod_enter  */
     KW("unmod",    UC_TOK_KW_UNMOD);     /* 0.3.3 §4.10 + §11.0.1 (commit 5) — intrinsic, emits @uc_borrow_mod_exit */
+
+    /* [0.3.5 commit 14e] M1 borrow-check 前置 keywords (lex/parse 层)。
+     * mod/unmod 已在 0.3.3 实施 lexer；本批补 4 个 M1 词法扩展。 */
+    KW("shared",         UC_TOK_KW_SHARED);         /* M3-M4 borrow check 前置 — shared ownership qualifier */
+    KW("__thread",       UC_TOK_KW___THREAD);       /* thread-local storage (double underscore for C-style TLS) */
+    KW("move_to_thread", UC_TOK_KW_MOVE_TO_THREAD); /* cross-thread ownership transfer */
+    KW("typedef",        UC_TOK_KW_TYPEDEF);        /* type aliasing — m0_38 deferred → M1 */
 
     #undef KW
     return UC_TOK_IDENT;
