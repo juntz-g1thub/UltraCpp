@@ -4,9 +4,9 @@
 
 > **Language editions**: [English (this file)](./README.md) · [简体中文](./README-zh-CN.md)
 >
-> **Current spec**: [UltraCPP v0.3.4 (English)](./docs/UltraCPP-v0.3.4-spec-en.md) · [UltraCPP v0.3.4 (简体中文)](./docs/UltraCPP-v0.3.4-spec-zh-CN.md)
+> **Current spec**: [UltraCPP v0.3.5 (English)](./docs/UltraCPP-v0.3.5-spec-en.md) · [UltraCPP v0.3.5 (简体中文)](./docs/UltraCPP-v0.3.5-spec-zh-CN.md)
 >
-> **Status**: draft · **Last revised**: 2026-08-21
+> **Status**: draft · **Last revised**: 2026-08-28
 
 > **Current Status (2026-08-21)**
 >
@@ -14,8 +14,8 @@
 >
 > Start here:
 >
-> - [UltraCPP v0.3.4 Chinese Specification](docs/UltraCPP-v0.3.4-spec-zh-CN.md)
-> - [UltraCPP v0.3.4 English Specification](docs/UltraCPP-v0.3.4-spec-en.md)
+> - [UltraCPP v0.3.5 Chinese Specification](docs/UltraCPP-v0.3.5-spec-zh-CN.md)
+> - [UltraCPP v0.3.5 English Specification](docs/UltraCPP-v0.3.5-spec-en.md)
 > - [0.1.0 borrow-checker spec versus implementation audit](.dev/drafts/0.1.0-borrowck-spec-vs-impl.md), the record of why the old model had to be reconsidered
 > - [C host compiler README](src-c/README.md), the current implementation
 
@@ -291,7 +291,7 @@ UltraCpp/
 ├── src-c/       Production C99 host: lexer, parser, AST, codegen, CLI
 ├── src/         Rust reference implementation, not the production target
 ├── src-uc/      Future self-hosted compiler written in UltraCPP
-├── docs/        Versioned 0.1.0, 0.2.0, 0.3.1, 0.3.2, 0.3.3, and 0.3.4 specifications
+├── docs/        Versioned 0.1.0, 0.2.0, 0.3.1, 0.3.2, 0.3.3, 0.3.4, and 0.3.5 specifications
 ├── .dev/        Design plans, audits, drafts, and development records
 ├── bootstrap/   Bootstrap plan and C/Rust baseline artifacts
 ├── lib/         UltraCPP standard-library sources
@@ -326,8 +326,8 @@ make -C src-c test
 
 | Document | Purpose |
 |---|---|
-| [UltraCPP v0.3.4 Chinese Specification](docs/UltraCPP-v0.3.4-spec-zh-CN.md) | Chinese edition of the v0.3.4 language specification |
-| [UltraCPP v0.3.4 English Specification](docs/UltraCPP-v0.3.4-spec-en.md) | English edition of the v0.3.4 language specification |
+| [UltraCPP v0.3.5 Chinese Specification](docs/UltraCPP-v0.3.5-spec-zh-CN.md) | Chinese edition of the v0.3.5 language specification |
+| [UltraCPP v0.3.5 English Specification](docs/UltraCPP-v0.3.5-spec-en.md) | English edition of the v0.3.5 language specification |
 | [0.1.0 borrow-checker audit](.dev/drafts/0.1.0-borrowck-spec-vs-impl.md) | Records the 0/12 enforcement result, contradictions, and later decisions |
 | [C port README](src-c/README.md) | Build instructions and capabilities of the production host compiler |
 | [Bootstrap Plan](bootstrap/PLAN.md) | Route from the C host to the future compiler in `src-uc/` |
