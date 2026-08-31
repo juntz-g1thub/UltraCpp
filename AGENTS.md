@@ -11,8 +11,8 @@
 不重复维护具体进度数字，以避免与 HANDOFF 不一致。涉及决策/计划/历史/
 当下 milestone 的所有问题，以 **`HANDOFF.md` 为单一权威来源（single source of truth）**。
 
-> 当前快速摘要（最新一次 baseline，2026-08-28 HEAD `fe649be`）：M0 **36/49 PASS / 13 FAIL**（=73.5%）；
-> P0-1 → P0-2 → P0-3 → P0-4 全部完成 + **P1-1 ✅ done** (m0_50 commit `02d7170` — runner 加 `// expects_compiler_error` marker 支持) + **P1-2 ✅ done** (m0_10 commit `09b4df5`) + **P1-3 ✅ done** (m0_13/14/15 commits `afae9c9` + `c8492ef`) + **P1-4 partial done** (m0_19 / m0_29 / m0_31，commits `a513226` + `985eade`；**m0_41 / m0_42 由 0.3.3 commit 6 实质修复**) + **P1-5 ❌ Permanently NO-OP** (CJK 真支持永久不进任何版本，user 决策 2026-08-21) + **0.3.1 → 0.3.3 实施 ✅ done**（14 commits，baseline 27 → 32/48，5 FAIL 翻 PASS：m0_30 / m0_37 / m0_41 / m0_42 / m0_44 — 0.3.3 实施副产品，详见 `.dev/drafts/0.3.3-implementation-process.md`）+ **0.3.4 实施 ✅ done**（7 commits: 10a-10e lib/*.uc 6 文件 + 11a codegen abs_int 路由；commit 11c skipped per spec §S8 已由 0.3.3 commit 6 实质解决；baseline 32/48 unchanged，详见 `.dev/drafts/0.3.4-implementation-process.md`）+ **0.3.5 实施 ✅ done**（8 commits: 14a-errata spec 第 1 组变更 + 14b fn-ptr + 14c #include semantic + 14d multi-TU #import + m0_39 cleanup + 14e M1 关键字 lexer + 14f compound_assign + 14g UC_TYPE_MUTABLE_POINTER 死代码清理；HEAD `fe649be`；baseline 32 → 36/49，+4 m0_37/40/44/07；C unit 505 → 554/554 PASS；详见 `.dev/drafts/0.3.5-implementation-process.md`）；剩 **P2**（数组/struct/fn-ptr — fn-ptr 已 0.3.5 翻 PASS；剩数组/struct）+ **P3**（main return code / 位运算 / 字符串 IO / 三元 runner 修复）。
+> 当前快速摘要（最新一次 baseline，2026-08-28 当前 HEAD 见 `git log --oneline -1`；0.3.6 启动 commit 16-0）；m0 baseline **36/49 PASS / 13 FAIL**（=73.5%）；C unit **554/554** PASS；
+> 0.3.1 → 0.3.5 实施全部 ✅ done（baseline 27 → 32 → 36/49）；0.3.6 plan + spec-text-changes 写盘 @ `07e6fe8` + `86c2159`；**0.3.6 实施启动**（commit 16-0）— 15 commits 16-0 ~ 16-12 per `.dev/drafts/0.3.6-implementation-plan.md`；11 D + 5 S 决策；下一 commit **16-1a lib/alloc.uc rewrite** uc_alloc/uc_free 用 uc_syscall(SYS_BRK) brk 链 (per D3 + S5)；末态预期 m0 **46/49** = 94%，C unit **~580-600**，lib tests **5/5**。原地继承 0.3.5 plan: P2（数组/struct — fn-ptr 已 0.3.5 翻 PASS；剩数组/struct/m0_38）+ P3（main return code / 位运算 / 字符串 IO / 三元 runner 修复）。**永久 NO-OP**：CJK 标识符真支持（user 决策 2026-08-21，0.3.5 spec §2.4 + §S7 明文）。
 > 详情与分类见 `HANDOFF.md` §1 + `.dev/drafts/0.3.0-m0-priority.md` §8。
 
 ---
@@ -96,11 +96,13 @@
 | **当前活跃计划** | `.dev/plans/0.3.0-borrow-check-milestones.md` |
 | **0.3.5 语言规范（用户面向，当前版）** | `docs/UltraCPP-v0.3.5-spec-zh-CN.md`、`docs/UltraCPP-v0.3.5-spec-en.md`（commit 14a, 2026-08-28）|
 | **0.3.4 语言规范（immutable, prior version）** | `docs/UltraCPP-v0.3.4-spec-zh-CN.md`、`docs/UltraCPP-v0.3.4-spec-en.md`（commit 11b, 2026-08-21）|
-| **0.3.5 实施过程（completed; commit 15 phase 4 待新建）** | `.dev/drafts/0.3.5-implementation-process.md` |
+| **0.3.5 实施过程（completed）** | `.dev/drafts/0.3.5-implementation-process.md` |
 | **0.3.5 实施计划** | `.dev/drafts/0.3.5-implementation-plan.md` (339 行) |
 | **0.3.5 spec text changes** | `.dev/drafts/0.3.5-spec-text-changes.md` (213 行) |
-| **0.3.5 release notes** | `docs/UltraCPP-v0.3.5-release-notes.md`（commit 15 phase 3 待新建）|
-| **0.3.4 实施过程（completed; commit 15 phase 5 待标 SUPERSEDED）** | `.dev/drafts/0.3.4-implementation-process.md` |
+| **0.3.5 release notes** | `docs/UltraCPP-v0.3.5-release-notes.md` |
+| **0.3.6 实施计划（current, 15 commits 16-0 ~ 16-12）** | `.dev/drafts/0.3.6-implementation-plan.md` (写盘 @ `07e6fe8`) |
+| **0.3.6 spec text changes（commit 16-11 实施）** | `.dev/drafts/0.3.6-spec-text-changes.md` (写盘 @ `86c2159`) |
+| **0.3.4 实施过程（SUPERSEDED by 0.3.6）** | `.dev/drafts/0.3.4-implementation-process.md` |
 | **0.3.4 release notes** | `docs/UltraCPP-v0.3.4-release-notes.md`（2026-08-21 release notes）|
 | **0.3.4 spec text changes（immutable）** | `.dev/drafts/0.3.4-spec-text-changes.md` (1208 行) |
 | **0.3.4 实施计划（immutable）** | `.dev/drafts/0.3.4-implementation-plan.md` (707 行) |
@@ -186,11 +188,13 @@
 
 - ✅ `README.md` / `README-zh-CN.md` 已按本节规则清理（commit `b7ca430` + `857ee1b` 双语 + commit 15 phase 2 v0.3.4 → v0.3.5 刷指针）
 - ✅ HANDOFF.md §3 background spec pointer 已清除禁词措辞（commit 13 phase 1 at `5499a1a` + commit 15 phase 1 at `fe649be` 同步刷 0.3.5）
-- ✅ **0.3.5 实施完成**（HEAD `fe649be`，2026-08-28）— 8 commits: 14a-errata spec 第 1 组变更 + 14b fn-ptr + 14c #include semantic + 14d multi-TU #import + m0_39 cleanup + 14e M1 关键字 lexer + 14f compound_assign + 14g UC_TYPE_MUTABLE_POINTER 死代码清理；baseline 32/48 → 36/49（+4 m0_37/40/44/07）；C unit 505/505 → 554/554 PASS（+49）；完整 commit 序列与设计决策见 `.dev/drafts/0.3.5-implementation-process.md`（commit 15 phase 4 待新建）
-- 🔄 **0.3.5 docs sync** (commit 15 phase 1-6, **当前执行中**)：HANDOFF + AGENTS (Phase 1) + README 双语 (Phase 2) + release notes (Phase 3) + implementation process (Phase 4) + 0.3.4 process SUPERSEDED (Phase 5) + milestones + m0-priority refresh (Phase 6)
-- **0.4.0 路线提示**：M2-M5 borrow check 实现（per `.dev/plans/0.3.0-borrow-check-milestones.md` §3.2-§3.5）— P2 数组/struct（m0_26/27/28/32/33）+ P3 runtime（m0_02/03/05/06/08/24/25 + m0_48 runner-misjudge）
+- ✅ **0.3.5 实施完成**（HEAD `fe649be`，2026-08-28）— 8 commits: 14a-errata spec 第 1 组变更 + 14b fn-ptr + 14c #include semantic + 14d multi-TU #import + m0_39 cleanup + 14e M1 关键字 lexer + 14f compound_assign + 14g UC_TYPE_MUTABLE_POINTER 死代码清理；baseline 32/48 → 36/49（+4 m0_37/40/44/07）；C unit 505/505 → 554/554 PASS（+49）；完整 commit 序列与设计决策见 `.dev/drafts/0.3.5-implementation-process.md`
+- ✅ **0.3.6 启动** (commits `07e6fe8` plan + `86c2159` spec-text-changes + commit 16-0 HANDOFF/AGENTS refresh)：0.3.6 实施 15 commits 16-0 ~ 16-12 计划见 `.dev/drafts/0.3.6-implementation-plan.md`；11 D 决策 (范围/m0 baseline/lib 改动/文档/m0_38/数组/struct/spec/.gitignore) + 5 S 决策 (G1 sys:: 解读B: 保留公共 API + lib 内部绕开直接 uc_syscall)
+- 🔄 **0.3.6 实施** (commits 16-0 已落地, 16-1a ~ 16-12 待执行, **当前下一 commit = 16-1a**): lib/alloc.uc rewrite + lib/print.uc rewrite (16-1b) + lib/sys/raw.uc arm64 (16-2) + run_lib_tests 激活 (16-3) + lib/io.uc DELETE (16-4) + lib/print_float 完整化 + 激活 (16-5/16-6) + m0_38 typedef codegen (16-7) + m0_48 runner regex (16-8) + m0_02/03/08 runtime return (16-9) + m0_26/27/28 array (16-10) + m0_32/33 struct (16-10') + 0.3.6 spec 双语新写 (16-11) + 0.3.6 release notes + process ledger (16-12)
+- **0.3.6 末态预期**: m0 baseline **36 → 46/49** (=94%, +10: m0_02/03/08/26/27/28/32/33/38/48)；C unit **554 → ~580-600**；lib tests **0 → 5/5**；spec 0.3.6 双语新写 (cp 0.3.5 + header swap + §10.4 注 1 + §11.0.2 注 2 删)
+- **0.3.7+ 路线提示**：剩余 3 个 m0 FAIL (P3 范畴: 位运算 m0_05/06 + 字符串 IO m0_24/25 等) 推 0.3.7 / 0.4.0；M1-M5 borrow-check 完整实施 推 0.4.0+；1.0 远期 = 全借用检查 + lib 完整化 (mutex/atomic/sync) + lib/io.uc 取消 (per 0.3.6 后)
 - ⚠️ `.dev/_archive/` 历史归档不含 spec 双语文件，仅含 README + 设计笔记；本节翻译规则不追溯历史
-- ⚠️ lib/io.uc 保留（spec 标 deprecate，0.3.6 commit 删除）
+- ⚠️ lib/io.uc 0.3.6 commit 16-4 `git rm`（per 0.3.5 spec §11.0.2 deprecate）；0.3.6 链之后 .uc 测试 m0_39 仍引 `lib/io.uc` 引用需同步清理（在 16-4 commit 处理）
 
 ---
 
@@ -214,6 +218,12 @@
 ## Current Phase
 
 > 最后更新：2026-08-28
+>
+> **0.3.6 实施中**（commit 16-0 已落地，14 commits 待实施 16-1a ~ 16-12 per `.dev/drafts/0.3.6-implementation-plan.md`）
+>
+> **关键决策**：11 D（范围 / m0 baseline / lib 改动 / 文档 / m0_38 / 数组 / struct / spec / .gitignore）+ 5 S（G1 sys:: 解读B）
+>
+> **末态预期**：m0 46/49, C unit ~580-600, lib tests 5/5, spec 0.3.6 双语新写
 
 - [x] **Language design documentation**：0.3.0-0.3.5 完成（两条权限独立 + `#modlaw` + 线程模型 + CJK 永久 NO-OP + M1 关键字 lexer + compound_assign + fn-ptr + #include + multi-TU）
 - [x] **C port of the compiler**：Phase 1+1.1+2+3+4 完成，554 单元测试 (0.3.4 末态 505 + 0.3.5 14b-14g 累计 +49)，5/5 byte-exact 端到端
@@ -262,4 +272,4 @@
 
 ---
 
-*Last updated: 2026-08-21*
+*Last updated: 2026-08-28 (0.3.6 启动 commit 16-0: HANDOFF + AGENTS refresh + 0.3.5 phase 5+6 收尾 + .gitignore 加 .pi/ 规则; HEAD 见 `git log --oneline -1`)*

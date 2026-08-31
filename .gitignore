@@ -67,3 +67,8 @@ pi-session-*Z_*.html
 # Each run overwrites test/results/m0_baseline.txt with current pass/fail
 # counts; treat as a build artifact, never as tracked source.
 test/results/
+
+# pi agent scratch (per 0.3.6 plan D11)
+# Created at runtime by pi-agent sessions for tool-cache and session notes;
+# never check into git.
+.pi/

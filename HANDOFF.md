@@ -3,59 +3,37 @@
      启动新会话时,先看这里识别当前任务范围。
      ============================================================ -->
 
-# 🔖 当前任务:0.3.5 / M1 词法扩展 (commits 14a-14g 完成 + commit 15 docs sync 待执行；上一轮 0.3.4 已收官；当前 HEAD `fe649be`，baseline 36/49)
+# 🔖 当前任务：0.3.6 实施中（commit 16-0 已落地，下一 commit 16-1a）
 
-**目标**:0.3.5 / M1 词法扩展 — 计划见 `.dev/drafts/0.3.5-implementation-plan.md`（339 行）：UC_TYPE_MUTABLE_POINTER 清理 + 6 关键字 lexer 集成 (mod/unmod/is_null/sizeof/alignof/volatile) + 剩余 m0 baseline 翻 PASS。**当前已推进到 commit 14g 完成**（HEAD `fe649be`），实施 commits 14a-14g + m0_39 清理 + C 单元测试增量到 554/554 PASS，m0 baseline 提升至 36/49。
+**目标**：15 commits 完整收 0.3.6（per `.dev/drafts/0.3.6-implementation-plan.md`）
 
-**已完成迭代**:
-- ✅ **0.3.1**(S2 lvalue/rvalue)— 已完成
-- ✅ **0.3.2**(S4 C-style cast + S5 函数返回类型 + §11.0 builtin 签名表)— 已完成
-- ✅ **0.3.3**(S1 一元 op 优先级表 + S3 deref 语义 + mod/unmod/move/clone 函数化)— 已完成 (14 commits, 详见 `.dev/drafts/0.3.3-implementation-process.md`)
-- ✅ **0.3.4**(lib/*.uc stdlib 引导 + abs_int 迁移)— 已完成 (7 commits, 10a-10e + 11a；commit 11c skipped per spec §S8；详见 `.dev/drafts/0.3.4-implementation-process.md`)
-- ✅ **0.3.5**(spec 第 1 组变更 + fn-ptr + #include semantic + multi-TU #import + 6-keyword lexer + compound_assign + UC_TYPE_MUTABLE_POINTER 死代码清理)— 已完成实施 (8 commits: 14a-errata + 14b + 14c + 14d + m0_39 cleanup + 14e + 14f + 14g；HEAD `fe649be`)；baseline 32/48 → 36/49（+4: m0_37/m0_40/m0_44/m0_07）；C unit 505 → 554/554 PASS（+49）
+**已落地**：
+- `07e6fe8` 0.3.6 plan 写盘
+- `86c2159` 0.3.6 spec-text-changes 写盘
+- `16-0` docs refresh + 0.3.5 phase 5+6 + .gitignore（本 commit）
 
-**下一步** (commit 15 docs sync 6 phases):
-- Phase 1: HANDOFF.md + AGENTS.md 刷 0.3.4 → 0.3.5（**本次 phase 1**）
-- Phase 2: README.md + README-zh-CN.md spec 指针 v0.3.4 → v0.3.5
-- Phase 3: 新建 `docs/UltraCPP-v0.3.5-release-notes.md`
-- Phase 4: 新建 `.dev/drafts/0.3.5-implementation-process.md`
-- Phase 5: `.dev/drafts/0.3.4-implementation-process.md` 标 SUPERSEDED
-- Phase 6: `.dev/plans/0.3.0-borrow-check-milestones.md` + `.dev/drafts/0.3.0-m0-priority.md` 刷 baseline 32 → 36
+**下一 commit**：16-1a `lib/alloc.uc` rewrite uc_alloc/uc_free 用 uc_syscall(SYS_BRK) brk 链
+- HEAD: 见 `git log --oneline -1`
+- 完整 plan: `.dev/drafts/0.3.6-implementation-plan.md` (15 commits 16-0 ~ 16-12)
+- spec 改动依据: `.dev/drafts/0.3.6-spec-text-changes.md` (commit 16-11 实施)
+- 基线: m0 **36/49** PASS, C unit **554/554**, lib tests **0/5**
+- 末态预期: m0 **46/49**, C unit **~580-600**, lib tests **5/5**
 
-**当前状态**(2026-08-28 / HEAD `fe649be`):
-- ✅ 0.3.1 / 0.3.2 / 0.3.3 / 0.3.4 **spec + 实施全部完成**
-- ✅ 0.3.5 **实施全部完成** (commits 14a-errata + 14b + 14c + 14d + m0_39 + 14e + 14f + 14g)
-- baseline:**36/49 PASS / 13 FAIL / 73.5%** (4 个 0.3.5 翻 PASS: m0_37 / m0_40 / m0_44 / m0_07；m0_39 由 cleanup 巩固)
-- C unit: **554/554 PASS** (0.3.4 末态 505 + 14b-14g 累计 +49)
-- 待执行: commit 15 docs sync 6 phases
-- 详见 §1.1 进度表
+**关键决策**：
+- D1-D11 (per 0.3.6 plan §2)：范围 / m0 baseline / lib 改动 / 文档 / m0_38 / 数组 / struct / spec / .gitignore
+- S1-S5 (G1 sys:: 解读B)：保留 sys:: 公共 API + lib 内部绕开直接 uc_syscall
 
-**进行中/未来工作**:
-- ✅ **0.3.4 实施**: 已完成 (commits 10a-10e + 11a；commit 11c skipped per spec §S8 已由 0.3.3 commit 6 实质解决；baseline 32/48 unchanged) — 详见 §1.1 进度表 + `.dev/drafts/0.3.4-implementation-process.md`
-- ✅ **0.3.5 实施**: 已完成 (commits 14a-errata + 14b + 14c + 14d + m0_39 cleanup + 14e + 14f + 14g，HEAD `fe649be`) — baseline 36/49（+4 m0_37/40/44/07），C unit 554/554 PASS
-- 🔄 **0.3.5 docs sync** (commit 15): 6 phases per 0.3.4 commit 13 经验 — Phase 1 = 本次 commit（HANDOFF + AGENTS 双更新）
-- **未起草 spec 缺陷**:S6 FFI body / S7 CJK（永久 NO-OP，2026-08-21 user 决策）/ S8 deref-assign 残余（已修）/ S9 exit code（已修，per 0.3.4）— 实际位置: `.dev/drafts/0.3.0-m0-priority.md` §9.x
-- **0.4.0 路线**:M2-M5 borrow check 实现 — per `.dev/plans/0.3.0-borrow-check-milestones.md` §3.2-§3.5
+**新会话接手步骤**（如需继续 0.3.6 实施）：
+1. `cd /home/zjtti/Coding/UltraCpp/.worktrees/borrow-check-verification`
+2. `git log --oneline -3` — 确认 HEAD (应为本 16-0 commit)
+3. 读本 HANDOFF.md + `.dev/drafts/0.3.6-implementation-plan.md` (15 commits 规划)
+4. 读 `.dev/drafts/0.3.6-spec-text-changes.md` (commit 16-11 spec 改动依据)
+5. 确认 0.3.6 plan §3 commit 16-1a 描述，dispatch orch-implementer 启动
+6. 重复 16-N → commit 验证 → 16-(N+1) 流程直到 16-12 docs sync 收官
 
-**关联文档**(必读):
-1. `HANDOFF.md`(本文件)— 整体状态 (2026-08-28 refresh，HEAD `fe649be`)
-2. `.dev/drafts/0.3.5-implementation-process.md` — 0.3.5 实施过程记录（commit 15 phase 4 待新建）
-3. `.dev/drafts/0.3.5-implementation-plan.md` — 0.3.5 实施计划 (339 行)
-4. `.dev/drafts/0.3.5-spec-text-changes.md` — 0.3.5 spec 改动明细 (213 行)
-5. `.dev/drafts/0.3.4-implementation-process.md` — 0.3.4 实施过程 (completed; commit 15 phase 5 待标 SUPERSEDED)
-6. `.dev/drafts/0.3.3-implementation-process.md` — 0.3.3 实施过程 (SUPERSEDED by 0.3.4)
-7. `.dev/drafts/0.3.0-runtime-architecture.md` — runtime 架构决策
-8. `.dev/plans/0.3.0-borrow-check-milestones.md` — M0-M5 路线图
-9. `docs/UltraCPP-v0.3.5-spec-zh-CN.md` — 当前中文规范 (head, commit 14a)
-10. `docs/UltraCPP-v0.3.5-spec-en.md` — 当前英文规范 (head, commit 14a)
-11. `docs/UltraCPP-v0.3.4-spec-zh-CN.md` — 0.3.4 中文规范 (immutable; prior version)
-12. `docs/UltraCPP-v0.3.4-spec-en.md` — 0.3.4 英文规范 (immutable; prior version)
-
-**新会话应做**:
-1. 读本任务标识 (顶块) + HANDOFF §1 看更新后 baseline (36/49) + C unit (554/554)
-2. 选下一步:0.3.5 commit 15 phase 2-6 / 0.4.0 M2 启动 / 修剩余 13 m0 FAIL
-3. 参考对应版本 draft + 不解决案
-4. 完成后 commit 标 "current task continues"
+<!-- ============================================================
+     END CURRENT TASK IDENTIFICATION
+     ============================================================ -->
 
 <!-- ============================================================
      END CURRENT TASK IDENTIFICATION
@@ -69,7 +47,7 @@
 
 ## 1. TL;DR
 
-**Milestone: M0 baseline + 0.3.1 → 0.3.5 implementation complete (36 of 49 = 73.5% PASS, +9 since M0 close 2026-08-12). 0.3.5 docs sync in progress (commit 15 phase 1-6). Next: 0.4.0 M2-M5 borrow check. See §1.1.**
+**Milestone: M0 baseline + 0.3.1 → 0.3.5 implementation complete (36 of 49 = 73.5% PASS, +9 since M0 close 2026-08-12). 0.3.6 plan + spec-text-changes 写盘 @ `07e6fe8` + `86c2159`; 0.3.6 实施启动 (commit 16-0); 末态预期 m0 46/49 + lib tests 5/5. Next: 0.3.6 commits 16-1a ~ 16-12 (15 commits per plan). See §1.1.**
 
 We're validating the current C compiler (`src-c/`) against the new UltraCPP 0.3.0 specification by writing 48 .uc test programs and running them through the compiler. This establishes a baseline before incrementally implementing borrow-check features (M1-M5).
 
@@ -106,6 +84,9 @@ Current progress (HEAD `02d7170`): M0 P0-1 (const trio m0_22/45/46) + P0-2 (allo
 | 2026-08-28 | 0.3.5 compound_assign (commit 14f) | **36/48** | done | += -= *= /= %= 运算符 lexer 集成 + codegen emit；m0_07 翻 PASS (+1)|
 | 2026-08-28 | 0.3.5 UC_TYPE_MUTABLE_POINTER 死代码清理 (commit 14g) | **36/48** | done | src-c/ ast.h enum 移除 + ast.c/codegen.c/parser.c 引用清理（5 处）；C unit 554/554 PASS（+49 累计）|
 | 2026-08-28 | 0.3.5 实施完成 (HEAD `fe649be`) | **36/48** | done | 8 commits: 14a-errata + 14b + 14c + 14d + m0_39 + 14e + 14f + 14g；baseline 32 → 36（+4 m0_37/40/44/07）；C unit 505 → 554（+49）；待执行 commit 15 docs sync 6 phases |
+| 2026-08-28 | 0.3.6 plan 写盘 (commit `07e6fe8`) | **36/49** | done | 15 commits 完整规划（16-0 ~ 16-12）；11 D + 5 S 决策；零代码改动 |
+| 2026-08-28 | 0.3.6 spec-text-changes 写盘 (commit `86c2159`) | **36/49** | done | §10.4 注 1 段 + §11.0.2 注 2 删 + §14 刷 + §6.5 注 1 + header swap；spec 双语留给 commit 16-11 |
+| 2026-08-28 | **0.3.6 启动 (commit 16-0)** | **36/49** | done | 本 commit：HANDOFF + AGENTS 刷 0.3.6 启动 + 0.3.5 phase 5+6 收尾 + .gitignore 加 .pi/ 规则；下一 commit 16-1a lib/alloc.uc rewrite |
 
 ## 2. Quick Start (30 seconds)
 
@@ -128,10 +109,11 @@ ls test/e2e/                              # empty — M0 fills it
 
 ### Recent project state (2026-08-08)
 
-- **Language spec**: `docs/UltraCPP-v0.3.5-spec-zh-CN.md`（当前活跃版本, commit 14a, 2026-08-28）；前一版本 `docs/UltraCPP-v0.3.4-spec-{zh-CN,en}.md` immutable
-- **C compiler**: `src-c/` complete (Phases 1+1.1+2+3+4), 505/505 unit tests
+- **Language spec**: `docs/UltraCPP-v0.3.5-spec-zh-CN.md`（活跃版本, commit 14a, 2026-08-28; 0.3.6 阶段未替换, 0.3.6 spec 双语 commit 16-11 实施才写）；前一版本 `docs/UltraCPP-v0.3.4-spec-{zh-CN,en}.md` immutable
+- **C compiler**: `src-c/` complete (Phases 1+1.1+2+3+4), 554/554 unit tests
 - **Documentation**: README (design journey), AGENTS.md, test-outline.md, 0.3.0-borrow-check-milestones.md all in sync
 - **Borrow-check decisions**: 21+ decisions logged in `.dev/drafts/0.1.0-borrowck-spec-vs-impl.md` §10-7 (0.3.0 outcome)
+- **0.3.6 实施**: 计划 `.dev/drafts/0.3.6-implementation-plan.md`（15 commits, @ `07e6fe8`）+ spec 改动 `.dev/drafts/0.3.6-spec-text-changes.md`（@ `86c2159`）；启动 commit 16-0 = 本 HANDOFF 刷新
 
 ### Why M0
 
@@ -256,6 +238,15 @@ bash test/e2e/run_baseline.sh
 git status
 git add ...
 git commit -m "..."
+
+# 0.3.6 16-N verification (per .dev/drafts/0.3.6-implementation-plan.md)
+git log --oneline -1                                            # HEAD pointer
+git diff --stat HEAD~1                                          # 单 commit LOC 检查
+git grep -nE 'authoritative|companion|配套译本|翻译滞后' HEAD -- '*.md'  # banned-word 审计 (0 命中)
+bash test/e2e/run_baseline.sh                                  # m0 baseline; 16-N 期望净增益
+bash test/e2e/run_lib_tests.sh                                 # lib tests; 16-3 / 16-6 激活后运行
+make -C src-c test                                              # C unit; 16-N 期望保持 +增量
+ls docs/UltraCPP-v0.3.6-spec-{zh-CN,en}.md 2>/dev/null         # 16-11 写盘后检查
 ```
 
 ## 9. Decision Records (Why we are here)
@@ -280,7 +271,9 @@ git commit -m "..."
 | **0.3.5 实施计划** | `.dev/drafts/0.3.5-implementation-plan.md` (339 行) |
 | **0.3.5 spec text changes** | `.dev/drafts/0.3.5-spec-text-changes.md` (213 行) |
 | **0.3.5 release notes** | `docs/UltraCPP-v0.3.5-release-notes.md` (commit 15 phase 3 待新建) |
-| **0.3.4 实施过程 (completed; commit 15 phase 5 待标 SUPERSEDED)** | `.dev/drafts/0.3.4-implementation-process.md` |
+| **0.3.4 实施过程 (SUPERSEDED by 0.3.6)** | `.dev/drafts/0.3.4-implementation-process.md` |
+| **0.3.6 实施计划（current, 15 commits 16-0 ~ 16-12）** | `.dev/drafts/0.3.6-implementation-plan.md` (写盘 @ `07e6fe8`） |
+| **0.3.6 spec 改动依据（commit 16-11 实施）** | `.dev/drafts/0.3.6-spec-text-changes.md` (写盘 @ `86c2159`） |
 | **0.3.4 release notes** | `docs/UltraCPP-v0.3.4-release-notes.md` |
 | **0.3.4 spec (immutable)** | `docs/UltraCPP-v0.3.4-spec-{zh-CN,en}.md` |
 | **Historical HANDOFF (archived)** | `.dev/_archive/v0.2.0/handoff.md` |
@@ -288,5 +281,5 @@ git commit -m "..."
 
 ---
 
-*Last updated: 2026-08-28 (0.3.5 implementation complete at HEAD `fe649be`; commit 15 docs sync phase 1 in progress)*
+*Last updated: 2026-08-28 (0.3.6 实施启动; commit 16-0 = HANDOFF/AGENTS refresh + 0.3.5 phase 5+6 收尾 + .gitignore 加 .pi/; HEAD 见 `git log --oneline -1`)*
 *M0 expected duration: 1-2 sessions (test creation + execution + report)*
