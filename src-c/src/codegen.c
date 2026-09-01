@@ -1683,37 +1683,35 @@ static void emit_asm_block(UCCodeGenerator* g, const UCASTAsmBlock* block, UCErr
         }
     }
 
-    /* Pass 2: emit operand IR values. Each operand is (constraint, ident)
-     * per src/parser.c::parse_asm_operand_list. We synthesise a stack
-     * UCExpr of kind UC_EXPR_IDENT and call gen_expr(), which already
-     * handles locals (load from %<name>), globals (load from @<name>)
-     * and parameters (return %<name> directly) — same path used by
-     * any other rvalue ident reference. g->last_expr_type is set to
-     * the LLVM IR type by the load case; for outputs the result_type
-     * is captured from the first output's last_expr_type. */
+    /* Pass 2: emit operand IR values.
+     *
+     * Inputs: each operand is (constraint, ident) per
+     * src/parser.c::parse_asm_operand_list. We synthesise a stack UCExpr
+     * of kind UC_EXPR_IDENT and call gen_expr(), which already handles
+     * locals (load from %<name>), globals (load from @<name>) and
+     * parameters (return %<name> directly) — same path used by any
+     * other rvalue ident reference. g->last_expr_type is set to the
+     * LLVM IR type by the load case; the value+type are appended to
+     * argbuf.
+     *
+     * Outputs: NOT emitted to argbuf. Per LLVM inline-asm semantics,
+     * output operands are captured via the LHS assignment
+     * (%t6 = call ...) and routed back to the lvalue via the post-call
+     * store — they are NOT call args. Pushing them to args would
+     * corrupt the input/output slot mapping LLVM verifies against the
+     * constraint string (e.g. "=a,a,c" expects 2 args, one per input,
+     * not 3). We capture only the LLVM IR type of the first output
+     * variable (from g->local_vars / g->global_vars) to derive
+     * result_type for the call return type. */
     Buf argbuf; argbuf.data = NULL; argbuf.len = 0; argbuf.cap = 0;
     const char* result_type = "i32";
 
-    /* Outputs: load the var (it is typically a local lvalue), feed into asm */
-    if (block->outputs) {
-        for (size_t i = 0; i < uc_vec_len(block->outputs); i++) {
-            UCAsmOperand* op = (UCAsmOperand*)uc_vec_at(block->outputs, i);
-            UCExpr id;
-            id.kind = UC_EXPR_IDENT;
-            id.as.ident.data = op->var_name;
-            id.as.ident.len = op->var_name ? strlen(op->var_name) : 0;
-            char* v = gen_expr(g, &id, err, 0);
-            if (!v || err->kind != UC_ERR_NONE) {
-                free(v); free(constraint); buf_free(&argbuf); return;
-            }
-            const char* ty = g->last_expr_type ? g->last_expr_type : "i32";
-            if (i == 0) result_type = ty;
-            if (argbuf.len > 0) buf_append(&argbuf, ", ", 2);
-            buf_append(&argbuf, ty, strlen(ty));
-            buf_append(&argbuf, " ", 1);
-            buf_append(&argbuf, v, strlen(v));
-            free(v);
-        }
+    /* Outputs: capture LLVM IR type for result_type (no argbuf push). */
+    if (block->outputs && uc_vec_len(block->outputs) > 0) {
+        UCAsmOperand* op = (UCAsmOperand*)uc_vec_at(block->outputs, 0);
+        const char* ty = map_get(&g->local_vars, op->var_name);
+        if (!ty) ty = map_get(&g->global_vars, op->var_name);
+        if (ty) result_type = ty;
     }
     /* Inputs: emit IR value for each operand ident. */
     if (block->inputs) {
