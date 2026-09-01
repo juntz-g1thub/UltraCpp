@@ -2783,9 +2783,22 @@ static UCVec* parse_asm_operand_list(UCParser* p) {
             err_here(p, "expected string literal for asm operand constraint");
             return NULL;
         }
-        char* constraint = (char*)malloc(p->current.lexeme_len + 1);
-        memcpy(constraint, p->current.lexeme, p->current.lexeme_len);
-        constraint[p->current.lexeme_len] = '\0';
+        /* Lexer stores decoded (quote-stripped) string in as.string_val;
+         * raw lexeme still has surrounding double-quotes. Use as.string_val
+         * so codegen's `"%s"` wrap produces single-quoted IR like `"=a"`,
+         * not the double-quoted broken form `""=a""` that breaks llc.
+         * Ownership: op->constraint takes ownership; NULL out before advance
+         * so uc_token_free does not double-free. */
+        const char* src = p->current.as.string_val
+                        ? p->current.as.string_val
+                        : p->current.lexeme;
+        size_t src_len = p->current.as.string_val
+                       ? strlen(p->current.as.string_val)
+                       : p->current.lexeme_len;
+        char* constraint = (char*)malloc(src_len + 1);
+        memcpy(constraint, src, src_len);
+        constraint[src_len] = '\0';
+        p->current.as.string_val = NULL;  /* ownership transferred */
         advance(p);
         if (!expect(p, UC_TOK_LPAREN, "'(' after asm constraint")) return NULL;
         if (!check(p, UC_TOK_IDENT)) {
@@ -2814,9 +2827,22 @@ static UCVec* parse_asm_clobber_list(UCParser* p) {
             err_here(p, "expected string literal for asm clobber");
             return NULL;
         }
-        char* c = (char*)malloc(p->current.lexeme_len + 1);
-        memcpy(c, p->current.lexeme, p->current.lexeme_len);
-        c[p->current.lexeme_len] = '\0';
+        /* Lexer stores decoded (quote-stripped) string in as.string_val;
+         * raw lexeme still has surrounding double-quotes. Use as.string_val
+         * so codegen's `"%s"` wrap produces single-quoted IR like `"rcx"`,
+         * not the double-quoted broken form `""rcx""` that breaks llc.
+         * Ownership: uc_vec_push(clobs, c) takes ownership; NULL out before
+         * advance so uc_token_free does not double-free. */
+        const char* src = p->current.as.string_val
+                        ? p->current.as.string_val
+                        : p->current.lexeme;
+        size_t src_len = p->current.as.string_val
+                       ? strlen(p->current.as.string_val)
+                       : p->current.lexeme_len;
+        char* c = (char*)malloc(src_len + 1);
+        memcpy(c, src, src_len);
+        c[src_len] = '\0';
+        p->current.as.string_val = NULL;  /* ownership transferred */
         advance(p);
         uc_vec_push(clobs, c);
         if (!match(p, UC_TOK_COMMA)) break;
