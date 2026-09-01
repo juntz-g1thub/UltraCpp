@@ -51,6 +51,13 @@ static void macro_free_local(void* p) {
     free(m);
 }
 
+/* [0.3.6 commit 16-7-pre] Adapter: uc_vec_free expects
+ * void(*)(void*), uc_top_level_free takes UCTopLevel*. Avoid an
+ * implementation-defined function-pointer cast. */
+static void top_level_free_local(void* p) {
+    uc_top_level_free((UCTopLevel*)p);
+}
+
 /* ------------------------------------------------------------------------- */
 /* Token helpers                                                             */
 /* ------------------------------------------------------------------------- */
@@ -319,11 +326,28 @@ static UCTopLevel* parse_top_level_at_directive(UCParser* p);
 static void skip_pp_branch(UCParser* p);
 static int  pp_condition_true(UCParser* p);
 
+/* [0.3.6 commit 16-7-pre] #-prefix preprocessor directives
+ * (#ifdef / #ifndef / #endif). Mirrors the @-family above but for the
+ * strict subset of #-directives that the lexer actually emits. */
+static UCTopLevel* parse_top_level_pound_directive(UCParser* p);
+static void skip_pp_branch_pound(UCParser* p);
+
 /* ------------------------------------------------------------------------- */
 /* Top-level dispatch                                                        */
 /* ------------------------------------------------------------------------- */
 
 static UCTopLevel* parse_top_level(UCParser* p) {
+    /* [0.3.6 commit 16-7-pre] Dispatch #-prefixed preprocessor directives
+     * (#ifdef / #ifndef / #endif). The directive machinery consumes its
+     * tokens and returns NULL with no TopLevel produced, mirroring both
+     * the '#import' convention below and the @-family dispatch above.
+     * See parse_top_level_pound_directive for the body. */
+    if (check(p, UC_TOK_PP_IFDEF)
+        || check(p, UC_TOK_PP_IFNDEF)
+        || check(p, UC_TOK_PP_ENDIF)) {
+        return parse_top_level_pound_directive(p);
+    }
+
     /* [0.3.3 commit 8a] Dispatch @-prefixed preprocessor directives
      * (@ifdef / @if / @else / @elif / @end). The directive machinery
      * consumes its tokens and returns NULL with no TopLevel produced,
@@ -754,6 +778,12 @@ static UCTopLevel* parse_top_level_at_directive(UCParser* p) {
                 uc_top_level_free(tl);
                 return NULL;
             }
+            /* [0.3.6 commit 16-7-pre fix] Recursive truthy branch has
+             * no access to uc_parser_parse()'s local `decls`, so push
+             * to the parser-owned sink instead. */
+            if (tl && p->declarations) {
+                uc_vec_push(p->declarations, tl);
+            }
             /* tl may legitimately be NULL (e.g. '#import' directive);
              * either way the top-level loop has advanced past it. */
         }
@@ -802,6 +832,13 @@ static UCTopLevel* parse_top_level_at_directive(UCParser* p) {
                     if (is_err(p)) {
                         uc_top_level_free(tl);
                         return NULL;
+                    }
+                    /* [0.3.6 commit 16-7-pre fix] Recursive truthy
+                     * branch has no access to uc_parser_parse()'s
+                     * local `decls`, so push to the parser-owned
+                     * sink instead. */
+                    if (tl && p->declarations) {
+                        uc_vec_push(p->declarations, tl);
                     }
                 }
                 taken = 1;
@@ -872,6 +909,13 @@ static UCTopLevel* parse_top_level_at_directive(UCParser* p) {
                         uc_top_level_free(tl);
                         return NULL;
                     }
+                    /* [0.3.6 commit 16-7-pre fix] Recursive truthy
+                     * branch has no access to uc_parser_parse()'s
+                     * local `decls`, so push to the parser-owned
+                     * sink instead. */
+                    if (tl && p->declarations) {
+                        uc_vec_push(p->declarations, tl);
+                    }
                 }
             } else {
                 skip_pp_branch(p);
@@ -887,6 +931,131 @@ static UCTopLevel* parse_top_level_at_directive(UCParser* p) {
     /* Consume the closing @end. */
     advance(p);  /* consume @end */
     return NULL;  /* directives never emit a TopLevel */
+}
+
+/* ------------------------------------------------------------------------- */
+/* [0.3.6 commit 16-7-pre] #-prefix preprocessor conditional directives     */
+/* (#ifdef / #ifndef / #endif). Mirrors parse_top_level_at_directive but   */
+/* for the strict #-family the lexer actually emits (no #if / #else /       */
+/* #elif — these are @-family only).                                        */
+/* ------------------------------------------------------------------------- */
+
+/* Skip tokens inside an inactive #-conditional until we reach the
+ * matching #endif (depth==0). Depth tracking mirrors skip_pp_branch
+ * for the @-family above. After returning, p->current is the matching
+ * #endif (NOT advanced past). */
+static void skip_pp_branch_pound(UCParser* p) {
+    int depth = 1;  /* we are already inside the #ifdef / #ifndef chain */
+    for (;;) {
+        if (check(p, UC_TOK_EOF) || check(p, UC_TOK_ERROR)) {
+            err_here(p, "unexpected end of file inside #ifdef / #ifndef branch");
+            return;
+        }
+        if (depth == 1 && check(p, UC_TOK_PP_ENDIF)) {
+            /* Leave the token in p->current so the caller can advance. */
+            return;
+        }
+        if (check(p, UC_TOK_PP_IFDEF) || check(p, UC_TOK_PP_IFNDEF)) {
+            depth++;
+            advance(p);
+            continue;
+        }
+        if (check(p, UC_TOK_PP_ENDIF)) {
+            /* depth > 1: this #endif closes a nested conditional. */
+            depth--;
+            advance(p);
+            continue;
+        }
+        advance(p);
+    }
+}
+
+/* Entry point for all #-prefix conditional directives at top level.
+ * Dispatches based on the current token:
+ *   #ifdef / #ifndef : start a conditional chain (no #else / #elif)
+ *   #endif           : stray (no matching #ifdef); error
+ * Always returns NULL (no TopLevel). */
+static UCTopLevel* parse_top_level_pound_directive(UCParser* p) {
+    if (check(p, UC_TOK_PP_ENDIF)) {
+        err_here(p, "stray '#endif' without matching '#ifdef' / '#ifndef'");
+        return NULL;
+    }
+
+    /* Resolve #ifdef / #ifndef condition. The directive token has
+     * already been peek-classified by the dispatcher; we consume it
+     * and parse the parenthesised identifier, then ask the predefined
+     * macro table whether the name is defined. */
+    int truthy = 0;
+    int matched = 0;
+    if (check(p, UC_TOK_PP_IFDEF) || check(p, UC_TOK_PP_IFNDEF)) {
+        int negate = check(p, UC_TOK_PP_IFNDEF);
+        advance(p);  /* consume #ifdef / #ifndef */
+        if (!expect(p, UC_TOK_LPAREN, "'(' after #ifdef/#ifndef")) return NULL;
+        if (!check(p, UC_TOK_IDENT)) {
+            err_here(p, "expected identifier inside #ifdef/#ifndef(...)");
+            return NULL;
+        }
+        truthy = macro_is_defined(p, p->current.lexeme);
+        advance(p);
+        if (!expect(p, UC_TOK_RPAREN, "')' to close #ifdef/#ifndef(...)")) {
+            return NULL;
+        }
+        if (negate) truthy = !truthy;
+        matched = 1;
+    }
+
+    if (!matched) {
+        /* Should be unreachable: the dispatcher only routes
+         * UC_TOK_PP_IFDEF / UC_TOK_PP_IFNDEF / UC_TOK_PP_ENDIF here,
+         * and the stray #endif branch above handled UC_TOK_PP_ENDIF.
+         * Still, defense in depth. */
+        err_here(p, "expected '#ifdef' / '#ifndef' / '#endif'");
+        return NULL;
+    }
+
+    /* Parse body until #endif. There is no #else / #elif for #-family. */
+    for (;;) {
+        if (is_err(p)) return NULL;
+        if (check(p, UC_TOK_EOF) || check(p, UC_TOK_ERROR)) {
+            err_here(p, "unterminated #ifdef / #ifndef (missing #endif)");
+            return NULL;
+        }
+        if (check(p, UC_TOK_PP_ENDIF)) {
+            advance(p);  /* consume #endif */
+            return NULL;
+        }
+        if (truthy) {
+            /* Active branch: parse ordinary top-level constructs.
+             * Handle nested #-conditionals explicitly so they recurse
+             * with the proper entry point (which DOES advance past the
+             * inner #endif itself). */
+            if (check(p, UC_TOK_PP_IFDEF)
+                || check(p, UC_TOK_PP_IFNDEF)) {
+                if (parse_top_level_pound_directive(p) == NULL
+                    && is_err(p)) {
+                    return NULL;
+                }
+                continue;
+            }
+            UCTopLevel* tl = parse_top_level(p);
+            if (is_err(p)) {
+                uc_top_level_free(tl);
+                return NULL;
+            }
+            /* [0.3.6 commit 16-7-pre fix] Recursive truthy branch has
+             * no access to uc_parser_parse()'s local `decls`, so push
+             * to the parser-owned sink instead. */
+            if (tl && p->declarations) {
+                uc_vec_push(p->declarations, tl);
+            }
+            /* tl may legitimately be NULL ('#import' / '#include' /
+             * @-directives consumed but no TopLevel produced). */
+        } else {
+            /* Inactive branch: skip until #endif at depth 1. */
+            skip_pp_branch_pound(p);
+            if (is_err(p)) return NULL;
+        }
+    }
 }
 
 /* ------------------------------------------------------------------------- */
@@ -2481,6 +2650,9 @@ void uc_parser_init(UCParser* p, UCLexer* lexer, UCError* error) {
     p->peek.kind = UC_TOK_EOF;
     p->error = error;
     p->macros = NULL;
+    p->declarations = NULL;  /* [0.3.6 commit 16-7-pre] set by
+                              * uc_parser_parse; recursive truthy
+                              * branches need it to be non-NULL. */
 
     /* [0.3.3 commit 8a] Populate the predefined macro table BEFORE the
      * first token is consumed, so parse_top_level can resolve @ifdef
@@ -2501,28 +2673,45 @@ void uc_parser_reset(UCParser* p) {
         uc_vec_free(p->macros, macro_free_local);
         p->macros = NULL;
     }
+    /* [0.3.6 commit 16-7-pre] If uc_parser_parse did NOT transfer
+     * ownership to a UCModule (parse error path), the sink still
+     * owns its items and must be freed here. On the success path
+     * uc_parser_parse sets p->declarations = NULL before returning
+     * the module, so this branch is skipped. */
+    if (p->declarations) {
+        uc_vec_free(p->declarations, top_level_free_local);
+        p->declarations = NULL;
+    }
     p->lexer = NULL;
     p->error = NULL;
 }
 
 UCModule* uc_parser_parse(UCParser* p) {
-    UCVec* decls = uc_vec_new();
+    /* [0.3.6 commit 16-7-pre] The declarations vector is parked on the
+     * parser struct so recursive parse_top_level() calls (inside
+     * #ifdef / @ifdef truthy branches) can also push their TopLevel
+     * results here — they have no access to a local `decls`. */
+    p->declarations = uc_vec_new();
 
     while (!check(p, UC_TOK_EOF) && !check(p, UC_TOK_ERROR)) {
         UCTopLevel* tl = parse_top_level(p);
         if (is_err(p)) {
             uc_top_level_free(tl);
-            uc_vec_free(decls, NULL);
+            uc_vec_free(p->declarations, top_level_free_local);
+            p->declarations = NULL;
             return NULL;
         }
         if (tl) {
-            uc_vec_push(decls, tl);
+            uc_vec_push(p->declarations, tl);
         }
         /* tl == NULL with no error: a directive (e.g. '#import') was
          * consumed without producing a TopLevel. Continue to the next
          * top-level construct. The while-condition handles EOF. */
     }
 
+    UCVec* decls = p->declarations;
+    p->declarations = NULL;  /* ownership transferred to module;
+                              * uc_parser_reset must NOT free it. */
     return uc_module_new(decls);
 }
 

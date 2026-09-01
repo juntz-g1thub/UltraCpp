@@ -1113,6 +1113,93 @@ static void test_real_program_io(void) {
 }
 
 /* ------------------------------------------------------------------------- */
+/* ------------------------------------------------------------------------- */
+/* [0.3.6 commit 16-7-pre] #-prefix preprocessor conditional directives     */
+/* (#ifdef / #ifndef / #endif). Note: the lexer only emits these three #    */
+/* tokens; no #else / #elif for #-family.                                   */
+/* ------------------------------------------------------------------------- */
+
+static void test_pound_ifdef_true_branch_included(void) {
+    /* TARGET_ARCH_X86_64 is pre-defined on x86-64 hosts (the test
+     * machine), so the body must be parsed in full: 3 decls total
+     * (a, x, y). */
+    UCModule* m = parse_source(
+        "int a = 1;\n"
+        "#ifdef(TARGET_ARCH_X86_64)\n"
+        "int x = 1;\n"
+        "#endif\n"
+        "int y = 2;\n");
+    ASSERT_TRUE(m != NULL); if (!m) return;
+    ASSERT_EQ_INT((long long)uc_vec_len(m->declarations), 3);
+    uc_module_free(m);
+}
+
+static void test_pound_ifdef_undefined_branch_skipped(void) {
+    /* NEVER_DEFINED is not in the predefined macro table, so the
+     * inner `int x = 2;` must be skipped: only 2 decls (a, y). */
+    UCModule* m = parse_source(
+        "int a = 1;\n"
+        "#ifdef(NEVER_DEFINED)\n"
+        "int x = 2;\n"
+        "#endif\n"
+        "int y = 3;\n");
+    ASSERT_TRUE(m != NULL); if (!m) return;
+    ASSERT_EQ_INT((long long)uc_vec_len(m->declarations), 2);
+    uc_module_free(m);
+}
+
+static void test_pound_ifndef_defined_branch_skipped(void) {
+    /* TARGET_ARCH_X86_64 is defined, so `#ifndef(TARGET_ARCH_X86_64)`
+     * skips the body: only 1 decl (y). */
+    UCModule* m = parse_source(
+        "#ifndef(TARGET_ARCH_X86_64)\n"
+        "int x = 1;\n"
+        "#endif\n"
+        "int y = 2;\n");
+    ASSERT_TRUE(m != NULL); if (!m) return;
+    ASSERT_EQ_INT((long long)uc_vec_len(m->declarations), 1);
+    uc_module_free(m);
+}
+
+static void test_pound_ifndef_undefined_branch_included(void) {
+    /* UNDEFINED_VAR is not defined, so `#ifndef(UNDEFINED_VAR)` is
+     * truthy: the body must be parsed: 1 decl (x). */
+    UCModule* m = parse_source(
+        "#ifndef(UNDEFINED_VAR)\n"
+        "int x = 1;\n"
+        "#endif\n");
+    ASSERT_TRUE(m != NULL); if (!m) return;
+    ASSERT_EQ_INT((long long)uc_vec_len(m->declarations), 1);
+    uc_module_free(m);
+}
+
+static void test_pound_ifdef_nested(void) {
+    /* Outer #ifdef(TARGET_ARCH_X86_64) is true; inner
+     * #ifdef(UNDEFINED_NESTED_VAR) is false (UNDEFINED_NESTED_VAR is not
+     * pre-defined — see init_predefined_macros). Result: only `a` is
+     * emitted. */
+    UCModule* m = parse_source(
+        "#ifdef(TARGET_ARCH_X86_64)\n"
+        "int a = 1;\n"
+        "#ifdef(UNDEFINED_NESTED_VAR)\n"
+        "int b = 2;\n"
+        "#endif\n"
+        "#endif\n");
+    ASSERT_TRUE(m != NULL); if (!m) return;
+    ASSERT_EQ_INT((long long)uc_vec_len(m->declarations), 1);
+    uc_module_free(m);
+}
+
+static void test_pound_stray_endif_error(void) {
+    /* A bare #endif at top level (with no matching #ifdef / #ifndef)
+     * must report a parse error. */
+    ASSERT_PARSE_FAIL(
+        "int x = 1;\n"
+        "#endif\n"
+        "int y = 2;\n");
+}
+
+/* ------------------------------------------------------------------------- */
 /* main                                                                      */
 /* ------------------------------------------------------------------------- */
 int main(void) {
@@ -1199,6 +1286,14 @@ int main(void) {
     /* Phase 2.5: end-to-end test programs from test/ */
     RUN(test_real_program_hello_world);
     RUN(test_real_program_io);
+
+    /* [0.3.6 commit 16-7-pre] #-prefix preprocessor directives */
+    RUN(test_pound_ifdef_true_branch_included);
+    RUN(test_pound_ifdef_undefined_branch_skipped);
+    RUN(test_pound_ifndef_defined_branch_skipped);
+    RUN(test_pound_ifndef_undefined_branch_included);
+    RUN(test_pound_ifdef_nested);
+    RUN(test_pound_stray_endif_error);
 
     RUN(test_error_missing_semicolon_var);
     RUN(test_error_missing_semicolon_import);
