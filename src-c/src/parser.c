@@ -2736,9 +2736,24 @@ static UCStmt* parse_asm_block_statement(UCParser* p) {
         err_here(p, "expected string literal for asm template");
         return NULL;
     }
-    char* template_str = (char*)malloc(p->current.lexeme_len + 1);
-    memcpy(template_str, p->current.lexeme, p->current.lexeme_len);
-    template_str[p->current.lexeme_len] = '\0';
+    /* The lexer stores the decoded (unescaped, quote-stripped) template in
+     * as.string_val; the raw lexeme still has the surrounding double-quotes.
+     * We must use as.string_val (the decoded value, no quotes) so codegen's
+     * "\"%s\"" wrap produces single-quoted IR like `"syscall"`, not the
+     * double-quoted broken form `""syscall""` that breaks llc.
+     * Ownership: uc_ast_asm_block_new takes ownership of the char*; we
+     * therefore set as.string_val to NULL before advance(p) so that
+     * uc_token_free (called via advance) does not double-free it. */
+    const char* src = p->current.as.string_val
+                    ? p->current.as.string_val
+                    : p->current.lexeme;
+    size_t src_len = p->current.as.string_val
+                   ? strlen(p->current.as.string_val)
+                   : p->current.lexeme_len;
+    char* template_str = (char*)malloc(src_len + 1);
+    memcpy(template_str, src, src_len);
+    template_str[src_len] = '\0';
+    p->current.as.string_val = NULL;  /* ownership transferred */
     advance(p);
     UCVec* outputs = NULL;
     UCVec* inputs = NULL;
