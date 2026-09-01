@@ -1595,8 +1595,10 @@ static void emit_free_call(UCCodeGenerator* g, const UCExpr* inner, UCError* err
     free(p);
 }
 
-/* [0.3.3 commit 8b step 3] emit_asm_block: emit `asm { ... }` as LLVM
- * 'call void asm sideeffect "template", "constraints"()'.
+/* [0.3.3 commit 8b step 3 + 0.3.6 commit 16-7-pre4]
+ * emit_asm_block: emit `asm { ... }` as LLVM
+ *   '<t> = call <result_type> asm sideeffect "template", "constraints"(<args>)'
+ * (or 'call void asm sideeffect ...(<args>)' when there are no outputs).
  *
  * Per runtime-architecture §8 (Inline Assembly) + spec §10.3: GCC
  * constraint style, 4-segment form. The constraint string passed to
@@ -1604,6 +1606,20 @@ static void emit_free_call(UCCodeGenerator* g, const UCExpr* inner, UCError* err
  *   outputs:  "=r,=r,..."   (one slot per output operand)
  *   inputs:   ",r,r,..."    (comma-prefixed)
  *   clobbers: ",~{rcx},~{memory},..." (wrapped in ~{...})
+ *
+ * 0.3.6 commit 16-7-pre4 fix: prior to this commit the function built the
+ * constraint string but emitted the call with an empty operand list '()',
+ * producing e.g. '%t0 = call void asm sideeffect "syscall",
+ * "=a,0,D,~{rcx},~{r11},~{cc},~{memory}"()'. llc rejects this with
+ * 'Inline asm not supported yet: number of input constraints (7) does not
+ * match number of parameters (0)'. The fix walks each output/input
+ * operand, re-uses the existing UC_EXPR_IDENT path in gen_expr() to
+ * materialise an SSA value (gen_expr already emits 'load' for locals
+ * and globals and returns the loaded SSA value, plus sets
+ * g->last_expr_type to the LLVM IR type — typically 'i32' for our
+ * int-only syscall scope), appends '<ty> <val>' to the arg list, and
+ * after the call emits 'store <t>, <ty>* %<var_name>' for each output
+ * so the asm result lands back in its lvalue slot.
  *
  * PARSE-ONLY per plan §3 commit 8b: constraint chars are forwarded
  * verbatim and LLVM validates the grammar at IR level. The parser
@@ -1614,9 +1630,12 @@ static void emit_free_call(UCCodeGenerator* g, const UCExpr* inner, UCError* err
  * (LLVMInlineAsm / LLVMCreateInlineAsm). String mode keeps codegen
  * uniform with all other statements in this file.
  *
- * Result: a void-returning call (sideeffect is required by LLVM for
- * asm without a return value), bound to a fresh temp for syntactic
- * symmetry with the other statements in this file. */
+ * Result: when at least one output is present, the call result type is
+ * derived from the first output's loaded IR type (currently always
+ * 'i32' for the syscall use case; non-i32 outputs land as TODO 16-7).
+ * When no outputs are present, the call is emitted as 'void' with no
+ * assignment (LLVM requires no return for void asm — sideeffect is the
+ * only attribute needed). */
 static void emit_asm_block(UCCodeGenerator* g, const UCASTAsmBlock* block, UCError* err) {
     if (!block || !block->template_str) {
         uc_error_set(err, UC_ERR_CODEGEN, 0, 0, NULL, "invalid asm block");
@@ -1664,17 +1683,98 @@ static void emit_asm_block(UCCodeGenerator* g, const UCASTAsmBlock* block, UCErr
         }
     }
 
-    /* Emit LLVM IR: 'call void asm sideeffect "template", "constraints"()' */
-    char* res = mk_temp(g);
-    if (strlen(constraint) == 0) {
-        emit_fmt_writeln(g, "%s = call void asm sideeffect \"%s\", \"\"()",
-                         res, block->template_str);
-    } else {
-        emit_fmt_writeln(g, "%s = call void asm sideeffect \"%s\", \"%s\"()",
-                         res, block->template_str, constraint);
+    /* Pass 2: emit operand IR values. Each operand is (constraint, ident)
+     * per src/parser.c::parse_asm_operand_list. We synthesise a stack
+     * UCExpr of kind UC_EXPR_IDENT and call gen_expr(), which already
+     * handles locals (load from %<name>), globals (load from @<name>)
+     * and parameters (return %<name> directly) — same path used by
+     * any other rvalue ident reference. g->last_expr_type is set to
+     * the LLVM IR type by the load case; for outputs the result_type
+     * is captured from the first output's last_expr_type. */
+    Buf argbuf; argbuf.data = NULL; argbuf.len = 0; argbuf.cap = 0;
+    const char* result_type = "i32";
+
+    /* Outputs: load the var (it is typically a local lvalue), feed into asm */
+    if (block->outputs) {
+        for (size_t i = 0; i < uc_vec_len(block->outputs); i++) {
+            UCAsmOperand* op = (UCAsmOperand*)uc_vec_at(block->outputs, i);
+            UCExpr id;
+            id.kind = UC_EXPR_IDENT;
+            id.as.ident.data = op->var_name;
+            id.as.ident.len = op->var_name ? strlen(op->var_name) : 0;
+            char* v = gen_expr(g, &id, err, 0);
+            if (!v || err->kind != UC_ERR_NONE) {
+                free(v); free(constraint); buf_free(&argbuf); return;
+            }
+            const char* ty = g->last_expr_type ? g->last_expr_type : "i32";
+            if (i == 0) result_type = ty;
+            if (argbuf.len > 0) buf_append(&argbuf, ", ", 2);
+            buf_append(&argbuf, ty, strlen(ty));
+            buf_append(&argbuf, " ", 1);
+            buf_append(&argbuf, v, strlen(v));
+            free(v);
+        }
     }
-    free(res);
+    /* Inputs: emit IR value for each operand ident. */
+    if (block->inputs) {
+        for (size_t i = 0; i < uc_vec_len(block->inputs); i++) {
+            UCAsmOperand* op = (UCAsmOperand*)uc_vec_at(block->inputs, i);
+            UCExpr id;
+            id.kind = UC_EXPR_IDENT;
+            id.as.ident.data = op->var_name;
+            id.as.ident.len = op->var_name ? strlen(op->var_name) : 0;
+            char* v = gen_expr(g, &id, err, 0);
+            if (!v || err->kind != UC_ERR_NONE) {
+                free(v); free(constraint); buf_free(&argbuf); return;
+            }
+            const char* ty = g->last_expr_type ? g->last_expr_type : "i32";
+            if (argbuf.len > 0) buf_append(&argbuf, ", ", 2);
+            buf_append(&argbuf, ty, strlen(ty));
+            buf_append(&argbuf, " ", 1);
+            buf_append(&argbuf, v, strlen(v));
+            free(v);
+        }
+    }
+
+    /* Pass 3: emit the call. With outputs: '<t> = call <result_type>
+     * asm sideeffect "template", "constraints"(<args>)' + one
+     * 'store <t>, <ty>* %<var_name>' per output. Without outputs:
+     * 'call void asm sideeffect "template", "constraints"(<args>)'
+     * (no assignment, no store — void asm returns nothing). */
+    int n_outputs = block->outputs ? (int)uc_vec_len(block->outputs) : 0;
+    const char* args_str = argbuf.data ? argbuf.data : "";
+    if (n_outputs > 0) {
+        char* res = mk_temp(g);
+        emit_fmt_writeln(g, "%s = call %s asm sideeffect \"%s\", \"%s\"(%s)",
+                         res, result_type, block->template_str, constraint,
+                         args_str);
+        /* Store the call result back into each output var's slot. */
+        for (int i = 0; i < n_outputs; i++) {
+            UCAsmOperand* op = (UCAsmOperand*)uc_vec_at(block->outputs, i);
+            const char* ll_type = map_get(&g->local_vars, op->var_name);
+            if (ll_type) {
+                emit_fmt_writeln(g, "store %s %s, %s* %%%s",
+                                 ll_type, res, ll_type, op->var_name);
+            } else if (map_get(&g->global_vars, op->var_name)) {
+                const char* gt = map_get(&g->global_vars, op->var_name);
+                emit_fmt_writeln(g, "store %s %s, %s* @%s",
+                                 gt, res, gt, op->var_name);
+            } else {
+                uc_error_set(err, UC_ERR_CODEGEN, 0, 0, NULL,
+                             "asm output '%s' must be a local or global "
+                             "variable", op->var_name);
+                free(res); free(constraint); buf_free(&argbuf);
+                return;
+            }
+        }
+        free(res);
+    } else {
+        emit_fmt_writeln(g, "call void asm sideeffect \"%s\", \"%s\"(%s)",
+                         block->template_str, constraint, args_str);
+    }
+
     free(constraint);
+    buf_free(&argbuf);
 }
 
 /* ------------------------------------------------------------------------- */
