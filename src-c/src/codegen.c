@@ -179,6 +179,11 @@ struct UCCodeGenerator {
 
     char* module_name;
 
+    char* current_func_ret_type; /* 16-1a-pre Bug #7: LLVM type string of the
+                                  * function currently being emitted (owned,
+                                  * strdup'd in gen_func, freed in free). NULL
+                                  * when not inside a function body. */
+
     Map local_types;   /* param name -> LLVM type */
     Map local_vars;    /* var name   -> LLVM type */
     Map global_vars;   /* global var/const name -> LLVM type (M0 P0-1) */
@@ -218,6 +223,7 @@ UCCodeGenerator* uc_codegen_new(const char* module_name) {
     UCCodeGenerator* g = (UCCodeGenerator*)calloc(1, sizeof(UCCodeGenerator));
     if (!g) { fprintf(stderr, "uc_codegen: OOM\n"); abort(); }
     g->module_name = cgen_strdup(module_name ? module_name : "unnamed");
+    g->current_func_ret_type = NULL;
     g->indent = 0;
     g->temp_counter = 0;
     g->label_counter = 0;
@@ -241,6 +247,7 @@ void uc_codegen_free(UCCodeGenerator* g) {
     buf_free(&g->extern_decls);
     buf_free(&g->global_strings);
     free(g->module_name);
+    free(g->current_func_ret_type);
     free(g->last_expr_type);
     map_free(&g->local_types);
     map_free(&g->local_vars);
@@ -757,6 +764,14 @@ static void gen_func(UCCodeGenerator* g, const UCFuncDef* func, int exported) {
     map_init(&g->local_vars);
     map_init(&g->fn_ptr_sigs);
 
+    /* [16-1a-pre Bug #7续] Cache this function's LLVM return type string
+     * so UC_STMT_RETURN can emit the correct `ret <ty> <v>` line (and
+     * `ret void` when the return type is void). Previously the field
+     * was declared+init+free-handled but never assigned; the return
+     * path hardcoded "i32" regardless of func->return_ty. */
+    free(g->current_func_ret_type);
+    g->current_func_ret_type = llvm_type_of(g, func->return_ty);
+
     for (size_t i = 0; i < uc_vec_len(func->params); i++) {
         UCParam* p = (UCParam*)uc_vec_at(func->params, i);
         char* lt = llvm_type_of(g, p->ty);
@@ -918,7 +933,22 @@ static void gen_stmt(UCCodeGenerator* g, const UCStmt* stmt) {
                 UCError err; uc_error_init(&err);
                 char* v = gen_expr(g, stmt->as.ret, &err, 0);
                 if (!v || err.kind != UC_ERR_NONE) { free(v); return; }
-                emit_fmt_writeln(g, "ret i32 %s", v);
+                /* [16-1a-pre Bug #7续] Use the per-function LLVM return
+                 * type cached in gen_func() instead of the hardcoded
+                 * "i32", so functions like `i8* make(int n)` emit
+                 * `ret i8* %t0` and not `ret i32 %t0`. Falls back to
+                 * "i32" only when the field is unset (defensive). */
+                const char* ret_ty = g->current_func_ret_type
+                    ? g->current_func_ret_type : "i32";
+                if (strcmp(ret_ty, "void") == 0) {
+                    /* Defensive: a value-returned statement in a void
+                     * function is a parser/semantic error, but if we
+                     * reach here, drop the value rather than emit
+                     * invalid `ret void %v`. */
+                    emit_writeln(g, "ret void");
+                } else {
+                    emit_fmt_writeln(g, "ret %s %s", ret_ty, v);
+                }
                 free(v);
             } else {
                 emit_writeln(g, "ret void");
@@ -1964,6 +1994,20 @@ static char* gen_expr(UCCodeGenerator* g, const UCExpr* expr, UCError* err, int 
                     snprintf(target_addr, l, "%%%s", n);
                     free(g->last_expr_type);
                     g->last_expr_type = cgen_strdup(ll_type);
+                } else {
+                    /* 16-1a-pre Bug #6: global var LHS — emit
+                     * `store ..., @name` directly. Falling back to
+                     * gen_expr() would emit `load ... @name` → %t0,
+                     * then `store ... %t0` (storing INTO the loaded
+                     * value, not into @name). */
+                    ll_type = map_get(&g->global_vars, n);
+                    if (ll_type) {
+                        size_t l = strlen(n) + 2;
+                        target_addr = (char*)malloc(l);
+                        snprintf(target_addr, l, "@%s", n);
+                        free(g->last_expr_type);
+                        g->last_expr_type = cgen_strdup(ll_type);
+                    }
                 }
             }
             if (!target_addr) {
